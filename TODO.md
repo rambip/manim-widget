@@ -105,12 +105,11 @@ Bundled via `bun build` into `static/index.js`, inlined into Python via `_JS_BUN
 
 ## Phase 4: anywidget Integration
 
-### 4.1: The Bridge
+### 4.1: The Bridge ✅
 * **Subtask**: Create `class ManimWidget(anywidget.AnyWidget, Scene)`.
 * **Subtask**: Bind `json_data = traitlets.Unicode("").tag(sync=True)`.
-* **Tricky Part**: `construct()` is blocking. If users run `construct()` in a notebook cell, you want the widget to display *immediately*, show a loading state, and then push the JSON once the dry-run finishes.
 
-### 4.2: UI Overlay
+### 4.2: UI Overlay ✅
 * **Subtask**: Build a minimal HTML overlay over the WebGL canvas.
 * **Subtask**: Add a Play/Pause button and a scrubber.
 * **Subtask**: Conditional rendering: If `section.supported === false`, overlay a big red warning banner: *"Section uses unsupported geometry updates. Fallback to video required."*
@@ -119,6 +118,7 @@ Bundled via `bun build` into `static/index.js`, inlined into Python via `_JS_BUN
 
 ## Phase 5: V2 (Future Pipeline)
 
+- **Asynchronous `construct()`**: Make `construct()` non-blocking. Display widget immediately with a loading state, then push JSON once the dry-run finishes.
 - **`Transform` support**: Inline target geometry in the animation payload. Handle temporary mobject lifetimes bounded to a segment.
 - **Smarter unsupported detection**: AST analysis of updater bodies for earlier, more precise warnings rather than relying solely on the `_dirty_geometry` runtime flag.
 - **Video fallback for unsupported sections**: Automatically trigger the real Cairo/OpenGL renderer for unsupported sections and seamlessly swap the JS canvas for an HTML `<video>` tag.

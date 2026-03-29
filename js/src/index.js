@@ -9,7 +9,8 @@ async function render({ model, el }) {
       <div id="mw-controls" style="position:absolute;bottom:0;left:0;right:0;padding:10px;background:rgba(0,0,0,0.5);display:flex;gap:10px;align-items:center;">
         <button id="mw-play">Play</button>
         <button id="mw-pause">Pause</button>
-        <span id="mw-section-info" style="color:white;"></span>
+        <input type="range" id="mw-scrubber" min="0" max="0" value="0" style="flex:1;cursor:pointer;">
+        <span id="mw-section-info" style="color:white;min-width:80px;"></span>
       </div>
       <div id="mw-warning" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(200,0,0,0.9);color:white;padding:20px;border-radius:8px;font-weight:bold;">
         Unsupported section: geometry updates detected
@@ -20,19 +21,22 @@ async function render({ model, el }) {
   const container = el.querySelector("#mw-container");
   const playBtn = el.querySelector("#mw-play");
   const pauseBtn = el.querySelector("#mw-pause");
+  const scrubber = el.querySelector("#mw-scrubber");
   const sectionInfo = el.querySelector("#mw-section-info");
   const warning = el.querySelector("#mw-warning");
 
   let scene = null;
   let registry = null;
   let player = null;
+  let jsonData = null;
 
-  async function loadScene(jsonData) {
-    if (!jsonData || !jsonData.mobjects || !jsonData.sections) {
+  async function loadScene(data) {
+    if (!data || !data.mobjects || !data.sections) {
       console.warn("Invalid scene data");
       return;
     }
 
+    jsonData = data;
     container.innerHTML = "";
 
     scene = new Scene(container, { width: 600, height: 400 });
@@ -42,11 +46,16 @@ async function render({ model, el }) {
     const mobjectMap = new Map(jsonData.mobjects.map((m) => [m.id, m]));
     registry.load(mobjectMap);
     player.setfps(jsonData.fps);
+    player.setSections(jsonData.sections);
+
+    scrubber.max = jsonData.sections.length - 1;
+    scrubber.value = 0;
 
     player.setOnSectionChange((index) => {
       const section = jsonData.sections[index];
       if (section) {
         sectionInfo.textContent = section.name;
+        scrubber.value = index;
         if (!section.supported) {
           warning.style.display = "block";
         } else {
@@ -64,9 +73,9 @@ async function render({ model, el }) {
     }
 
     await player.play();
-    for (const section of jsonData.sections) {
+    for (let i = 0; i < jsonData.sections.length; i++) {
       if (!player.isPlaying) break;
-      await player._playSection(section);
+      await player._playSection(jsonData.sections[i]);
     }
   }
 
@@ -76,6 +85,26 @@ async function render({ model, el }) {
 
   pauseBtn.addEventListener("click", () => {
     if (player) player.pause();
+  });
+
+  let isScrubbing = false;
+  scrubber.addEventListener("mousedown", () => {
+    isScrubbing = true;
+  });
+  scrubber.addEventListener("mouseup", () => {
+    if (isScrubbing && player) {
+      player.seekToSection(parseInt(scrubber.value, 10));
+    }
+    isScrubbing = false;
+  });
+  scrubber.addEventListener("touchstart", () => {
+    isScrubbing = true;
+  });
+  scrubber.addEventListener("touchend", () => {
+    if (isScrubbing && player) {
+      player.seekToSection(parseInt(scrubber.value, 10));
+    }
+    isScrubbing = false;
   });
 
   model.on("change:scene_data", () => {

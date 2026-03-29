@@ -86,8 +86,25 @@ export class Player {
     }
   }
 
+  async seekToSection(index) {
+    this._isPlaying = false;
+    this._currentSectionIndex = index;
+    this._currentSegmentIndex = 0;
+    if (index >= 0 && index < this._sections.length) {
+      await this._playSection(this._sections[index]);
+    }
+  }
+
+  setSections(sections) {
+    this._sections = sections;
+  }
+
   get currentSectionIndex() {
     return this._currentSectionIndex;
+  }
+
+  get totalSections() {
+    return this._sections ? this._sections.length : 0;
   }
 
   get isPlaying() {
