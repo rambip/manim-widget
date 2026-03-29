@@ -60,6 +60,8 @@ The patches are transparent to the user. Standard Manim code runs unchanged.
 
 Receives the JSON blob, parses the flat registry, and drives manim-web.
 
+Builds as a single ESM bundle (`src/manim_widget/static/index.js`) with `manim-web` and `three` inlined (no `--external`), so Python packaging can ship one self-contained widget asset.
+
 **Mobject Registry**: Flat `Map` of all mobjects by ID, including sub-mobjects of VGroups.
 
 **Player**: Sequences segments within a section. Restores scene state from the section snapshot for section jumping.
