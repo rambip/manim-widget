@@ -165,21 +165,6 @@ def _new_scene_remove(self: Scene, *mobjects: Mobject) -> Scene:
     return _orig_scene_remove(self, *mobjects)
 
 
-_orig_scene_next_section = Scene.next_section
-
-
-def _new_scene_next_section(
-    self: Scene,
-    name: str = "unnamed",
-    section_type=None,
-    skip_animations: bool = False,
-) -> None:
-    obj = cast(Any, self)
-    if hasattr(obj, "_on_next_section"):
-        obj._on_next_section(name)
-    return _orig_scene_next_section(self, name, section_type, skip_animations)
-
-
 def apply_patches() -> None:
     _orig_init = VMobject.__init__
     cast(Any, VMobject)._orig_init = _orig_init
@@ -219,9 +204,6 @@ def apply_patches() -> None:
     cast(Any, Scene)._orig_remove = Scene.remove
     Scene.remove = _new_scene_remove  # type: ignore[method-assign]
 
-    cast(Any, Scene)._orig_next_section = Scene.next_section
-    Scene.next_section = _new_scene_next_section  # type: ignore[method-assign]
-
 
 def remove_patches() -> None:
     if hasattr(VMobject, "_orig_init"):
@@ -249,5 +231,3 @@ def remove_patches() -> None:
         Scene.add = cast(Any, Scene)._orig_add  # type: ignore[method-assign]
     if hasattr(Scene, "_orig_remove"):
         Scene.remove = cast(Any, Scene)._orig_remove  # type: ignore[method-assign]
-    if hasattr(Scene, "_orig_next_section"):
-        Scene.next_section = cast(Any, Scene)._orig_next_section  # type: ignore[method-assign]

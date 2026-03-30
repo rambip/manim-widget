@@ -39,6 +39,11 @@ class _DummyCamera:
     use_z_index = False
 
 
+class _DummyFileWriter:
+    def next_section(self, *args, **kwargs) -> None:
+        return None
+
+
 class CaptureRenderer:
     def __init__(
         self,
@@ -54,6 +59,7 @@ class CaptureRenderer:
         self._registry: set[Mobject] = set()
         self._updater_mob_ids: set[int] = set()
         self.camera = _DummyCamera()
+        self.file_writer = _DummyFileWriter()
 
     def init_scene(self, scene: Scene) -> None:
         self._scene = scene

@@ -6,7 +6,8 @@ import traitlets
 from pathlib import Path
 from typing import cast
 from anywidget import AnyWidget
-from manim import Scene, SceneFileWriter
+from manim import VMobject, Scene, SceneFileWriter
+from manim.scene.section import DefaultSectionType
 from manim.typing import PixelArray
 
 from . import patches
@@ -51,54 +52,19 @@ class ManimWidget(AnyWidget, Scene):
         self._renderer = CaptureRenderer(fps=fps)
         self._snapshots: dict[str, dict] = {}
         self._pending_snapshot: dict | None = None
-        self._construct_fn: callable | None = None
+        self.active_mob_ids: set[int] = set()
 
         AnyWidget.__init__(self)
         Scene.__init__(self, renderer=self._renderer, **kwargs)
 
-    def set_construct_fn(self, fn: callable) -> None:
-        self._construct_fn = fn
-
-    def _on_next_section(self, name: str) -> None:
-        if self._pending_snapshot is not None:
-            self._snapshots[self._pending_snapshot["name"]] = self._pending_snapshot[
-                "snapshot"
-            ]
-        self._pending_snapshot = {
-            "name": name,
-            "snapshot": self._capture_snapshot(),
-        }
-
-    def _capture_snapshot(self) -> dict[str, dict]:
-        snapshot = {}
-        renderer = cast(CaptureRenderer, self.renderer)
-        for mob_id in renderer.registry:
-            for mob in self.mobjects:
-                for m in mob.get_family():
-                    if id(m) == mob_id:
-                        snapshot[_short_id(mob_id)] = {
-                            "position": list(m.get_center()),
-                            "opacity": m.get_fill_opacity()
-                            if hasattr(m, "get_fill_opacity")
-                            else 1.0,
-                            "color": str(m.get_color())
-                            if hasattr(m, "get_color")
-                            else "#ffffff",
-                        }
-        return snapshot
-
-    def construct(self) -> None:
-        if self._construct_fn is None:
-            return
-
+        # We may want a cleaner lifecycle later, but this is good enough for now.
         patches.apply_patches()
         try:
             self.renderer.init_scene(self)
             self._pending_snapshot = None
             self._snapshots = {}
-            self._on_next_section("initial")
-
-            self._construct_fn(self)
+            self.next_section("initial")
+            self.construct()
 
             if self._pending_snapshot is not None:
                 self._snapshots[self._pending_snapshot["name"]] = (
@@ -116,5 +82,35 @@ class ManimWidget(AnyWidget, Scene):
             self.scene_data = json.dumps(data)
         finally:
             patches.remove_patches()
+
+    def _capture_snapshot(self) -> dict[str, dict]:
+        snapshot = {}
+        renderer = cast(CaptureRenderer, self.renderer)
+        for mob in renderer.registry:
+            snapshot[_short_id(id(mob))] = {
+                "position": list(mob.get_center()),
+                "opacity": mob.get_fill_opacity() if isinstance(mob, VMobject) else 1.0,
+                "color": str(mob.get_color())
+                if isinstance(mob, VMobject)
+                else "#ffffff",
+            }
+        return snapshot
+
+    def next_section(
+        self,
+        name: str = "unnamed",
+        section_type: str = DefaultSectionType.NORMAL,
+        skip_animations: bool = False,
+    ) -> None:
+        if self._pending_snapshot is not None:
+            self._snapshots[self._pending_snapshot["name"]] = self._pending_snapshot[
+                "snapshot"
+            ]
+        self._pending_snapshot = {
+            "name": name,
+            "snapshot": self._capture_snapshot(),
+        }
+        cast(CaptureRenderer, self.renderer).start_section(name)
+        super().next_section(name, section_type, skip_animations)
 
     _esm = _JS_BUNDLE
