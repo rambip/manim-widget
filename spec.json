@@ -1,0 +1,517 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://manim-widget/schema/v1",
+  "title": "ManimWidgetScene",
+  "description": "Complete serialized Manim scene for client-side playback.",
+  "type": "object",
+  "required": ["version", "fps", "sections"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "fps": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Dry-run frame rate used for 'data' commands."
+    },
+    "sections": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/Section" }
+    }
+  },
+
+  "definitions": {
+    "Section": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "unsupported": {
+          "type": "boolean",
+          "description": "If true, this section cannot be played back. JS must show a warning."
+        },
+        "unsupported_reason": {
+          "type": "string",
+          "description": "Human-readable explanation of why the section is unsupported."
+        },
+        "snapshot": {
+          "oneOf": [{ "$ref": "#/definitions/Snapshot" }, { "type": "null" }],
+          "description": "Full scene state at section entry. Null only when unsupported=true."
+        },
+        "construct": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Command" },
+          "description": "Ordered list of commands to execute. Empty when unsupported=true."
+        }
+      }
+    },
+
+    "Snapshot": {
+      "type": "object",
+      "description": "Flat map of mob_id -> MobjectState. Fully self-contained.",
+      "additionalProperties": { "$ref": "#/definitions/MobjectState" }
+    },
+
+    "MobjectState": {
+      "oneOf": [
+        { "$ref": "#/definitions/VMobjectState" },
+        { "$ref": "#/definitions/TextState" },
+        { "$ref": "#/definitions/MathTexState" },
+        { "$ref": "#/definitions/VGroupState" },
+        { "$ref": "#/definitions/ValueTrackerState" }
+      ]
+    },
+
+    "VMobjectState": {
+      "type": "object",
+      "required": ["kind", "points", "position", "opacity"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "Circle",
+            "Square",
+            "Rectangle",
+            "RoundedRectangle",
+            "Triangle",
+            "Polygon",
+            "RegularPolygon",
+            "Hexagon",
+            "Pentagon",
+            "Polygram",
+            "ArcPolygon",
+            "Line",
+            "DashedLine",
+            "CubicBezier",
+            "Arrow",
+            "DoubleArrow",
+            "Vector",
+            "CurvedArrow",
+            "CurvedDoubleArrow",
+            "Arc",
+            "ArcBetweenPoints",
+            "Ellipse",
+            "Annulus",
+            "AnnularSector",
+            "Sector",
+            "TangentialArc",
+            "Dot",
+            "SmallDot",
+            "LargeDot",
+            "BackgroundRectangle",
+            "SurroundingRectangle",
+            "Underline",
+            "Cross",
+            "Angle",
+            "RightAngle",
+            "Star",
+            "Brace",
+            "BraceBetweenPoints",
+            "ArcBrace",
+            "SVGMobject",
+            "VMobjectFromSVGPath",
+            "VMobject"
+          ]
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "number" },
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "description": "Bezier control points, shape (n, 3)."
+        },
+        "position": {
+          "$ref": "#/definitions/Vec3"
+        },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "color": { "$ref": "#/definitions/Color" },
+        "fill_color": { "$ref": "#/definitions/Color" },
+        "fill_opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "stroke_color": { "$ref": "#/definitions/Color" },
+        "stroke_width": { "type": "number", "minimum": 0 },
+        "stroke_opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "z_index": { "type": "number" }
+      }
+    },
+
+    "TextState": {
+      "type": "object",
+      "required": ["kind", "text", "position", "opacity"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["Text", "Paragraph", "MarkupText"]
+        },
+        "text": { "type": "string" },
+        "position": { "$ref": "#/definitions/Vec3" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "color": { "$ref": "#/definitions/Color" },
+        "font_size": { "type": "number" },
+        "z_index": { "type": "number" }
+      }
+    },
+
+    "MathTexState": {
+      "type": "object",
+      "required": ["kind", "latex", "position", "opacity"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "type": "string", "enum": ["MathTex", "Tex"] },
+        "latex": {
+          "type": "string",
+          "description": "Raw LaTeX string. Rendered in JS via KaTeX."
+        },
+        "position": { "$ref": "#/definitions/Vec3" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "color": { "$ref": "#/definitions/Color" },
+        "font_size": { "type": "number" },
+        "z_index": { "type": "number" }
+      }
+    },
+
+    "VGroupState": {
+      "type": "object",
+      "required": ["kind", "children", "position", "opacity"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "type": "string", "const": "VGroup" },
+        "children": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Ordered list of mob_ids. Children are always independently present in the same snapshot or registered before use."
+        },
+        "position": { "$ref": "#/definitions/Vec3" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "z_index": { "type": "number" }
+      }
+    },
+
+    "ValueTrackerState": {
+      "type": "object",
+      "required": ["kind", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "type": "string", "const": "ValueTracker" },
+        "value": {
+          "type": "number",
+          "description": "Current tracked value. Not rendered; used by updater-driven animations."
+        }
+      }
+    },
+
+    "Command": {
+      "oneOf": [
+        { "$ref": "#/definitions/AddCommand" },
+        { "$ref": "#/definitions/RemoveCommand" },
+        { "$ref": "#/definitions/AnimateCommand" },
+        { "$ref": "#/definitions/DataCommand" }
+      ]
+    },
+
+    "AddCommand": {
+      "type": "object",
+      "description": "Register or update a mobject in the JS scene graph. Used for scene.add() and pre-registration of Transform targets (opacity 0).",
+      "required": ["cmd", "id", "state"],
+      "additionalProperties": false,
+      "properties": {
+        "cmd": { "type": "string", "const": "add" },
+        "id": { "type": "string" },
+        "state": { "$ref": "#/definitions/MobjectState" }
+      }
+    },
+
+    "RemoveCommand": {
+      "type": "object",
+      "description": "Remove a mobject from the JS scene graph and free it from the registry. Always emitted after FadeOut/Uncreate/Unwrite animations and after ReplacementTransform (removes source).",
+      "required": ["cmd", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "cmd": { "type": "string", "const": "remove" },
+        "id": { "type": "string" }
+      }
+    },
+
+    "AnimateCommand": {
+      "type": "object",
+      "description": "One scene.play() call. All animations run in parallel unless composition types dictate otherwise.",
+      "required": ["cmd", "duration", "animations"],
+      "additionalProperties": false,
+      "properties": {
+        "cmd": { "type": "string", "const": "animate" },
+        "duration": { "type": "number", "minimum": 0 },
+        "animations": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/AnimationDescriptor" }
+        }
+      }
+    },
+
+    "DataCommand": {
+      "type": "object",
+      "description": "One scene.play() call that involves updaters. Dense per-frame geometry for all affected mobjects.",
+      "required": ["cmd", "duration", "frames"],
+      "additionalProperties": false,
+      "properties": {
+        "cmd": { "type": "string", "const": "data" },
+        "duration": { "type": "number", "minimum": 0 },
+        "frames": {
+          "type": "array",
+          "description": "Length = ceil(duration * fps). Each entry is a partial MobjectState map.",
+          "items": {
+            "type": "object",
+            "description": "Map of mob_id -> partial frame state.",
+            "additionalProperties": { "$ref": "#/definitions/FrameState" }
+          }
+        }
+      }
+    },
+
+    "FrameState": {
+      "type": "object",
+      "description": "Per-frame update. Only fields that change frame-to-frame are included.",
+      "additionalProperties": false,
+      "properties": {
+        "points": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "number" },
+            "minItems": 3,
+            "maxItems": 3
+          }
+        },
+        "position": { "$ref": "#/definitions/Vec3" },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "value": {
+          "type": "number",
+          "description": "For ValueTracker only."
+        }
+      }
+    },
+
+    "AnimationDescriptor": {
+      "type": "object",
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "$ref": "#/definitions/AnimationType" },
+        "id": {
+          "type": "string",
+          "description": "mob_id of the primary target mobject."
+        },
+        "rate_func": { "$ref": "#/definitions/RateFunc" },
+        "params": { "$ref": "#/definitions/AnimationParams" }
+      },
+      "additionalProperties": false
+    },
+
+    "AnimationType": {
+      "type": "string",
+      "enum": [
+        "Create",
+        "Uncreate",
+        "DrawBorderThenFill",
+        "Write",
+        "Unwrite",
+        "AddTextLetterByLetter",
+        "RemoveTextLetterByLetter",
+        "TypeWithCursor",
+        "UntypeWithCursor",
+        "AddTextWordByWord",
+        "ShowIncreasingSubsets",
+        "ShowPartial",
+        "ShowSubmobjectsOneByOne",
+        "SpiralIn",
+
+        "FadeIn",
+        "FadeOut",
+
+        "Transform",
+        "ReplacementTransform",
+        "TransformFromCopy",
+        "FadeTransform",
+        "ClockwiseTransform",
+        "CounterclockwiseTransform",
+        "Swap",
+        "CyclicReplace",
+        "ScaleInPlace",
+        "ShrinkToCenter",
+        "FadeToColor",
+        "TransformMatchingShapes",
+        "TransformMatchingTex",
+
+        "Shift",
+        "Rotate",
+        "Scale",
+        "GrowFromCenter",
+        "GrowFromEdge",
+        "GrowFromPoint",
+        "GrowArrow",
+        "SpinInFromNothing",
+        "MoveAlongPath",
+        "Homotopy",
+
+        "Indicate",
+        "Flash",
+        "Circumscribe",
+        "Wiggle",
+        "ShowPassingFlash",
+        "ApplyWave",
+        "FocusOn",
+        "Pulse",
+        "ShowCreationThenDestruction",
+        "WiggleOutThenIn",
+        "Blink",
+
+        "AnimationGroup",
+        "LaggedStart",
+        "Succession",
+        "LaggedStartMap",
+
+        "UpdateFromFunc",
+        "UpdateFromAlphaFunc",
+
+        "ChangingDecimal",
+        "ChangeDecimalToValue",
+
+        "Rotating",
+        "Broadcast",
+
+        "Wait"
+      ]
+    },
+
+    "AnimationParams": {
+      "type": "object",
+      "description": "Animation-specific parameters. All fields are optional; omit when unused.",
+      "additionalProperties": false,
+      "properties": {
+        "target_id": {
+          "type": "string",
+          "description": "For Transform, ReplacementTransform, TransformFromCopy, FadeTransform: mob_id of the pre-registered target (added with opacity 0 before this animate command)."
+        },
+
+        "vector": {
+          "$ref": "#/definitions/Vec3",
+          "description": "Shift: displacement vector."
+        },
+
+        "angle": {
+          "type": "number",
+          "description": "Rotate: angle in radians."
+        },
+        "axis": {
+          "$ref": "#/definitions/Vec3",
+          "description": "Rotate: rotation axis. Defaults to [0,0,1]."
+        },
+
+        "scale_factor": {
+          "type": "number",
+          "description": "Scale / ScaleInPlace."
+        },
+
+        "color": {
+          "$ref": "#/definitions/Color",
+          "description": "FadeToColor: target color."
+        },
+
+        "point": {
+          "$ref": "#/definitions/Vec3",
+          "description": "GrowFromPoint: origin point."
+        },
+
+        "path_id": {
+          "type": "string",
+          "description": "MoveAlongPath: mob_id of the path VMobject."
+        },
+
+        "value": {
+          "type": "number",
+          "description": "ChangeDecimalToValue: target value."
+        },
+
+        "lag_ratio": {
+          "type": "number",
+          "minimum": 0,
+          "description": "LaggedStart / LaggedStartMap: stagger ratio."
+        },
+
+        "animations": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/AnimationDescriptor" },
+          "description": "AnimationGroup, Succession, LaggedStart: child animation descriptors."
+        },
+
+        "remover": {
+          "type": "boolean",
+          "description": "Always false in V1. FadeOut/Uncreate/Unwrite use an explicit remove command instead."
+        }
+      }
+    },
+
+    "RateFunc": {
+      "type": "string",
+      "enum": [
+        "linear",
+        "smooth",
+        "rush_into",
+        "rush_from",
+        "slow_into",
+        "there_and_back",
+        "wiggle",
+        "ease_in_sine",
+        "ease_out_sine",
+        "ease_in_out_sine",
+        "ease_in_quad",
+        "ease_out_quad",
+        "ease_in_out_quad",
+        "ease_in_cubic",
+        "ease_out_cubic",
+        "ease_in_out_cubic",
+        "ease_in_quart",
+        "ease_out_quart",
+        "ease_in_out_quart",
+        "ease_in_quint",
+        "ease_out_quint",
+        "ease_in_out_quint",
+        "ease_in_expo",
+        "ease_out_expo",
+        "ease_in_out_expo",
+        "ease_in_circ",
+        "ease_out_circ",
+        "ease_in_out_circ",
+        "ease_in_back",
+        "ease_out_back",
+        "ease_in_out_back",
+        "ease_in_elastic",
+        "ease_out_elastic",
+        "ease_in_out_elastic",
+        "ease_in_bounce",
+        "ease_out_bounce",
+        "ease_in_out_bounce"
+      ]
+    },
+
+    "Vec3": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 3,
+      "maxItems": 3,
+      "description": "[x, y, z]"
+    },
+
+    "Color": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{6}$",
+      "description": "Hex color string, e.g. '#ff0000'."
+    }
+  }
+}

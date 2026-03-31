@@ -11,3 +11,7 @@ wheels/
 
 __marimo__
 media
+
+js/node_modules
+.pytest_cache
+.ruff_cache
