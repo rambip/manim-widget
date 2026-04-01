@@ -147,6 +147,21 @@ When `skip_animations=True`:
 
 JSON kind: `"MethodAnimation"`
 
+### `_MethodAnimation` Structure
+
+`_MethodAnimation` is a subclass of `MoveToTarget` with these key attributes:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `methods` | `list[MethodWithArgs]` | List of methods to be animated with their arguments |
+| `mobject` | `Mobject` | The mobject being animated |
+| `target` | `Mobject` | The target state (all methods applied) |
+
+Each `MethodWithArgs` contains:
+- `method`: The actual method object
+- `args`: Positional arguments passed to the method
+- `kwargs`: Keyword arguments passed to the method
+
 ### Key Attributes
 
 ```python
@@ -331,3 +346,114 @@ A `RATE_FUNC_MAP` in `py2ts.cjs` translates Python string identifiers to JS func
 | Transform targets | Target geometry inlined in animation payload (target may never have been `add()`ed) |
 | Position | `get_center()` — works for all mobjects including Text |
 | Transformation matrix | Only `OpenGLMobject` has `model_matrix`. Use `get_center()` for regular mobjects. |
+
+---
+
+## Animation Lifecycle Correction: `Create` Registration Timing
+
+### What Actually Happens
+
+`Create` mobjects are registered in `Animation._setup_scene(scene)`, not in `Animation.begin()`.
+
+For `self.play(Create(c))`, the relevant sequence is:
+
+1. `Scene.play()` delegates to `renderer.play(...)`
+2. `scene.compile_animation_data(...)` computes `self.animations`
+3. `scene.add_mobjects_from_animations(...)` skips introducers (`Create` is skipped)
+4. `scene.begin_animations()` runs, and for each animation:
+   - `animation._setup_scene(scene)`
+   - `animation.begin()`
+
+The insertion point is step 4a.
+
+### Direct Verification (`uv run python`)
+
+Observed with a minimal script:
+
+```python
+s = Scene()
+c = Circle()
+a = Create(c)
+compiled = s.compile_animations(a)
+s.add_mobjects_from_animations(compiled)
+anim = compiled[0]
+
+# initial: c not in scene
+anim._setup_scene(s)  # c becomes part of scene.mobjects here
+anim.begin()          # no additional registration
+```
+
+Observed state transitions:
+
+- Initial: `c in s.mobjects == False`
+- After `_setup_scene`: `True`
+- After `begin`: still `True`
+
+### Why the Previous Hypothesis Was Wrong
+
+- `begin()` initializes animation state (`starting_mobject`, updater suspension, first-frame interpolation)
+- Registration for introducers is handled one step earlier in `_setup_scene()`:
+
+```python
+if self.is_introducer() and self.mobject not in scene.get_mobject_family_members():
+    scene.add(self.mobject)
+```
+
+- `scene.restructure_mobjects()` is not the mechanism that introduces `Create` mobjects
+
+### Related Remover Behavior
+
+- For remover animations like `FadeOut`, removal occurs in `animation.clean_up_from_scene(scene)`
+- `anim.finish()` alone does not remove; cleanup does
+
+### Implication for `CaptureRenderer`
+
+To match Manim behavior, a custom/dry renderer must preserve this lifecycle:
+
+1. `animation._setup_scene(scene)`
+2. `animation.begin()`
+3. interpolation/update loop
+4. `animation.finish()`
+5. `animation.clean_up_from_scene(scene)`
+
+If step 1 is skipped, `Create` without prior `self.add()` never appears in `scene.mobjects`, which explains empty snapshots.
+
+---
+
+## Mobject Hierarchy and Family Members
+
+The difference between these concepts lies in the mobject hierarchy and how family members are extracted and filtered at different levels.
+
+### Core Concepts
+
+**Mobject**: The base class for all displayable objects in Manim. It has a `submobjects` list that creates a hierarchical structure.
+
+**get_family()**: Instance method that returns all mobjects in the hierarchy including self and all submobjects recursively.
+
+**family_members_with_points()**: Filtered version that only returns family members that have actual geometric points (non-empty).
+
+**extract_mobject_family_members()**: Utility function that processes multiple mobjects and optionally filters by points or sorts by z-index.
+
+**get_mobject_family_members()**: Scene-level method that gets family members of all mobjects in the scene.
+
+### Hierarchy and Usage
+
+The flow is:
+1. Individual mobjects use `get_family()` or `family_members_with_points()`
+2. Utility functions use `extract_mobject_family_members()` to process multiple mobjects
+3. Scene and Camera use these utilities to get all displayable mobjects
+
+### Key Differences
+
+| Method | Scope | Filtering | Use Case |
+|--------|-------|-----------|----------|
+| `get_family()` | Single mobject | None | Get complete hierarchy |
+| `family_members_with_points()` | Single mobject | Points only | Get renderable objects |
+| `extract_mobject_family_members()` | Multiple mobjects | Optional | Batch processing |
+| `get_mobject_family_members()` | Scene level | Renderer-dependent | Scene rendering |
+
+### Notes
+
+- `get_family()` removes duplicates using `remove_list_redundancies()`
+- The camera uses `extract_mobject_family_members()` with `only_those_with_points=True`
+- Scene's method behavior differs between Cairo and OpenGL renderers

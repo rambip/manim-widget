@@ -137,7 +137,8 @@
         "stroke_color": { "$ref": "#/definitions/Color" },
         "stroke_width": { "type": "number", "minimum": 0 },
         "stroke_opacity": { "type": "number", "minimum": 0, "maximum": 1 },
-        "z_index": { "type": "number" }
+        "z_index": { "type": "number" },
+        "hidden": { "type": "boolean" }
       }
     },
 
@@ -155,7 +156,11 @@
         "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
         "color": { "$ref": "#/definitions/Color" },
         "font_size": { "type": "number" },
-        "z_index": { "type": "number" }
+        "z_index": { "type": "number" },
+        "hidden": {
+          "type": "boolean",
+          "description": "Whether the object is initially hidden. Used for Transform animations; override opacity"
+        }
       }
     },
 
@@ -174,6 +179,10 @@
         "color": { "$ref": "#/definitions/Color" },
         "font_size": { "type": "number" },
         "z_index": { "type": "number" }
+      },
+      "hidden": {
+        "type": "boolean",
+        "description": "Whether the object is initially hidden. Used for Transform animations; override opacity"
       }
     },
 
@@ -190,7 +199,11 @@
         },
         "position": { "$ref": "#/definitions/Vec3" },
         "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
-        "z_index": { "type": "number" }
+        "z_index": { "type": "number" },
+        "hidden": {
+          "type": "boolean",
+          "description": "Whether the object is initially hidden. Used for Transform animations; override opacity"
+        }
       }
     },
 

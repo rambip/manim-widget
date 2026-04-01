@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from manim import ValueTracker
+from manim.mobject.types.vectorized_mobject import VMobject
+
 if TYPE_CHECKING:
-    from manim import Scene
+    from manim import Mobject, Scene
 
 _id_map: dict[int, str] = {}
 _counter = 0
@@ -30,12 +33,45 @@ def short_id(mob: object) -> str:
     return _id_map[key]
 
 
+def _opacity_for(mob: Mobject) -> float:
+    if isinstance(mob, VMobject):
+        return float(mob.get_fill_opacity())
+    if hasattr(mob, "opacity"):
+        return float(getattr(mob, "opacity"))
+    return 1.0
+
+
+def serialize_mobject(mob: Mobject) -> dict[str, object]:
+    state: dict[str, object] = {
+        "kind": type(mob).__name__,
+        "opacity": _opacity_for(mob),
+        "position": mob.get_center().tolist(),
+    }
+
+    if isinstance(mob, ValueTracker):
+        state["kind"] = "ValueTracker"
+        state["value"] = float(mob.get_value())
+
+    if hasattr(mob, "get_points"):
+        points = mob.get_points()
+        if len(points) > 0:
+            state["points"] = points.tolist()
+
+    if hasattr(mob, "get_family"):
+        family = mob.get_family()
+        if len(family) > 1:
+            state["children"] = [short_id(child) for child in family[1:]]
+
+    return state
+
+
 def build_snapshot(scene: Scene) -> dict[str, dict[str, object]]:
     result: dict[str, dict[str, object]] = {}
     for mob in scene.mobjects:
         for m in mob.get_family():
             mob_id = short_id(m)
-            result[mob_id] = {"id": mob_id}
+            if mob_id not in result:
+                result[mob_id] = serialize_mobject(m)
     return result
 
 

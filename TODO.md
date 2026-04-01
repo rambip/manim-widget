@@ -12,7 +12,7 @@ It has been updated with concrete behavior confirmed from local Manim internals,
 - If a field changes, update `spec.json` first, then Python/JS.
 - No video output in V1; dry-run only.
 - Do not call `Scene.next_section()` from our widget override.
-- **Rule R1 (Virtual Adds):** The Renderer and Serializer must treat Python Mobjects as read-only during transitions. Any state required for initialization (like starting at 0 opacity for a target mobject) must be encoded as metadata in the JSON command (`init_hidden`), never by mutating the Python mobject's attributes.
+- **Rule R1 (Virtual Adds):** The Renderer and Serializer must treat Python Mobjects as read-only during transitions. Any state required for initialization (like starting at 0 opacity for a target mobject) must be encoded as metadata in the JSON command (`hidden`), never by mutating the Python mobject's attributes.
 
 ---
 
@@ -153,15 +153,15 @@ Important:
 
 #### B.4.1 Emit pre-commands (Virtual Add Strategy)
 
-Before recording the `animate` command, emit required pre-registration. **Do NOT mutate Python state (like setting `B.opacity = 0`).** Use the `init_hidden` flag to instruct JS to override the initial state:
+Before recording the `animate` command, emit required pre-registration. **Do NOT mutate Python state (like setting `B.opacity = 0`).** Use the `hidden` flag to instruct JS to override the initial state:
 
-- `ReplacementTransform(A, B)` -> `{"cmd": "add", "id": short_id(B), "state": serialize_mobject(B), "init_hidden": True}`
-- `FadeTransform(A, B)` -> emit `add` for B with `init_hidden=True`
+- `ReplacementTransform(A, B)` -> `{"cmd": "add", "id": short_id(B), "state": serialize_mobject(B), "hidden": True}`
+- `FadeTransform(A, B)` -> emit `add` for B with `hidden=True`
 - `TransformFromCopy(A, B)` ->
   - `A_copy = A.copy()`
   - assign `short_id` to `A_copy`
-  - emit `add` for `A_copy` with `init_hidden=False`
-  - emit `add` for `B` with `init_hidden=True`
+  - emit `add` for `A_copy` with `hidden=False`
+  - emit `add` for `B` with `hidden=True`
   
 All pre-added mobjects must also be registered in `self.registry`.
 
@@ -419,13 +419,13 @@ V1 does not emit unsupported sections yet.
     * `add` emits `cmd=add` with non-empty structured `state`.
 
 ### Step 3: `renderer.play` Compile/Classify + Animate Emission (Section B - Animate Path)
-* **Action:** Implement animation compilation, run_time calculation, and `has_updaters=False` logic. Implement Virtual Adds (`init_hidden=True`).
+* **Action:** Implement animation compilation, run_time calculation, and `has_updaters=False` logic. Implement Virtual Adds (`hidden=True`).
 * **Tests needed here:**
     * `Create` emits one animate descriptor type `Create`.
     * `.animate.shift` emits type `Shift` with vector.
     * `.animate.rotate` emits type `Rotate` with angle.
     * `FadeOut` emits animate descriptor then post-remove command.
-    * `ReplacementTransform` emits pre-add target with `init_hidden=True`, animate descriptor, then post-remove source.
+    * `ReplacementTransform` emits pre-add target with `hidden=True`, animate descriptor, then post-remove source.
 
 ### Step 4: `renderer.play` Data Emission (Section B - Data Path)
 * **Action:** Implement `has_updaters=True` logic. Build the frame capture loop.

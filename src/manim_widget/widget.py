@@ -5,11 +5,12 @@ from typing import Any
 
 import traitlets
 import anywidget
+from manim import Mobject
 from manim import Scene
 
 from .renderer import CaptureRenderer
 from .serializer import serialize_scene
-from .snapshot import build_snapshot, short_id
+from .snapshot import build_snapshot, serialize_mobject, short_id
 
 
 class ManimWidget(anywidget.AnyWidget, Scene):
@@ -19,19 +20,15 @@ class ManimWidget(anywidget.AnyWidget, Scene):
         self._fps = fps
         self._renderer = CaptureRenderer(fps=fps)
         self._snapshots: dict[str, dict[str, Any]] = {}
-        self._pending_snapshot: dict[str, Any] | None = None
 
         anywidget.AnyWidget.__init__(self)
         Scene.__init__(self, renderer=self._renderer, **kwargs)
 
         self._renderer.init_scene(self)
-        self.next_section("initial")
+        self._renderer.open_section("initial")
         self.construct()
-
-        if self._pending_snapshot is not None:
-            self._snapshots[self._pending_snapshot["name"]] = self._pending_snapshot[
-                "snapshot"
-            ]
+        if self._renderer._current is not None:
+            self._snapshots[self._renderer._current.name] = build_snapshot(self)
 
         data = serialize_scene(
             fps=self._fps,
@@ -40,35 +37,53 @@ class ManimWidget(anywidget.AnyWidget, Scene):
         )
         self.scene_data = json.dumps(data)
 
-    def next_section(self, name: str = "unnamed", **kwargs: Any) -> None:
-        if self._pending_snapshot is not None:
-            self._snapshots[self._pending_snapshot["name"]] = self._pending_snapshot[
-                "snapshot"
-            ]
-        self._pending_snapshot = {"name": name, "snapshot": build_snapshot(self)}
+    def next_section(
+        self,
+        name: str = "unnamed",
+        section_type: str = "normal",
+        skip_animations: bool = False,
+    ) -> None:
+        del section_type, skip_animations
+        current = self._renderer._current
+        if current is not None:
+            self._snapshots[current.name] = self._snapshot_from_registry()
         self._renderer.open_section(name)
 
-    def add(self, *mobjects: Any) -> None:  # type: ignore[override]
+    def _snapshot_from_registry(self) -> dict[str, dict[str, Any]]:
+        snapshot: dict[str, dict[str, Any]] = {}
+        for mob in self._renderer.registry.values():
+            mob_sid = short_id(mob)
+            if mob_sid not in snapshot:
+                snapshot[mob_sid] = serialize_mobject(mob)
+        return snapshot
+
+    def add(self, *mobjects: Mobject) -> None:  # type: ignore[override]
         current = self._renderer._current
         if current is not None:
             for mob in mobjects:
-                current.commands.append(
-                    {
-                        "cmd": "add",
-                        "id": short_id(mob),
-                        "state": {},
-                    }
-                )
+                mob_id = id(mob)
+                if mob_id not in self._renderer.registry:
+                    self._renderer.register_mobject(mob)
+                    current.commands.append(
+                        {
+                            "cmd": "add",
+                            "id": short_id(mob),
+                            "state": serialize_mobject(mob),
+                        }
+                    )
         Scene.add(self, *mobjects)  # type: ignore[arg-type]
 
-    def remove(self, *mobjects: Any) -> None:  # type: ignore[override]
+    def remove(self, *mobjects: Mobject) -> None:  # type: ignore[override]
         current = self._renderer._current
         if current is not None:
             for mob in mobjects:
-                current.commands.append(
-                    {
-                        "cmd": "remove",
-                        "id": short_id(mob),
-                    }
-                )
+                mob_id = id(mob)
+                if self._renderer.is_active(mob):
+                    self._renderer.unregister_mobject(mob)
+                    current.commands.append(
+                        {
+                            "cmd": "remove",
+                            "id": short_id(mob),
+                        }
+                    )
         Scene.remove(self, *mobjects)  # type: ignore[arg-type]
