@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from manim import ValueTracker
+from manim import ValueTracker, VGroup
 from manim.mobject.types.vectorized_mobject import VMobject
 
 if TYPE_CHECKING:
@@ -41,6 +41,12 @@ def _opacity_for(mob: Mobject) -> float:
     return 1.0
 
 
+def _color_to_hex(color: object) -> str:
+    if hasattr(color, "to_hex"):
+        return color.to_hex()
+    return str(color)
+
+
 def serialize_mobject(mob: Mobject) -> dict[str, object]:
     if isinstance(mob, ValueTracker):
         return {
@@ -54,10 +60,33 @@ def serialize_mobject(mob: Mobject) -> dict[str, object]:
         "position": mob.get_center().tolist(),
     }
 
+    if isinstance(mob, VMobject) and not isinstance(mob, VGroup):
+        fill_color = mob.get_fill_color()
+        if fill_color:
+            state["fill_color"] = _color_to_hex(fill_color)
+        stroke_color = mob.get_stroke_color()
+        if stroke_color:
+            state["stroke_color"] = _color_to_hex(stroke_color)
+        stroke_width = mob.get_stroke_width()
+        if stroke_width:
+            state["stroke_width"] = stroke_width
+
     if hasattr(mob, "get_points"):
-        points = mob.get_points()
-        if len(points) > 0:
-            state["points"] = points.tolist()
+        subpaths = mob.get_subpaths()
+        if len(subpaths) > 1:
+            msg = f"Mobject {type(mob).__name__} has multiple subpaths ({len(subpaths)}); not supported"
+            raise ValueError(msg)
+        if subpaths:
+            raw_points = subpaths[0]
+            if len(raw_points) > 0:
+                points_3n1: list[list[float]] = []
+                for i in range(0, len(raw_points), 4):
+                    chunk = raw_points[i : i + 4]
+                    if i == 0:
+                        points_3n1.extend(chunk.tolist())
+                    else:
+                        points_3n1.extend(chunk[1:].tolist())
+                state["points"] = points_3n1
 
     if hasattr(mob, "get_family"):
         family = mob.get_family()

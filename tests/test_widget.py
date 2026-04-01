@@ -8,11 +8,14 @@ import pytest
 from jsonschema import validate
 from jsonschema import ValidationError as JsonSchemaValidationError
 from manim import (
+    BLUE,
     Circle,
     Create,
     FadeIn,
     FadeOut,
     MathTex,
+    PINK,
+    RED,
     ReplacementTransform,
     Rotate,
     Scene,
@@ -20,6 +23,7 @@ from manim import (
     Text,
     ValueTracker,
     VGroup,
+    WHITE,
     Write,
 )
 
@@ -377,3 +381,91 @@ class TestSnapshotOrdering:
         snap = data["sections"][1]["snapshot"]
         ids = list(snap.keys())
         assert len(ids) == 2
+
+
+class TestColors:
+    def test_fill_color_serialized_in_snapshot(self):
+        class ColorScene(ManimWidget):
+            def construct(self):
+                circle = Circle()
+                circle.set_fill(PINK, opacity=0.5)
+                self.add(circle)
+                self.next_section("after_add")
+
+        scene = ColorScene()
+        data = json.loads(scene.scene_data)
+        snap = data["sections"][1]["snapshot"]
+        assert len(snap) > 0
+        mob_state = next(iter(snap.values()))
+        assert "fill_color" in mob_state
+        assert mob_state["fill_color"].startswith("#")
+
+    def test_stroke_color_serialized_in_snapshot(self):
+        class StrokeColorScene(ManimWidget):
+            def construct(self):
+                circle = Circle()
+                circle.set_stroke(RED, width=3)
+                self.add(circle)
+                self.next_section("after_add")
+
+        scene = StrokeColorScene()
+        data = json.loads(scene.scene_data)
+        snap = data["sections"][1]["snapshot"]
+        mob_state = next(iter(snap.values()))
+        assert "stroke_color" in mob_state
+        assert mob_state["stroke_color"].startswith("#")
+
+    def test_color_and_opacity_together(self):
+        class BothColorScene(ManimWidget):
+            def construct(self):
+                circle = Circle()
+                circle.set_fill(BLUE, opacity=0.5)
+                circle.set_stroke(WHITE, width=2)
+                self.add(circle)
+                self.next_section("after_add")
+
+        scene = BothColorScene()
+        data = json.loads(scene.scene_data)
+        snap = data["sections"][1]["snapshot"]
+        mob_state = next(iter(snap.values()))
+        assert mob_state["fill_color"].startswith("#")
+        assert mob_state["stroke_color"].startswith("#")
+        assert mob_state["opacity"] == 0.5
+
+
+class TestBezierPointsFormat:
+    def test_circle_points_are_3n_plus_1(self):
+        class CircleScene(ManimWidget):
+            def construct(self):
+                c = Circle()
+                self.add(c)
+                self.next_section("after_add")
+
+        scene = CircleScene()
+        data = json.loads(scene.scene_data)
+        snap = data["sections"][1]["snapshot"]
+        for mob_state in snap.values():
+            if "points" in mob_state:
+                pts = mob_state["points"]
+                assert (len(pts) - 1) % 3 == 0, (
+                    f"points count {len(pts)} does not satisfy 3n+1"
+                )
+
+    def test_rectangle_points_are_3n_plus_1(self):
+        class RectScene(ManimWidget):
+            def construct(self):
+                from manim import Rectangle
+
+                r = Rectangle(width=2, height=1)
+                self.add(r)
+                self.next_section("after_add")
+
+        scene = RectScene()
+        data = json.loads(scene.scene_data)
+        snap = data["sections"][1]["snapshot"]
+        for mob_state in snap.values():
+            if "points" in mob_state:
+                pts = mob_state["points"]
+                assert (len(pts) - 1) % 3 == 0, (
+                    f"points count {len(pts)} does not satisfy 3n+1"
+                )

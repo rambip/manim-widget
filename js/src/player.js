@@ -1,4 +1,4 @@
-import { Scene, VMobject } from "manim-web";
+import { Scene, VMobject, Create, FadeIn, FadeOut, Write, ReplacementTransform, Shift, Rotate, Scale } from "manim-web";
 
 export class Player {
   constructor(scene, mobjectRegistry) {
@@ -53,7 +53,7 @@ export class Player {
 
     const vmob = new VMobject();
     if (state.points && state.points.length > 0) {
-      vmob.setPoints(state.points);
+      vmob.setPoints3D(state.points);
     }
     return vmob;
   }
@@ -104,6 +104,7 @@ export class Player {
       console.warn(`Section "${section.name}" is not supported: ${reason}`);
     }
 
+    this._scene.clear();
     this._restoreSnapshot(section.snapshot);
 
     const commands = section.construct || section.segments || [];
@@ -202,14 +203,14 @@ export class Player {
 
   _getAnimClasses() {
     return {
-      Create: this._scene._constructor.Create,
-      FadeIn: this._scene._constructor.FadeIn,
-      FadeOut: this._scene._constructor.FadeOut,
-      Write: this._scene._constructor.Write,
-      ReplacementTransform: this._scene._constructor.Repair,
-      Shift: this._scene._constructor.Shift,
-      Rotate: this._scene._constructor.Rotate,
-      Scale: this._scene._constructor.Scale,
+      Create,
+      FadeIn,
+      FadeOut,
+      Write,
+      ReplacementTransform,
+      Shift,
+      Rotate,
+      Scale,
     };
   }
 
