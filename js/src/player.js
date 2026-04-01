@@ -53,6 +53,11 @@ export class Player {
 
     const vmob = new VMobject();
     if (state.points && state.points.length > 0) {
+      if ((state.points.length - 1) % 3 !== 0) {
+        throw new Error(
+          `Invalid points array length: ${state.points.length}. Expected 3n+1 (got ${state.points.length}, which is not 3n+1).`
+        );
+      }
       vmob.setPoints3D(state.points);
     }
     return vmob;
