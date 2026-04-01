@@ -42,15 +42,17 @@ def _opacity_for(mob: Mobject) -> float:
 
 
 def serialize_mobject(mob: Mobject) -> dict[str, object]:
+    if isinstance(mob, ValueTracker):
+        return {
+            "kind": "ValueTracker",
+            "value": float(mob.get_value()),
+        }
+
     state: dict[str, object] = {
         "kind": type(mob).__name__,
         "opacity": _opacity_for(mob),
         "position": mob.get_center().tolist(),
     }
-
-    if isinstance(mob, ValueTracker):
-        state["kind"] = "ValueTracker"
-        state["value"] = float(mob.get_value())
 
     if hasattr(mob, "get_points"):
         points = mob.get_points()

@@ -2,23 +2,36 @@ from __future__ import annotations
 
 import json
 import math
+import os
 
 import pytest
+from jsonschema import validate
+from jsonschema import ValidationError as JsonSchemaValidationError
 from manim import (
     Circle,
     Create,
     FadeIn,
     FadeOut,
+    MathTex,
     ReplacementTransform,
     Rotate,
     Scene,
     Square,
+    Text,
+    ValueTracker,
+    VGroup,
     Write,
 )
 
 from manim_widget.serializer import serialize_scene
 from manim_widget.snapshot import build_snapshot, reset_id_counter, short_id
 from manim_widget.widget import ManimWidget
+
+
+def load_schema() -> dict:
+    schema_path = os.path.join(os.path.dirname(__file__), "..", "spec.json")
+    with open(schema_path) as f:
+        return json.load(f)
 
 
 @pytest.fixture(autouse=True)
@@ -168,8 +181,12 @@ class TestAnimations:
         add_cmds = [c for c in commands if c["cmd"] == "add"]
         animate_cmds = [c for c in commands if c["cmd"] == "animate"]
         remove_cmds = [c for c in commands if c["cmd"] == "remove"]
-        assert len(add_cmds) == 1
-        assert add_cmds[0]["state"]["opacity"] == 0
+        assert len(add_cmds) == 2
+        circle_add = add_cmds[0]
+        square_add = add_cmds[1]
+        assert circle_add["state"]["kind"] == "Circle"
+        assert square_add["state"]["hidden"] is True
+        assert square_add["state"]["opacity"] == 0
         assert len(animate_cmds) == 1
         assert animate_cmds[0]["animations"][0]["type"] == "ReplacementTransform"
         assert len(remove_cmds) == 1
@@ -276,3 +293,87 @@ class TestSerializeScene:
         json_str = json.dumps(result)
         parsed = json.loads(json_str)
         assert parsed["version"] == 1
+
+
+class TestSchemaValidation:
+    def test_simple_scene_validates_against_schema(self):
+        schema = load_schema()
+
+        class SimpleScene(ManimWidget):
+            def construct(self):
+                c = Circle()
+                self.play(Create(c))
+
+        scene = SimpleScene()
+        data = json.loads(scene.scene_data)
+        validate(instance=data, schema=schema)
+
+    def test_vgroup_scene_validates_against_schema(self):
+        schema = load_schema()
+
+        class VGroupScene(ManimWidget):
+            def construct(self):
+                c = Circle()
+                s = Square()
+                g = VGroup(c, s)
+                self.add(g)
+
+        scene = VGroupScene()
+        data = json.loads(scene.scene_data)
+        validate(instance=data, schema=schema)
+        construct = data["sections"][0]["construct"]
+        add_cmd = construct[0]
+        assert add_cmd["state"]["kind"] == "VGroup"
+        assert "children" in add_cmd["state"]
+
+    def test_valuetracker_scene_validates_against_schema(self):
+        schema = load_schema()
+
+        class ValueTrackerScene(ManimWidget):
+            def construct(self):
+                vt = ValueTracker(0)
+                self.add(vt)
+
+        scene = ValueTrackerScene()
+        data = json.loads(scene.scene_data)
+        validate(instance=data, schema=schema)
+        construct = data["sections"][0]["construct"]
+        add_cmd = construct[0]
+        assert add_cmd["state"]["kind"] == "ValueTracker"
+        assert "value" in add_cmd["state"]
+
+
+class TestLifecycleCorrectness:
+    def test_create_without_add_appears_in_next_section_snapshot(self):
+        class CreateNoAddScene(ManimWidget):
+            def construct(self):
+                c = Circle()
+                self.play(Create(c))
+                self.next_section("after_create")
+
+        scene = CreateNoAddScene()
+        data = json.loads(scene.scene_data)
+        snap_initial = data["sections"][0]["snapshot"]
+        snap_after = data["sections"][1]["snapshot"]
+        assert len(snap_initial) > 0
+        assert len(snap_after) > 0
+
+
+class TestSnapshotOrdering:
+    def test_snapshot_preserves_z_index_ordering(self):
+        class ZOrderScene(ManimWidget):
+            def construct(self):
+                c1 = Circle()
+                c2 = Circle()
+                c1.shift([-1, 0, 0])
+                c2.shift([1, 0, 0])
+                c1.set_z_index(1)
+                c2.set_z_index(2)
+                self.add(c1, c2)
+                self.next_section("after_add")
+
+        scene = ZOrderScene()
+        data = json.loads(scene.scene_data)
+        snap = data["sections"][1]["snapshot"]
+        ids = list(snap.keys())
+        assert len(ids) == 2

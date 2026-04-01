@@ -22,16 +22,20 @@ It has been updated with concrete behavior confirmed from local Manim internals,
 - short-id behavior basics
 - empty scene JSON envelope
 - basic section scaffolding and serializer shape
+- renderer compatibility attrs (`time`, `num_plays`, etc.)
+- `widget.add` overrides with real typed state
+- animate path (`Create`, `FadeIn`, `FadeOut`, `Shift`, `Rotate`, `ReplacementTransform`)
+- data path for updater-driven animations
+- snapshot and mobject serialization for all supported types
+- schema validation against `spec.json`
+- lifecycle correctness and snapshot ordering tests
 
 ### Failing
-- `Scene.play(...)` crashes because custom renderer lacks `time`
-- animation interception is still stubbed
-- `add.state` is currently `{}` (not a proper `MobjectState`)
-- snapshot serialization is still placeholder (`{"id": ...}`)
+- None (V1 implementation complete)
 
-### Immediate blocker
-`Scene.play()` reads `self.time`, which maps to `self.renderer.time`.
-Without `renderer.time`, all play-based tests fail before command capture starts.
+### Next
+- JS side implementation (manim-web player)
+- V2 features (unsupported sections, FadeTransform, etc.)
 
 ---
 

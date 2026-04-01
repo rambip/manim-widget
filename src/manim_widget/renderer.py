@@ -12,7 +12,7 @@ from manim.mobject.mobject import Mobject
 if TYPE_CHECKING:
     from manim import Scene
 
-from .snapshot import short_id
+from .snapshot import serialize_mobject, short_id
 
 
 @dataclass
@@ -98,6 +98,7 @@ class CaptureRenderer:
         if current is None:
             return
 
+        pre_commands: list[dict] = []
         animate_descriptors: list[dict] = []
         post_commands: list[dict] = []
 
@@ -106,6 +107,14 @@ class CaptureRenderer:
             animate_descriptors.append(desc)
 
             if isinstance(anim, ReplacementTransform):
+                target = anim.target_mobject
+                if not self.is_active(target):
+                    self.register_mobject(target)
+                    state = serialize_mobject(target)
+                    state["hidden"] = True
+                    pre_commands.append(
+                        {"cmd": "add", "id": short_id(target), "state": state}
+                    )
                 source = anim.mobject
                 post_commands.append({"cmd": "remove", "id": short_id(source)})
 
@@ -114,6 +123,9 @@ class CaptureRenderer:
 
             elif isinstance(anim, FadeOut):
                 post_commands.append({"cmd": "remove", "id": short_id(anim.mobject)})
+
+        if pre_commands:
+            current.commands.extend(pre_commands)
 
         current.commands.append(
             {
@@ -142,20 +154,21 @@ class CaptureRenderer:
     def _descriptor_from_animation(self, anim: Animation) -> dict[str, Any]:
         anim_name = type(anim).__name__
         params: dict[str, Any] = {}
+        descriptor: dict[str, Any] = {"type": anim_name}
 
         if hasattr(anim, "mobject"):
-            params["id"] = short_id(anim.mobject)
+            descriptor["id"] = short_id(anim.mobject)
 
         target_mobject = getattr(anim, "target_mobject", None)
         if target_mobject is not None:
-            params["target_id"] = short_id(target_mobject)
+            descriptor["target_id"] = short_id(target_mobject)
 
         if hasattr(anim, "rate_func"):
             rate_func_name = getattr(anim.rate_func, "__name__", "smooth")
             if "smooth" in rate_func_name.lower():
-                params["rate_func"] = "smooth"
+                descriptor["rate_func"] = "smooth"
             else:
-                params["rate_func"] = rate_func_name
+                descriptor["rate_func"] = rate_func_name
 
         methods = getattr(anim, "methods", None)
         if methods:
@@ -174,10 +187,9 @@ class CaptureRenderer:
                     anim_name = "Scale"
                     params["scale_factor"] = method_args[0]
 
-        return {
-            "type": anim_name,
-            "params": params,
-        }
+        descriptor["type"] = anim_name
+        descriptor["params"] = params
+        return descriptor
 
     def _play_data_path(
         self, scene: Scene, animations: list[Animation], run_time: float
