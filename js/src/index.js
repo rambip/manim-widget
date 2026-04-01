@@ -31,7 +31,7 @@ async function render({ model, el }) {
   let jsonData = null;
 
   async function loadScene(data) {
-    if (!data || !data.mobjects || !data.sections) {
+    if (!data || !data.sections) {
       console.warn("Invalid scene data");
       return;
     }
@@ -43,12 +43,15 @@ async function render({ model, el }) {
     registry = new MobjectRegistry();
     player = new Player(scene, registry);
 
-    const mobjectMap = new Map(jsonData.mobjects.map((m) => [m.id, m]));
-    registry.load(mobjectMap);
-    player.setfps(jsonData.fps);
-    player.setSections(jsonData.sections);
+    if (data.mobjects) {
+      const mobjectMap = new Map(data.mobjects.map((m) => [m.id, m]));
+      registry.load(mobjectMap);
+    }
 
-    scrubber.max = jsonData.sections.length - 1;
+    player.setfps(data.fps || 10);
+    player.setSections(data.sections);
+
+    scrubber.max = data.sections.length - 1;
     scrubber.value = 0;
 
     player.setOnSectionChange((index) => {
@@ -56,7 +59,7 @@ async function render({ model, el }) {
       if (section) {
         sectionInfo.textContent = section.name;
         scrubber.value = index;
-        if (!section.supported) {
+        if (section.unsupported) {
           warning.style.display = "block";
         } else {
           warning.style.display = "none";
@@ -67,7 +70,7 @@ async function render({ model, el }) {
     if (jsonData.sections.length > 0) {
       const firstSection = jsonData.sections[0];
       sectionInfo.textContent = firstSection.name;
-      if (!firstSection.supported) {
+      if (firstSection.unsupported) {
         warning.style.display = "block";
       }
     }

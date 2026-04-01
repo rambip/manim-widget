@@ -1,233 +1,233 @@
-# manim-widget — Agent Context
+# manim-widget - Agent Context
 
 ## Vision
 
-There is currently no Jupyter-compatible widget that lets you view and interact with a Manim scene without rendering the whole thing to video first. The goal is a lightweight, interactive widget that uses **manim-web** (Three.js-based) to provide a near-instantaneous authoring experience directly inside a notebook.
+`manim-widget` provides a Jupyter-compatible interactive Manim viewer without rendering video first. The Python side captures scene intent and state as JSON, and the JavaScript side replays it with `manim-web` in the browser.
 
-Primary target is **marimo**, but must work in any `anywidget`-compatible environment (JupyterLab, VS Code).
+Primary target is **marimo**, while staying compatible with any `anywidget` frontend (JupyterLab, VS Code notebooks, etc.).
+
+---
+
+## Current Project Status
+
+- V1 core is complete and passing local tests.
+- Current focus is pre-V2 hardening:
+  - docs updates,
+  - broader integration coverage,
+  - source/bundle sync safeguards,
+  - upstream issues for API shape inconsistencies.
+
+See `TODO.md` for the current checklist and priorities.
 
 ---
 
 ## Goals (priority order)
 
-### G1 — Speed
-Time between "user clicks run" and "animation starts playing" must be minimal. The dry-run (see Architecture) produces a single JSON blob. No video rendering, no round-trips.
+### G1 - Fast iteration
+Time from notebook execution to visible playback should be minimal. No video rendering pipeline in the loop.
 
-### G2 — 3D camera control
-JavaScript owns the camera entirely. Users orbit, zoom, and pan in real time via Three.js controls with no Python round-trip.
+### G2 - Browser-native interactivity
+Playback and camera interactions run in JS without Python round-trips.
 
-### G3 — Sections & Segments
-Users define sections via `next_section()`. Within sections, `self.play()` calls are recorded as **Segments**. JS handles playback sequencing and section jumping autonomously. Each section carries its own scene snapshot so JS can start from any section without replaying prior ones.
+### G3 - Section-aware navigation
+`next_section()` boundaries are preserved. Each section has a snapshot so the player can jump directly to sections.
 
-### G4 — Unsupported section warnings
-When a section uses unsupported features (geometry-level updaters, `always_redraw`, `Transform`), it is marked as unsupported in the JSON. The widget surfaces a clear inline message. No automatic video fallback in V1.
+### G4 - Deterministic data contract
+`spec.json` is the wire contract between Python and JS. Changes must remain schema-valid.
 
-### G5 — Small JSON & KaTeX
-Keep payloads minimal. Ship raw LaTeX strings for `MathTex`, rendered in the browser via KaTeX. No SVG paths unless necessary.
+### G5 - Clear unsupported behavior
+When features are unsupported, surface predictable warnings/errors instead of silent degradation.
 
 ---
 
 ## Vocabulary
 
-- **Scene** — The full `construct()` execution.
-- **Section** — A named group of segments, delimited by `next_section()`.
-- **Segment** — A single `self.play()` or `self.wait()` call. Primary unit of timing.
-- **Mobject** — A mathematical object with a stable short ID in a flat registry.
-- **VGroup** — A logical collection of Mobject IDs. JS propagates transforms to all children.
-- **Dry-run** — Execution of `construct()` at reduced frame rate (default 10 fps, configurable) to collect keyframes without producing video.
+- **Scene**: full execution of `construct()`.
+- **Section**: named region delimited by `next_section()`.
+- **Command stream**: serialized list of `add` / `remove` / `animate` / `data` commands for a section.
+- **Snapshot**: full mobject state at section entry.
+- **Dry-run**: execute scene logic to capture structured playback data only (no video file output).
 
 ---
 
 ## Architecture
 
-### Python side
+### Python side (`src/manim_widget/`)
 
-**`widget.py`**: Subclasses `anywidget.AnyWidget` and `manim.Scene`. Runs `construct()` as a dry-run, collects output via the custom renderer, serializes to JSON, pushes via a `Unicode` traitlet.
+- `widget.py`
+  - Defines `ManimWidget` and trait payload (`scene_data`).
+  - Owns section lifecycle and emits section snapshots + commands.
+- `renderer.py`
+  - Custom capture renderer compatible with Manim `Scene.play` lifecycle.
+  - Intercepts play/update flow to emit `animate` or `data` commands.
+- `snapshot.py`
+  - Short-id generation and mobject serialization.
+  - Builds section snapshots from scene families.
+- `serializer.py`
+  - Produces final JSON envelope consumed by JS.
 
-**`renderer.py`**: Subclasses Manim's renderer. Intercepts `play()`, `wait()`, `add()`, `remove()` to build the Segment and Section lists without writing any video frames.
+### JavaScript side (`js/src/`)
 
-**`serializer.py`**: Walks the renderer's collected data. Builds the flat Mobject registry via `Mobject.get_family()`. Serializes sections, snapshots, segments, animations, and keyframes.
+- `index.js`
+  - anywidget entry point and DOM/UI wiring.
+  - Creates scene, registry, player, and binds controls.
+- `registry.js`
+  - Runtime mobject registry keyed by stable IDs.
+- `player.js`
+  - Snapshot restore + command execution.
+  - Animation adapter layer to `manim-web` constructors/factories.
 
-**Monkey-patching** (applied at widget init, before `construct()`):
-- `VMobject.rotate` → accumulates `_track_rotation` side-channel
-- `VMobject.scale` → accumulates `_track_scale` side-channel
-- `VMobject.shift` / `move_to` → no side-channel needed; position recovered via `get_center()`
-- `VMobject.apply_function`, `become`, `put_start_and_end_on` → set `_dirty_geometry = True`
+### Bundled runtime (`src/manim_widget/static/index.js`)
 
-The patches are transparent to the user. Standard Manim code runs unchanged.
-
-### JavaScript side
-
-Receives the JSON blob, parses the flat registry, and drives manim-web.
-
-Builds as a single ESM bundle (`src/manim_widget/static/index.js`) with `manim-web` and `three` inlined (no `--external`), so Python packaging can ship one self-contained widget asset.
-
-**Mobject Registry**: Flat `Map` of all mobjects by ID, including sub-mobjects of VGroups.
-
-**Player**: Sequences segments within a section. Restores scene state from the section snapshot for section jumping.
-
-**Camera**: Three.js OrbitControls, fully autonomous.
-
----
-
-## Updater Strategy
-
-During the dry-run, updaters are called at each time step (injecting `dt = 1/fps`). After each step, the serializer reads per-mobject state:
-
-| Property | Source |
-|---|---|
-| `position` | `mob.get_center()` |
-| `rotation` | `mob._track_rotation` (side-channel) |
-| `scale` | `mob._track_scale` (side-channel) |
-| `opacity` | `mob.get_fill_opacity()` |
-| `color` | `mob.get_color()` |
-
-If `_dirty_geometry` is set on any mobject touched by an updater, the entire section is marked `"supported": false`.
+- Built from `js/src/*` via Bun.
+- This is what packaged widget users execute.
 
 ---
 
-## Supported Animations (V1)
+## Data Model (V1)
 
-| Animation | Handling |
-|---|---|
-| `Create`, `FadeIn`, `FadeOut`, `Write` | JS via manim-web |
-| `ReplacementTransform` | JS via manim-web |
-| `Shift`, `Rotate` via `.animate` | JS via manim-web |
-| `Transform` | ❌ Hard error — user redirected to `ReplacementTransform` |
-| `always_redraw` | ❌ Section marked unsupported |
-| Geometry-level updaters | ❌ Section marked unsupported |
-
----
-
-## JSON Schema
+Top-level payload shape:
 
 ```json
 {
+  "version": 1,
   "fps": 10,
-  "mobjects": [
-    {
-      "id": "a3f",
-      "kind": "Circle",
-      "matrix": [...],
-      "opacity": 1.0,
-      "color": "#ffffff",
-      "children": [],
-      "value": null
-    }
-  ],
   "sections": [
     {
-      "name": "intro",
-      "supported": true,
-      "snapshot": [
-        { "id": "a3f", "matrix": [...], "opacity": 1.0, "color": "#ffffff" }
-      ],
-      "segments": [
+      "name": "initial",
+      "snapshot": {},
+      "construct": [
+        { "cmd": "add", "id": "0", "state": { "kind": "Circle" } },
         {
-          "run_time": 1.0,
+          "cmd": "animate",
+          "duration": 1.0,
           "animations": [
-            { "kind": "Create", "mob_id": "a3f", "rate_func": "smooth" }
-          ],
-          "keyframes": [
-            { "frame": 0, "mob_id": "a3f", "position": [0, 0, 0], "rotation": 0.0, "scale": 1.0 }
+            { "type": "Create", "id": "0", "rate_func": "smooth", "params": {} }
           ]
         }
       ]
-    },
-    {
-      "name": "physics",
-      "supported": false,
-      "reason": "geometry-level update detected on mob_id a3f"
     }
   ]
 }
 ```
 
-**Notes:**
-- `mobjects` is the global registry (initial state of all mobjects ever used).
-- `snapshot` per section is the **full state** of every mobject — matrix, opacity, color. JS restores this to begin playback from any section without replaying prior ones.
-- `keyframes` are only emitted for mobjects that have active updaters in that segment.
-- `kind` drives which manim-web constructor JS calls. Known kinds: `Circle`, `Square`, `Line`, `Arrow`, `Text`, `MathTex`, `VGroup`, `ValueTracker`.
+Core commands:
+
+- `add`: introduce mobject state into JS scene.
+- `remove`: remove mobject by id.
+- `animate`: high-level animation descriptors.
+- `data`: per-frame data for updater-driven sections.
 
 ---
 
-## Manim Internals Reference
+## Supported/Important Behavior (V1)
 
-### Renderer interface
-Custom renderer subclasses Manim's base renderer and overrides:
-- `play(scene, animations)` — record segment
-- `update_frame(scene, moving_mobjects)` — no-op (no video)
-- `init_scene(scene)` — setup
-- `scene_finished(scene)` — finalize
+- `Create`, `FadeIn`, `FadeOut`, `Write`, `ReplacementTransform`.
+- `.animate.shift`, `.animate.rotate`, `.animate.scale` mapped through descriptor params.
+- Snapshot restoration at section boundaries.
+- Invalid point-array shape (not `3n+1`) raises JS error.
 
-### Mobject points data
+Known integration nuance:
 
-| Type | has points | is VMobject | family_size |
-|---|---|---|---|
-| Circle, Square, Line | True | True | 1 |
-| Arrow | True | True | 2 (body + tip) |
-| Text | False | True | 6 |
-| VGroup | False | True | 1 + n_children |
-| ValueTracker | True | False | 1 |
+- Some `manim-web` animation exports may appear class-like in one runtime path and factory-like in another.
+- `Shift` currently has explicit compatibility handling in `player.js` for class-vs-factory shape.
+- Pre-V2 work includes extending this hardening pattern to other animations.
 
-`Text` has `points=False` — cannot be point-animated, only opacity/position.
+---
 
-### ValueTracker
-- Is `Mobject` but NOT `VMobject`. Value stored in `points` array.
-- `.animate.set_value()` uses `_AnimationBuilder`, compiled to `Animation` on `scene.play()`.
+## Testing Strategy
 
-### Transform vs ReplacementTransform
-- Visually identical during animation.
-- After: `Transform` keeps source in scene graph (now visually = target). `ReplacementTransform` swaps source for target in scene graph.
-- Silent conversion is **not safe** — breaks subsequent `source.animate.X()` calls.
-- V1 strategy: hard error on `Transform`, require `ReplacementTransform`.
+### Python tests
+
+- Validate serialization/snapshot semantics and command stream correctness.
+
+### Playwright integration (`tests/test_playwright_integration.py`)
+
+- Spins local HTTP server.
+- Serves JS modules and generated HTML scene pages.
+- Captures browser console/page errors through a fixture.
+- Verifies UI + runtime behavior, including playback error checks.
+
+Important current gap being addressed:
+
+- Source-vs-bundle parity and runtime import-shape parity (CDN/module path vs packaged bundle).
+
+---
+
+## Drift and Parity Risks
+
+Two separate risks exist and both matter:
+
+1. **Source vs bundled artifact drift**
+   - Tests can run against `js/src/*` while users run `src/manim_widget/static/index.js`.
+   - If bundle is stale, tests may pass while notebooks fail.
+
+2. **Runtime export-shape drift**
+   - Different module pipelines can expose animation APIs differently (class-like vs factory-like).
+   - Adapter logic in `player.js` should avoid assuming one shape.
+
+Mitigation direction:
+
+- Add tests covering packaged bundle path.
+- Enforce source/bundle sync checks in CI.
+- Keep animation adapter defensive for both constructor and factory APIs.
 
 ---
 
 ## Repository Structure
 
-```
+```text
 manim-widget/
-  js/
-    src/
-      index.js       ← anywidget entry point
-      registry.js    ← flat mobject Map
-      player.js      ← segment sequencer, section jumping
-    package.json     ← manim-web, three, katex
-  python/
+  src/
     manim_widget/
       __init__.py
       widget.py
       renderer.py
       serializer.py
-    tests/
-  pyproject.toml     ← uv, bundles js/dist/
-  AGENTS.md
+      snapshot.py
+      static/
+        index.js
+  js/
+    src/
+      index.js
+      player.js
+      registry.js
+    package.json
+  tests/
+    test_playwright_integration.py
+  spec.json
+  pyproject.toml
   TODO.md
+  AGENTS.md
 ```
 
 ---
 
 ## Tooling
 
-| Concern | Tool |
-|---|---|
-| Python package manager | uv |
-| JS bundler | bun |
-| JS rendering | manim-web + three + katex |
-| Widget bridge | anywidget |
+- Python env/deps: `uv`
+- JS deps/build: `bun`
+- Widget bridge: `anywidget`
+- Browser integration tests: `pytest` + `pytest-playwright`
+
+Useful commands:
+
+- `uv run pytest -q`
+- `uv run pytest -q tests/test_playwright_integration.py`
+- `bun run build` (from `js/`)
 
 ---
 
-## Style
+## Implementation Guidelines
 
-- **Python**: PEP 8, strict type hints.
-- **JS**: ES2020, no semicolons, readable over concise.
-- **Logic**: If a transformation can be computed in JS, do it there.
+- Keep Python mobjects as source of truth for end-state; transition hints belong in command metadata.
+- Prefer explicit serializer/adapter logic over implicit conversion.
+- When changing payload shape, update `spec.json` and tests together.
+- For JS animation adapters, prefer compatibility wrappers over runtime assumptions.
 
 ---
 
-## Reference Repositories
+## External References
 
-- **maloyan/manim-web** — Three.js Manim clone. `tool/py2ts.cjs` transpiler, mobject hierarchy, KaTeX/MathJax rendering.
-- **ManimCommunity/manim** — Python side. `Mobject.get_family()`, OpenGL/Cairo renderer, `next_section()`, `ValueTracker`, rate functions.
+- `maloyan/manim-web` (animation/runtime behavior)
+- `ManimCommunity/manim` (scene lifecycle and animation semantics)

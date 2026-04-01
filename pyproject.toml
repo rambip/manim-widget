@@ -13,25 +13,13 @@ dependencies = [
 ]
 
 [build-system]
-requires = ["hatchling", "hatch-jupyter-builder>=0.5.0"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.10.10,<0.11.0"]
+build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "jsonschema>=4.26.0",
     "marimo>=0.21.1",
-    "pytest>=8.0.0",
+    "pytest>=9.0.2",
     "ruff>=0.15.8",
 ]
-
-[tool.hatch.build]
-artifacts = ["src/manim_widget/static/*.js"]
-
-#[tool.hatch.build.hooks.jupyter-builder]
-#build-function = "hatch_jupyter_builder.npm_builder"
-#ensured-targets = ["src/manim_widget/static/index.js"]
-#skip-if-exists = ["src/manim_widget/static/index.js"]
-#dependencies = ["hatch-jupyter-builder>=0.5.0"]
-
-#[tool.hatch.build.hooks.jupyter-builder.build-kwargs]
-#npm = "bun"
-#build_cmd = "build"

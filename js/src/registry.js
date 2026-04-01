@@ -36,7 +36,6 @@ const RATE_FUNC_MAP = {
 export class MobjectRegistry {
   constructor() {
     this._registry = new Map();
-    this._scene = null;
   }
 
   _kindToClass(kind) {
@@ -84,6 +83,11 @@ export class MobjectRegistry {
 
     mob._id = entry.id;
     mob._entry = entry;
+
+    if (entry.hidden && mob.setFillOpacity) {
+      mob.setFillOpacity(0);
+    }
+
     return mob;
   }
 
@@ -124,23 +128,53 @@ export class MobjectRegistry {
     return Array.from(this._registry.values());
   }
 
+  add(entry) {
+    const mob = this._createMobject(entry);
+    if (mob) {
+      this._registry.set(entry.id, mob);
+    }
+    return mob;
+  }
+
+  remove(id) {
+    const mob = this._registry.get(id);
+    if (mob) {
+      this._registry.delete(id);
+    }
+  }
+
   applyMatrix(mob, matrix, scene) {
     if (!scene || !mob) return;
     const anim = new ApplyMatrix(mob, { matrix });
     scene.play(anim);
   }
+
+  restoreState(id, state) {
+    const mob = this._registry.get(id);
+    if (!mob) return;
+
+    if (state.position) {
+      mob.setPosition(state.position[0], state.position[1], state.position[2]);
+    }
+    if (state.opacity !== undefined && mob.setFillOpacity) {
+      mob.setFillOpacity(state.opacity);
+    }
+    if (state.color && mob.setColor) {
+      mob.setColor(state.color);
+    }
+  }
 }
 
-export function buildAnimation(kind, mobjectRegistry, scene, animEntry) {
-  const mob = mobjectRegistry.get(animEntry.mob_id);
+export function buildAnimation(type, mobjectRegistry, scene, animEntry) {
+  const mob = mobjectRegistry.get(animEntry.id);
   if (!mob) {
-    console.warn(`Mobject not found: ${animEntry.mob_id}`);
+    console.warn(`Mobject not found: ${animEntry.id}`);
     return null;
   }
 
   const rateFunc = RATE_FUNC_MAP[animEntry.rate_func] || smooth;
 
-  switch (kind) {
+  switch (type) {
     case "Create":
       return new Create(mob, { rateFunc });
     case "FadeIn":
@@ -150,9 +184,14 @@ export function buildAnimation(kind, mobjectRegistry, scene, animEntry) {
     case "Write":
       return new Write(mob, { rateFunc });
     case "ReplacementTransform":
-      return new ReplacementTransform(mob, mob, { rateFunc });
+      const target = mobjectRegistry.get(animEntry.params?.target_id);
+      if (!target) {
+        console.warn(`Target not found for ReplacementTransform: ${animEntry.params?.target_id}`);
+        return null;
+      }
+      return new ReplacementTransform(mob, target, { rateFunc });
     default:
-      console.warn(`Unknown animation kind: ${kind}`);
+      console.warn(`Unknown animation type: ${type}`);
       return null;
   }
 }

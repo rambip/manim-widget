@@ -11,6 +11,10 @@ wheels/
 
 __marimo__
 media
-node_modules/
-.ruff_cache
+
+js/node_modules
 .pytest_cache
+.ruff_cache
+
+# local notebooks
+notebooks/
