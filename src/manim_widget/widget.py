@@ -1,19 +1,23 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
-import traitlets
 import anywidget
-from manim import Mobject
-from manim import Scene
+import traitlets
+from manim import Mobject, Scene
 
 from .renderer import CaptureRenderer
 from .serializer import serialize_scene
 from .snapshot import build_snapshot, serialize_mobject, short_id
 
+_ESM = Path(__file__).parent / "static" / "index.js"
+_JS_BUNDLE = _ESM.read_text()
+
 
 class ManimWidget(anywidget.AnyWidget, Scene):
+    _esm = _JS_BUNDLE
     scene_data = traitlets.Unicode("").tag(sync=True)
 
     def __init__(self, fps: int = 10, **kwargs: Any) -> None:
@@ -71,7 +75,7 @@ class ManimWidget(anywidget.AnyWidget, Scene):
                             "state": serialize_mobject(mob),
                         }
                     )
-        Scene.add(self, *mobjects)  # type: ignore[arg-type]
+        Scene.add(self, *mobjects)
 
     def remove(self, *mobjects: Mobject) -> None:  # type: ignore[override]
         current = self._renderer._current
@@ -86,4 +90,4 @@ class ManimWidget(anywidget.AnyWidget, Scene):
                             "id": short_id(mob),
                         }
                     )
-        Scene.remove(self, *mobjects)  # type: ignore[arg-type]
+        Scene.remove(self, *mobjects)
