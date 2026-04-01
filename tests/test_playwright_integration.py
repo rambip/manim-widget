@@ -6,7 +6,7 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
 import pytest
-from manim import Circle, Create, FadeIn, Square
+from manim import LEFT, Circle, Create, FadeIn, Square
 from playwright.sync_api import Page, expect
 
 from manim_widget.widget import ManimWidget
@@ -43,13 +43,41 @@ class TestPlaywrightIntegration:
     def server_dir(self, tmp_path_factory) -> Path:
         return tmp_path_factory.mktemp("html_server")
 
-    # ... keep your http_server fixture from before ...
+    @pytest.fixture
+    def js_error_tracker(self, page: Page):
+        """Captures JS console errors and page errors."""
+        errors = []
+        page_errors = []
+
+        def handle_console(msg):
+            if msg.type == "error":
+                errors.append(msg.text)
+
+        def handle_page_error(err):
+            page_errors.append(str(err))
+
+        page.on("console", handle_console)
+        page.on("pageerror", handle_page_error)
+
+        tracker = {
+            "console_errors": errors,
+            "page_errors": page_errors,
+            "clear": lambda: (errors.clear(), page_errors.clear()),
+        }
+
+        yield tracker
+
+        page.remove_listener("console", handle_console)
+        page.remove_listener("pageerror", handle_page_error)
 
     @pytest.fixture
-    def render_scene(self, server_dir: Path, http_server: str, page: Page):
+    def render_scene(
+        self, server_dir: Path, http_server: str, page: Page, js_error_tracker
+    ):
         """Helper to set up the file system and navigate."""
 
-        def _render(scene_data: str, test_name: str):
+        def _render(scene_data: str, test_name: str, check_errors: bool = True):
+            js_error_tracker["clear"]()
             # 1. Copy source files to the server directory so imports work naturally
             for js_file in ["registry.js", "player.js", "index.js"]:
                 content = (SRC_DIR / js_file).read_text()
@@ -96,6 +124,15 @@ class TestPlaywrightIntegration:
             html_file = server_dir / f"{test_name}.html"
             html_file.write_text(html_content)
             page.goto(f"{http_server}/{test_name}.html")
+            page.wait_for_timeout(500)
+
+            if check_errors:
+                all_errors = (
+                    js_error_tracker["console_errors"] + js_error_tracker["page_errors"]
+                )
+                assert len(all_errors) == 0, (
+                    f"JS errors detected: console={js_error_tracker['console_errors']}, page={js_error_tracker['page_errors']}"
+                )
 
         return _render
 
@@ -117,6 +154,51 @@ class TestPlaywrightIntegration:
 
         scene = SimpleScene()
         return scene.scene_data
+
+    @pytest.fixture
+    def animate_shift_left_data(self) -> str:
+        class AnimateShiftLeftScene(ManimWidget):
+            def construct(self):
+                c = Circle()
+                self.play(Create(c))
+                self.play(c.animate.shift(LEFT))
+
+        scene = AnimateShiftLeftScene()
+        return scene.scene_data
+
+    def test_animate_shift_left(
+        self, animate_shift_left_data, render_scene, page: Page, js_error_tracker
+    ):
+        render_scene(animate_shift_left_data, "test_shift_left.html")
+
+        container = page.locator("#mw-container")
+        expect(container).to_be_visible()
+        warning = page.locator("#mw-warning")
+        expect(warning).to_be_hidden()
+
+        scrubber = page.locator("#mw-scrubber")
+        expect(scrubber).to_be_visible()
+
+        initial_text = page.locator("#mw-section-info")
+        expect(initial_text).to_have_text("initial")
+
+        payload = json.loads(animate_shift_left_data)
+        total_duration_s = 0.0
+        for section in payload.get("sections", []):
+            commands = section.get("construct") or section.get("segments") or []
+            for cmd in commands:
+                total_duration_s += float(cmd.get("duration", cmd.get("run_time", 0.0)))
+
+        wait_ms = int(total_duration_s * 1000) + 200
+
+        page.locator("#mw-play").click()
+        page.wait_for_timeout(wait_ms)
+        all_errors = (
+            js_error_tracker["console_errors"] + js_error_tracker["page_errors"]
+        )
+        assert len(all_errors) == 0, (
+            f"JS errors detected after playback: console={js_error_tracker['console_errors']}, page={js_error_tracker['page_errors']}"
+        )
 
     @pytest.fixture
     def multi_section_data(self) -> str:
@@ -212,7 +294,11 @@ class TestPlaywrightIntegration:
 
         page.on("console", handle_console)
         page.on("pageerror", handle_page_error)
-        render_scene(json.dumps(invalid_scene_data), "test_invalid_points.html")
+        render_scene(
+            json.dumps(invalid_scene_data),
+            "test_invalid_points.html",
+            check_errors=False,
+        )
         page.wait_for_timeout(1000)
 
         all_errors = errors + page_errors

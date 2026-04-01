@@ -1,8 +1,8 @@
 # manim-widget Roadmap 
 
-This roadmap is the implementation contract for V1.
+This roadmap tracked V1 implementation and now tracks pre-V2 hardening.
 
-It has been updated with concrete behavior confirmed from local Manim internals, current failing tests in this repo, and strategies to preserve Python state purity.
+V1 is complete. Current focus is stabilization before starting V2 feature work.
 
 ---
 
@@ -39,7 +39,12 @@ It has been updated with concrete behavior confirmed from local Manim internals,
 - None (V1 implementation complete)
 
 ### Next
-- V2 features (unsupported sections, FadeTransform, etc.)
+- Pre-V2 hardening:
+  - Documentation pass (architecture, supported/unsupported features, troubleshooting)
+  - More integration tests (especially packaged bundle vs source parity)
+  - Fix bundling/source drift workflow
+  - Open upstream issues for manim-web API/export inconsistencies found during integration
+- Then begin V2 features (unsupported sections, FadeTransform, etc.)
 
 ---
 
@@ -476,3 +481,17 @@ V1 does not emit unsupported sections yet.
 - `Restore` support
 - `DataCommand` compression
 - async/background `construct()`
+
+---
+
+## 11) Pre-V2 Hardening Checklist
+
+Drift explanation: our current Playwright integration harness serves `js/src/*` files directly, but real widget users execute the bundled artifact at `src/manim_widget/static/index.js`. This creates a source-vs-bundle drift risk: after a JS source change, tests can still pass against fresh source modules while notebooks fail because they run a stale bundle built earlier. There is also a second risk: runtime import shape drift between environments (for example, CDN-transformed ESM in tests vs npm+bun bundled output in the widget package), where an export like `Shift` may be exposed as class-like in one path and factory-like in another. Pre-V2 hardening must remove both gaps by (1) adding tests that run against the packaged bundle path, and (2) enforcing a source/bundle sync check in CI so a stale `static/index.js` is caught before merge.
+
+- [ ] Refresh docs for V1 behavior and known limitations
+- [ ] Add tests that execute the packaged widget bundle (`src/manim_widget/static/index.js`)
+- [ ] Keep `js/src/*` and `src/manim_widget/static/index.js` in sync in CI/local workflow
+- [ ] Add regression tests for animation API shape differences (class vs factory export)
+- [ ] Fix class-vs-factory handling for other animations (not only `Shift`)
+- [ ] Check opacity and color default values
+- [ ] Open and track upstream issues in `maloyan/manim-web` for any API ambiguity

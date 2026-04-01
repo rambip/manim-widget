@@ -192,7 +192,18 @@ export class Player {
       }
       case "Shift": {
         const { Shift } = this._getAnimClasses();
-        return new Shift(mob, params.vector);
+        const vector = params.vector;
+        const shiftSource = String(Shift);
+
+        // manim-web exports Shift differently depending on build target:
+        // - class-style ctor expects options object with { direction }
+        // - factory-style function expects (mobject, direction)
+        // Support both so notebook bundle and Playwright harness behave identically.
+        if (shiftSource.startsWith("class")) {
+          return new Shift(mob, { direction: vector });
+        }
+
+        return Shift(mob, vector);
       }
       case "Rotate": {
         const { Rotate } = this._getAnimClasses();
