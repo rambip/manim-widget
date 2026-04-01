@@ -29,12 +29,16 @@ It has been updated with concrete behavior confirmed from local Manim internals,
 - snapshot and mobject serialization for all supported types
 - schema validation against `spec.json`
 - lifecycle correctness and snapshot ordering tests
+- **JS side implementation (manim-web player)**
+- **MobjectRegistry with load/add/remove**
+- **Player with snapshot restoration and command execution**
+- **anywidget entry point with Play/Pause controls**
+- **Smoke test for registry loading**
 
 ### Failing
 - None (V1 implementation complete)
 
 ### Next
-- JS side implementation (manim-web player)
 - V2 features (unsupported sections, FadeTransform, etc.)
 
 ---
@@ -51,12 +55,16 @@ manim-widget/
 │       ├── serializer.py      # serialize_scene(...)
 │       ├── snapshot.py        # short_id, build_snapshot, serialize_mobject
 │       └── static/
-│           └── index.js
+│           └── index.js       # Bundled JS (manim-web + player + registry)
 ├── js/
 │   ├── package.json
 │   └── src/
-│       ├── index.js
-│       └── player.js
+│       ├── index.js           # anywidget entry point
+│       ├── player.js          # Scene playback + section jumping
+│       └── registry.js        # MobjectRegistry + buildAnimation
+├── tests/
+│   └── fixtures/
+│       └── circle_scene.json  # Smoke test fixture
 ├── spec.json
 └── pyproject.toml
 ```
