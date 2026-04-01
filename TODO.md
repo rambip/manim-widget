@@ -1,528 +1,466 @@
-# manim-widget Roadmap
+# manim-widget Roadmap 
+
+This roadmap is the implementation contract for V1.
+
+It has been updated with concrete behavior confirmed from local Manim internals, current failing tests in this repo, and strategies to preserve Python state purity.
 
 ---
 
-## File Structure
+## 0) Ground Rules
 
-```
+- `spec.json` is the wire-format contract between Python and JS.
+- If a field changes, update `spec.json` first, then Python/JS.
+- No video output in V1; dry-run only.
+- Do not call `Scene.next_section()` from our widget override.
+- **Rule R1 (Virtual Adds):** The Renderer and Serializer must treat Python Mobjects as read-only during transitions. Any state required for initialization (like starting at 0 opacity for a target mobject) must be encoded as metadata in the JSON command (`init_hidden`), never by mutating the Python mobject's attributes.
+
+---
+
+## 1) Current State (as of now)
+
+### Passing
+- short-id behavior basics
+- empty scene JSON envelope
+- basic section scaffolding and serializer shape
+
+### Failing
+- `Scene.play(...)` crashes because custom renderer lacks `time`
+- animation interception is still stubbed
+- `add.state` is currently `{}` (not a proper `MobjectState`)
+- snapshot serialization is still placeholder (`{"id": ...}`)
+
+### Immediate blocker
+`Scene.play()` reads `self.time`, which maps to `self.renderer.time`.
+Without `renderer.time`, all play-based tests fail before command capture starts.
+
+---
+
+## 2) File Structure
+
+```text
 manim-widget/
 ├── src/
 │   └── manim_widget/
-│       ├── __init__.py        # exports ManimWidget
-│       ├── widget.py          # ManimWidget class
-│       ├── renderer.py        # CaptureRenderer
-│       ├── serializer.py      # serialize_scene() and MobjectState builders
-│       └── snapshot.py        # build_snapshot(), called at section boundaries
+│       ├── __init__.py
+│       ├── widget.py          # ManimWidget class + section control + add/remove overrides
+│       ├── renderer.py        # CaptureRenderer + play interception
+│       ├── serializer.py      # serialize_scene(...)
+│       ├── snapshot.py        # short_id, build_snapshot, serialize_mobject
 │       └── static/
-│           └── index.js       # Built JS bundle (output of bun build)
+│           └── index.js
 ├── js/
 │   ├── package.json
 │   └── src/
-│       ├── index.js           # anywidget glue: receives scene_data, mounts player
-│       └── player.js          # Scene instantiation, command executor, section UI
-├── spec.json                  # JSON Schema — source of truth for the wire format
-├── ROADMAP.md
+│       ├── index.js
+│       └── player.js
+├── spec.json
 └── pyproject.toml
 ```
 
-`spec.json` is the contract between Python and JS. Any field added to the wire
-format must be reflected there first.
+---
 
-No monkey-patching is needed. Animation parameters are extracted directly from
-animation objects (see Section 2). Geometry is read via `get_points()` and
-`get_center()` after each frame.
+## 3) V1 Section A - Renderer Compatibility (must do first)
+
+Goal: make custom renderer minimally compatible with `Scene.play` runtime,
+without invoking Manim's video/file-writer pipeline.
+
+### A.1 Required renderer fields
+
+Implement in `CaptureRenderer.__init__`:
+
+```python
+self.fps = fps
+self.time = 0.0
+self.num_plays = 0
+self.skip_animations = False
+self.static_image = None
+self.camera = _DummyCamera(use_z_index=False)
+
+self.registry: dict[int, Mobject] = {}
+self.sections: list[SectionRecord] = []
+self._current: SectionRecord | None = None
+```
+
+Notes:
+- `time` is mandatory for `Scene.time` property.
+- `num_plays` is used in progress labels by Scene internals.
+- `skip_animations` influences Scene wait/progression behavior.
+- `camera.use_z_index` is required by mobject family extraction paths.
+
+### A.2 Renderer methods
+
+Keep no-op methods for dry mode:
+
+```python
+def init_scene(self, scene: Scene) -> None:
+    self.time = 0.0
+    self.num_plays = 0
+
+def update_frame(self, scene: Scene, moving_mobjects=None, **kwargs) -> None:
+    return None
+
+def scene_finished(self, scene: Scene) -> None:
+    return None
+```
 
 ---
 
-## JS package.json
+## 4) V1 Section B - Animation Interception in `renderer.play`
 
-```json
-{
-  "name": "manim-widget-js",
-  "version": "0.1.0",
-  "type": "module",
-  "scripts": {
-    "build": "bun build src/index.js --minify --format=esm --outdir=../src/manim_widget/static --naming-pattern=[name].js"
-  },
-  "dependencies": {
-    "katex": "^0.16.22",
-    "manim-web": "^0.3.16",
-    "three": "^0.180.0"
-  }
-}
-```
+Goal: one `scene.play(...)` call -> one command record:
+- `animate` (no active updater influence)
+- `data` (updater-driven frame payload)
 
----
+### B.1 Compile animations first
 
-## V1
-
-### Section 1 — `CaptureRenderer`
-
-**Step 1.1 — Data structures**
+Always begin with:
 
 ```python
-# renderer.py
-
-class SectionRecord:
-    name: str
-    commands: list[dict]  # AddRecord | RemoveRecord | AnimateRecord | DataRecord
-
-class CaptureRenderer:
-    def __init__(self, fps: int):
-        self.fps = fps
-        self.registry: dict[int, Mobject] = {}  # id(mob) -> mob
-        self.sections: list[SectionRecord] = []
-        self._current: SectionRecord | None = None
-
-    def open_section(self, name: str) -> None:
-        self._current = SectionRecord(name=name, commands=[])
-        self.sections.append(self._current)
-
-    def init_scene(self, scene) -> None:
-        pass
-
-    def update_frame(self, scene, moving_mobjects=None, **kwargs) -> None:
-        pass
-
-    def scene_finished(self, scene) -> None:
-        pass
-
-    def play(self, scene, *args, **kwargs) -> None:
-        # See Section 2.
-        pass
+animations = scene.compile_animations(*args, **kwargs)
 ```
 
-**Step 1.2 — `ManimWidget`**
+Reason:
+- `.animate` gives `_AnimationBuilder`; compile converts to `_MethodAnimation`.
+- Descriptor extraction must operate on compiled animation objects.
+
+### B.2 Determine run time and updater route
 
 ```python
-# widget.py
-
-class ManimWidget(AnyWidget, Scene):
-    scene_data = traitlets.Unicode("").tag(sync=True)
-
-    def __init__(self, fps: int = 10, **kwargs):
-        self._fps = fps
-        self._renderer = CaptureRenderer(fps=fps)
-        self._snapshots: dict[str, dict] = {}
-        self._pending_snapshot: dict | None = None
-
-        AnyWidget.__init__(self)
-        Scene.__init__(self, renderer=self._renderer, **kwargs)
-
-        self._renderer.init_scene(self)
-        self.next_section("initial")
-        self.construct()
-
-        if self._pending_snapshot is not None:
-            self._snapshots[self._pending_snapshot["name"]] = \
-                self._pending_snapshot["snapshot"]
-
-        data = serialize_scene(
-            fps=self._fps,
-            sections=self._renderer.sections,
-            snapshots=self._snapshots,
-        )
-        self.scene_data = json.dumps(data)
-
-    def next_section(self, name: str = "unnamed", **kwargs) -> None:
-        if self._pending_snapshot is not None:
-            self._snapshots[self._pending_snapshot["name"]] = \
-                self._pending_snapshot["snapshot"]
-        self._pending_snapshot = {"name": name, "snapshot": build_snapshot(self)}
-        self._renderer.open_section(name)
-        # Do NOT call Scene.next_section — we don't want video file output.
-
-    def add(self, *mobjects):
-        for mob in mobjects:
-            self._renderer._current.commands.append({
-                "cmd": "add",
-                "id": short_id(mob),
-                "state": serialize_mobject(mob),
-            })
-        Scene.add(self, *mobjects)
-
-    def remove(self, *mobjects):
-        for mob in mobjects:
-            self._renderer._current.commands.append({
-                "cmd": "remove", "id": short_id(mob),
-            })
-        Scene.remove(self, *mobjects)
+run_time = scene.get_run_time(animations)
+suspend = kwargs.get("suspend_mobject_updating", False)
+has_updaters = any(len(m.updaters) > 0 for m in scene.get_mobjects()) and not suspend
 ```
 
-**What goes in renderer vs widget:**
-- **Renderer**: intercepts `play()`, maintains `registry`, classifies and emits
-  `animate`/`data` commands, runs the dry animation loop.
-- **Widget**: owns `_snapshots`, overrides `next_section()`, `add()`, `remove()`
-  to emit commands for direct scene graph mutations outside of `play()`.
+Route:
+- `has_updaters == False` -> animate path
+- `has_updaters == True` -> data path
 
-**Tests for Section 1:**
-- Instantiating `ManimWidget` with an empty `construct()` produces valid JSON
-  with one section named `"initial"` and an empty `construct` list.
-- `next_section("foo")` produces two sections; the second snapshot reflects
-  the state after the first section's animations.
-- `self.add(circle)` outside `play()` emits an `AddCommand` in `construct`.
+### B.3 Correct lifecycle (critical)
 
----
+The lifecycle to preserve for each animation:
 
-### Section 2 — Animation interception
+1. `animation._setup_scene(scene)`
+2. `animation.begin()`
+3. interpolation/update loop (or direct finish in animate path)
+4. `animation.finish()`
+5. `animation.clean_up_from_scene(scene)`
 
-**Step 2.1 — Compiling animations**
+Important:
+- `Create` registration happens in `_setup_scene`, not `begin`.
+- Remover effects (`FadeOut`) finalize in `clean_up_from_scene`.
 
-The `.animate` builder syntax produces `_AnimationBuilder` objects, not
-`Animation` objects. Call `scene.compile_animations()` at the top of `play()`
-to resolve all builders into proper `Animation` instances before doing anything
-else:
+### B.4 Animate command path
 
-```python
-def play(self, scene, *args, **kwargs):
-    animations = scene.compile_animations(*args, **kwargs)
-    ...
-```
+#### B.4.1 Emit pre-commands (Virtual Add Strategy)
 
-`compile_animations` calls `prepare_animation()` on each argument, which
-converts any `_AnimationBuilder` (i.e. `mob.animate.shift(RIGHT)`) into a
-`_MethodAnimation`. After this call, every element in `animations` is a plain
-`Animation` with `.mobject`, `.run_time`, and inspectable attributes.
-All param extraction in Steps 2.2 and 2.3 operates on this compiled list.
+Before recording the `animate` command, emit required pre-registration. **Do NOT mutate Python state (like setting `B.opacity = 0`).** Use the `init_hidden` flag to instruct JS to override the initial state:
 
-**Step 2.2 — Classify the call**
+- `ReplacementTransform(A, B)` -> `{"cmd": "add", "id": short_id(B), "state": serialize_mobject(B), "init_hidden": True}`
+- `FadeTransform(A, B)` -> emit `add` for B with `init_hidden=True`
+- `TransformFromCopy(A, B)` ->
+  - `A_copy = A.copy()`
+  - assign `short_id` to `A_copy`
+  - emit `add` for `A_copy` with `init_hidden=False`
+  - emit `add` for `B` with `init_hidden=True`
+  
+All pre-added mobjects must also be registered in `self.registry`.
 
-```python
-has_updaters = any(
-    len(mob.updaters) > 0
-    for mob in scene.get_mobjects()
-) and not kwargs.get("suspend_mobject_updating", False)
-```
+#### B.4.2 Build descriptors
 
-`has_updaters=True` → `DataCommand` path (Step 2.4).
-Otherwise → `AnimateCommand` path (Step 2.3).
-
-**Step 2.3 — `AnimateCommand` path**
-
-For each animation, build a descriptor:
+Emit one `animate` command:
 
 ```python
 {
-    "type": type(anim).__name__,
-    "id": short_id(anim.mobject),
-    "rate_func": RATE_FUNC_NAMES[anim.rate_func],  # reverse lookup dict
-    "params": extract_params(anim),
+  "cmd": "animate",
+  "duration": run_time,
+  "animations": [descriptor(anim) for anim in animations],
 }
 ```
 
-Emit pre-commands before the `AnimateCommand`:
+Descriptor shape:
 
-| Animation | Pre-command |
-|---|---|
-| `ReplacementTransform(A, B)` | `add(B, opacity=0)` |
-| `TransformFromCopy(A, B)` | `add(A_copy, opacity=1)`, `add(B, opacity=0)` |
-| `FadeTransform(A, B)` | `add(B, opacity=0)` |
+```python
+{
+  "type": type(anim).__name__,
+  "id": short_id(anim.mobject),
+  "rate_func": RATE_FUNC_NAMES.get(anim.rate_func, "smooth"),
+  "params": extract_params(anim),
+}
+```
 
-Emit the `AnimateCommand`.
+#### B.4.3 Advance scene state
 
-Advance mobject state to end of animation in dry mode:
+For animate-path dry advancement:
 
 ```python
 for anim in animations:
+    anim._setup_scene(scene)
+for anim in animations:
     anim.begin()
+for anim in animations:
     anim.finish()
+for anim in animations:
+    anim.clean_up_from_scene(scene)
 scene.update_mobjects(0)
 ```
 
-Emit post-commands after the `AnimateCommand`:
-
-| Animation | Post-command |
-|---|---|
-| `FadeOut(A)` | `remove(A)` |
-| `Uncreate(A)` | `remove(A)` |
-| `Unwrite(A)` | `remove(A)` |
-| `ReplacementTransform(A, B)` | `remove(A)` |
-| `TransformFromCopy(A, B)` | `remove(A_copy)` |
-| `FadeTransform(A, B)` | `remove(A)` |
-
-Param extraction per animation type:
-
-| Animation | Params | Source |
-|---|---|---|
-| `Shift` / `Rotate` / `Scale` | `vector` / `angle`+`axis` / `scale_factor` | recorded method args on `_MethodAnimation` |
-| `Transform`, `ReplacementTransform`, `TransformFromCopy`, `FadeTransform` | `target_id` | `short_id(anim.target)` |
-| `FadeToColor` | `color` | `anim.color.to_hex()` |
-| `MoveAlongPath` | `path_id` | `short_id(anim.path)` |
-| `ChangeDecimalToValue` | `value` | `anim.target_number` |
-| `AnimationGroup`, `Succession`, `LaggedStart` | `animations` (recursive) | `anim.animations` |
-| `LaggedStart` | also `lag_ratio` | `anim.lag_ratio` |
-| `Wait` and all others | *(none)* | — |
-
-**Step 2.4 — `DataCommand` path**
-
-Determine tracked mobjects: all mobjects with non-empty `.updaters` plus all
-animation target mobjects. Register new ones in `self.registry`.
-
-Run frame by frame:
+Then update renderer clock/counter:
 
 ```python
-n_frames = ceil(run_time * self.fps)
+self.time += run_time
+self.num_plays += 1
+```
+
+#### B.4.4 Emit post-commands
+
+Post command table:
+
+- `FadeOut(A)` -> `remove(A)`
+- `Uncreate(A)` -> `remove(A)`
+- `Unwrite(A)` -> `remove(A)`
+- `ReplacementTransform(A, B)` -> `remove(A)`
+- `FadeTransform(A, B)` -> `remove(A)`
+- `TransformFromCopy(A, B)` -> `remove(A_copy)`
+
+### B.5 Data command path
+
+Tracked mobjects:
+- all mobjects with active updaters
+- all animation primary mobjects
+
+Initialize scene animation context:
+
+```python
+scene.animations = animations
+scene.last_t = 0.0
+for anim in animations:
+    anim._setup_scene(scene)
+for anim in animations:
+    anim.begin()
+```
+
+Frame capture:
+
+```python
+n_frames = math.ceil(run_time * self.fps)
 frames = []
 for i in range(n_frames):
-    scene.update_to_time(i / self.fps)
+    t = (i + 1) / self.fps
+    if t > run_time:
+        t = run_time
+    scene.update_to_time(t)
     frame = {}
-    for mob in tracked_mobjects:
-        entry = {"position": mob.get_center().tolist(),
-                 "opacity": mob.get_opacity()}
+    for mob in tracked:
+        entry = {
+            "position": mob.get_center().tolist(),
+            "opacity": float(mob.get_opacity()),
+        }
         pts = mob.get_points()
         if len(pts) > 0:
             entry["points"] = pts.tolist()
         if isinstance(mob, ValueTracker):
-            entry["value"] = mob.get_value()
+            entry["value"] = float(mob.get_value())
         frame[short_id(mob)] = entry
     frames.append(frame)
-scene.update_to_time(run_time)  # advance to final state for subsequent snapshots
+
+for anim in animations:
+    anim.finish()
+for anim in animations:
+    anim.clean_up_from_scene(scene)
+scene.update_mobjects(0)
 ```
 
 Emit:
+
 ```python
 {"cmd": "data", "duration": run_time, "frames": frames}
 ```
 
-Note: `scene.update_to_time(t)` may not be directly accessible from inside
-`renderer.play()` since we bypass the normal render loop. If needed, call
-`animation.interpolate(alpha)` and `scene.update_mobjects(dt)` manually per
-frame as a fallback.
-
-**Tests for Section 2:**
-- `self.play(Create(circle))` emits one `animate` command with `type: "Create"`.
-- `self.play(circle.animate.shift(RIGHT))` emits `type: "Shift"` with correct
-  `vector` param after builder compilation.
-- `self.play(FadeOut(circle))` emits `animate` then `remove`.
-- `self.play(ReplacementTransform(A, B))` emits `add(B, opacity=0)` then
-  `animate` then `remove(A)`.
-- A play call where any mobject has updaters emits `data` not `animate`.
-- `DataCommand` frame count equals `ceil(run_time * fps)`.
-
----
-
-### Section 3 — Mobject registry and ID assignment
-
-**Step 3.1 — `short_id`**
+Then:
 
 ```python
-_id_map: dict[int, str] = {}
-_counter = 0
-
-def short_id(mob: Mobject) -> str:
-    key = id(mob)
-    if key not in _id_map:
-        global _counter
-        _id_map[key] = base62_encode(_counter)
-        _counter += 1
-    return _id_map[key]
+self.time += run_time
+self.num_plays += 1
 ```
 
-`id(mob)` is stable for the duration of `construct()` because `registry` holds
-references, preventing GC from reusing the same address.
+### B.6 Parameter extraction details
 
-**Tests for Section 3:**
-- Same mobject always gets the same short ID within one run.
-- Two different mobjects never share an ID.
-- IDs are short strings (≤ 4 chars for typical scenes).
+Implement `extract_params(anim)` with strict, explicit cases.
+
+1) `_MethodAnimation` (from `.animate`):
+- detect `shift`, `rotate`, `scale` from `anim.methods`
+- emit normalized params:
+  - Shift -> `{"vector": [x, y, z]}`
+  - Rotate -> `{"angle": a, "axis": [x, y, z]}`
+  - Scale -> `{"scale_factor": s}`
+- set descriptor `type` to logical operation (`Shift`/`Rotate`/`Scale`)
+
+2) Transform families:
+- `ReplacementTransform`: `target_id = short_id(anim.target_mobject)`
+- `Transform`: `target_id = short_id(anim.target_mobject)`
+- `FadeTransform`: target is `anim.to_add_on_completion`
+- `TransformFromCopy`: **do not** use `anim.target_mobject` blindly because ctor inverts args. Use explicit source/target objects captured during pre-command planning.
+
+3) Other known types:
+- `FadeToColor` -> `color`
+- `MoveAlongPath` -> `path_id`
+- `ChangeDecimalToValue` -> `value`
+- `AnimationGroup`/`Succession`/`LaggedStart` -> recursive child descriptors
+- `LaggedStart` adds `lag_ratio`
+- `Wait` -> no params
 
 ---
 
-### Section 4 — Snapshot and serialization
+## 5) V1 Section C - Widget responsibilities (`widget.py`)
 
-**Step 4.1 — `build_snapshot`**
+### C.1 `next_section`
 
-Iterates `scene.mobjects` recursively via `get_family()` and serializes each
-into a `MobjectState` dict keyed by `short_id(mob)`.
+Maintain current behavior but keep this invariant:
+- snapshot stored for section N is state at section entry (before section N commands)
 
-Serialization per type (all fields defined in `spec.json`):
+### C.2 `add` and `remove` overrides
 
-| Kind | Key fields |
-|---|---|
-| VMobject subtypes | `points`, `position`, `color`, `fill_color`, `fill_opacity`, `stroke_color`, `stroke_width`, `stroke_opacity`, `opacity`, `z_index` |
-| Text / MarkupText / Paragraph | `text`, `position`, `opacity`, `color`, `font_size` |
-| MathTex / Tex | `latex` (via `get_tex_string()`), `position`, `opacity`, `color`, `font_size` |
-| VGroup | `children` (list of `short_id` for direct submobjects), `position`, `opacity` |
-| ValueTracker | `value` (via `get_value()`). Not rendered; included for updater cross-references |
-
-VGroup children are always independently present as top-level entries in the
-same snapshot.
-
-**Step 4.2 — `serialize_scene`**
+`add` must emit full state, not `{}`:
 
 ```python
-def serialize_scene(fps, sections, snapshots) -> dict:
-    return {
-        "version": 1,
-        "fps": fps,
-        "sections": [
-            {
-                "name": s.name,
-                "snapshot": snapshots.get(s.name),
-                "construct": s.commands,
-            }
-            for s in sections
-        ]
-    }
-```
-
-**Unsupported sections** are not implemented in V1. They will be introduced in
-V2 when the updater data budget check is added. For now, all sections are
-emitted regardless of complexity.
-
-**Tests for Section 4:**
-- Output validates against `spec.json` using `jsonschema.validate()` — this
-  should be run after every integration test.
-- Snapshot of an empty scene is `{}`.
-- Snapshot of `VGroup(circle, square)` contains three entries: the group and
-  both children.
-- `MathTex(r"e^{i\pi}+1=0")` snapshot contains `latex` string, not SVG paths.
-- After `FadeOut(circle)`, circle is absent from the next section's snapshot.
-
----
-
-### Section 5 — JS widget
-
-**Step 5.1 — `index.js` (anywidget glue)**
-
-Minimal entry point. Receives `scene_data` from the Python model, parses it,
-and hands it to the player:
-
-```js
-// index.js
-import { mountPlayer } from './player.js';
-
-export function render({ model, el }) {
-    const data = JSON.parse(model.get('scene_data'));
-    mountPlayer(el, data);
-    model.on('change:scene_data', () => {
-        const updated = JSON.parse(model.get('scene_data'));
-        mountPlayer(el, updated);
-    });
+{
+  "cmd": "add",
+  "id": short_id(mob),
+  "state": serialize_mobject(mob),
 }
 ```
 
-**Step 5.2 — `player.js` (scene + command executor)**
+`remove`:
 
-`mountPlayer(el, data)` is responsible for everything visual:
+```python
+{"cmd": "remove", "id": short_id(mob)}
+```
 
-1. Instantiate a manim-web `Scene` with a Three.js canvas, append to `el`.
-2. Build a section index. Render a navigation bar listing section names.
-3. Auto-play the first section by calling `executeSection(sections[0])`.
-
-`executeSection(section)`:
-
-1. Clear the scene.
-2. Cold-start from `section.snapshot`: for each entry, instantiate the correct
-   manim-web class by `kind`, apply all state fields, add to scene.
-3. Walk `section.construct` and dispatch by `cmd`:
-   - `add`: instantiate mobject, apply state, register in local map.
-   - `remove`: remove from scene, delete from map.
-   - `animate`: call `await scene.play(...)` with the appropriate manim-web
-     animation constructors. Transform animations look up the pre-registered
-     target by `target_id`. Composition types (`AnimationGroup`, `Succession`,
-     `LaggedStart`) are built recursively from their `animations` param.
-   - `data`: drive the scene frame by frame via `requestAnimationFrame`,
-     applying each `FrameState` to the mobject directly (points, position,
-     opacity, value).
-
-**Step 5.3 — Camera**
-
-Attach Three.js `OrbitControls` to the manim-web camera after scene init.
-Python never touches the camera in V1.
-
-**Tests for Section 5:**
-- Mounting with a minimal valid JSON renders a canvas without errors.
-- Clicking a section name cold-starts that section without JS errors.
-- A `data` command with N frames drives exactly N `requestAnimationFrame`
-  updates.
+`Scene.add/remove` should still be called to mutate Python scene state.
 
 ---
 
-### Section 6 — End-to-end integration tests
+## 6) V1 Section D - Snapshot and Mobject serialization (`snapshot.py`)
 
-Run these after all sections are wired together. Each test validates the emitted
-JSON with `jsonschema` before checking visual behaviour.
+### D.1 `short_id`
 
-**E2E 1 — Create + shift + FadeOut**
+Keep base62 short ids and reset fixture support.
+
+### D.2 `serialize_mobject(mob)`
+
+Produce `MobjectState` variants from `spec.json`:
+
+- VMobject-like:
+  - `kind`, `points`, `position`, `opacity`
+  - optional: `color`, `fill_color`, `fill_opacity`, `stroke_color`,
+    `stroke_width`, `stroke_opacity`, `z_index`
+- Text/Paragraph/MarkupText:
+  - `kind`, `text`, `position`, `opacity`
+  - optional: `color`, `font_size`, `z_index`
+- MathTex/Tex:
+  - `kind`, `latex`, `position`, `opacity`
+  - optional: `color`, `font_size`, `z_index`
+- VGroup:
+  - `kind: "VGroup"`, `children`, `position`, `opacity`, optional `z_index`
+- ValueTracker:
+  - `kind: "ValueTracker"`, `value`
+
+### D.3 `build_snapshot(scene)`
+
+Use recursive families and strictly preserve iteration order. Manim uses array order as a fallback for Z-Index (painter's algorithm).
+
 ```python
-class S(ManimWidget):
-    def construct(self):
-        c = Circle()
-        self.play(Create(c))
-        self.play(c.animate.shift(RIGHT))
-        self.play(FadeOut(c))
+result = {}
+for root in scene.mobjects:
+    for mob in root.get_family():
+        if short_id(mob) not in result: # prevent overriding with same mob later
+            result[short_id(mob)] = serialize_mobject(mob)
 ```
-Check: three `animate` commands, final `remove`, validates against spec,
-renders in marimo.
 
-**E2E 2 — ReplacementTransform**
-```python
-class S(ManimWidget):
-    def construct(self):
-        a, b = Circle(), Square()
-        self.add(a)
-        self.play(ReplacementTransform(a, b))
-        self.play(b.animate.shift(UP))
-```
-Check: `add(B, opacity=0)` before animate, `remove(A)` after, B animates
-correctly afterward.
-
-**E2E 3 — Updater / ValueTracker**
-```python
-class S(ManimWidget):
-    def construct(self):
-        vt = ValueTracker(0)
-        dot = Dot()
-        dot.add_updater(lambda m: m.move_to(RIGHT * vt.get_value()))
-        self.add(dot)
-        self.play(vt.animate.set_value(3))
-```
-Check: `data` command emitted (not `animate`), frame count =
-`ceil(run_time * fps)`, dot position varies across frames.
-
-**E2E 4 — Multi-section jump**
-```python
-class S(ManimWidget):
-    def construct(self):
-        self.play(Create(Circle()))
-        self.next_section("second")
-        self.play(Create(Square()))
-```
-Check: two sections with independent snapshots, clicking "second" in JS
-cold-starts from the correct state without replaying section one.
-
-**E2E 5 — MathTex**
-```python
-class S(ManimWidget):
-    def construct(self):
-        t = MathTex(r"e^{i\pi}+1=0")
-        self.play(Write(t))
-```
-Check: snapshot contains `latex` string, no SVG paths, KaTeX renders correctly
-in JS.
+Children of groups are always top-level entries in snapshot map.
 
 ---
 
-## V2
+## 7) V1 Section E - Serializer (`serializer.py`)
 
-- **Unsupported sections**: after collecting frames for a `DataCommand`, compute
-  payload size (`n_frames × n_mobjects × avg_points × 24 bytes`). If it exceeds
-  a configurable threshold (default 2 MB), mark the section `unsupported` with
-  reason `"updater data exceeds budget (X MB)"` and emit `snapshot: null,
-  construct: []`. JS renders an inline warning banner for these sections.
+Keep simple envelope:
 
-- **`FadeTransformPieces`**: submobject-level cross-fade. Implement after
-  `FadeTransform` is stable.
+```python
+{
+  "version": 1,
+  "fps": fps,
+  "sections": [
+    {
+      "name": s.name,
+      "snapshot": snapshots.get(s.name, {}),
+      "construct": s.commands,
+    }
+    for s in sections
+  ],
+}
+```
 
-- **`Restore`**: capture saved state at `mob.save_state()` call time, store as
-  an invisible pre-registered mobject, treat `Restore` as `Transform` to that
-  saved state.
+V1 does not emit unsupported sections yet.
 
-- **Compression for `DataCommand`**: omit frames where all values are within
-  tolerance of the previous frame; JS holds the last known value until the next
-  explicit frame.
+---
 
-- **Asynchronous `construct()`**: run `construct()` in a background thread,
-  emit the widget immediately with a loading spinner, push `scene_data` when
-  done. Requires thread-safe traitlet updates and graceful error surfacing.
+## 8) Chronological Implementation & Testing Plan
+
+*Follow these steps sequentially. Do not proceed to the next step until the tests for the current step pass via `uv run pytest -q`.*
+
+### Step 1: Renderer Compatibility Attrs + No-op Methods (Section A)
+* **Action:** Implement `time`, `num_plays`, etc., in `CaptureRenderer`.
+* **Tests needed here:**
+    * Renderer compatibility smoke test: `self.play(Create(Circle()))` executes with custom renderer without throwing attribute missing errors.
+
+### Step 2: `widget.add` Overrides (Section C)
+* **Action:** Ensure `widget.add` emits `cmd=add` with real, typed state. (Uses a mocked or early version of `serialize_mobject`).
+* **Tests needed here:**
+    * `add` emits `cmd=add` with non-empty structured `state`.
+
+### Step 3: `renderer.play` Compile/Classify + Animate Emission (Section B - Animate Path)
+* **Action:** Implement animation compilation, run_time calculation, and `has_updaters=False` logic. Implement Virtual Adds (`init_hidden=True`).
+* **Tests needed here:**
+    * `Create` emits one animate descriptor type `Create`.
+    * `.animate.shift` emits type `Shift` with vector.
+    * `.animate.rotate` emits type `Rotate` with angle.
+    * `FadeOut` emits animate descriptor then post-remove command.
+    * `ReplacementTransform` emits pre-add target with `init_hidden=True`, animate descriptor, then post-remove source.
+
+### Step 4: `renderer.play` Data Emission (Section B - Data Path)
+* **Action:** Implement `has_updaters=True` logic. Build the frame capture loop.
+* **Tests needed here:**
+    * Updater scene correctly evaluates to `data` path instead of `animate`.
+    * `len(frames) == ceil(duration * fps)`.
+    * Data path final-state test: after data command, scene internal state reflects the correct end state.
+
+### Step 5: Snapshots and Mobject Serialization (Section D)
+* **Action:** Complete `serialize_mobject` for all supported types and implement `build_snapshot`.
+* **Tests needed here:**
+    * Lifecycle correctness test: `Create` without prior `add` appears in the *next* section's snapshot (proving `_setup_scene` works).
+    * Second section snapshot diverges correctly from the first.
+    * Empty scene -> valid envelope, one `initial` section, empty construct.
+    * Validate produced payload against `spec.json` via `jsonschema.validate`.
+    * Snapshot type coverage for `VGroup`, `MathTex`, `ValueTracker`.
+    * Snapshot preserves Z-Index/Painter's algorithm ordering.
+
+---
+
+## 9) Known Pitfalls (do not regress)
+
+- **Do not skip `_setup_scene`**: It is where `Create` gets inserted into `scene.mobjects`.
+- **Do not rely on `finish()` for remover effects**: `clean_up_from_scene` performs removals.
+- **Do not extract `TransformFromCopy` target blindly**: The constructor inverts args.
+- **Do not emit placeholder add state (`{}`)**: JS needs full typed state.
+- **Do not use `Scene.next_section` in widget class**.
+- **Virtual Add Rule**: The Python mobject is the Source of Truth for the *end* of an animation; the Command Stream is the Source of Truth for the *transition*. Do not mutate Python mobject attributes (like opacity) just to satisfy transition start states.
+
+---
+
+## 10) V2 (unchanged direction)
+
+- Unsupported sections by data-size budget threshold
+- `FadeTransformPieces`
+- `Restore` support
+- `DataCommand` compression
+- async/background `construct()`
