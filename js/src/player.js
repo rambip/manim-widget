@@ -1,4 +1,4 @@
-import { Scene, VMobject, Create, FadeIn, FadeOut, Write, ReplacementTransform, Shift, Rotate, Scale } from "manim-web";
+import { Scene, VMobject, VGroup, Create, FadeIn, FadeOut, Write, ReplacementTransform, Shift, Rotate, Scale } from "manim-web";
 
 export class Player {
   constructor(scene, mobjectRegistry) {
@@ -24,6 +24,8 @@ export class Player {
   _restoreSnapshot(snapshot) {
     if (!snapshot) return;
 
+    const vgroupChildren = {};
+
     for (const [id, state] of Object.entries(snapshot)) {
       let mob = this._registry.get(id);
 
@@ -36,6 +38,21 @@ export class Player {
 
       if (mob) {
         this._applyState(mob, state);
+        if (state.kind === "VGroup" && state.children) {
+          vgroupChildren[id] = state.children;
+        }
+      }
+    }
+
+    for (const [parentId, childIds] of Object.entries(vgroupChildren)) {
+      const parent = this._registry.get(parentId);
+      if (parent && parent.add) {
+        for (const childId of childIds) {
+          const child = this._registry.get(childId);
+          if (child) {
+            parent.add(child);
+          }
+        }
       }
     }
   }
@@ -48,7 +65,7 @@ export class Player {
     }
 
     if (state.kind === "VGroup") {
-      return new VMobject();
+      return new VGroup();
     }
 
     const vmob = new VMobject();
