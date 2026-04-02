@@ -409,6 +409,51 @@ class TestColors:
         assert "stroke_color" in mob_state
         assert mob_state["stroke_color"].startswith("#")
 
+    def test_stroke_opacity_serialized_in_snapshot(self):
+        class StrokeOpacityScene(ManimWidget):
+            def construct(self):
+                circle = Circle()
+                circle.set_stroke(WHITE, opacity=0.5)
+                self.add(circle)
+                self.next_section("after_add")
+
+        scene = StrokeOpacityScene()
+        data = json.loads(scene.scene_data)
+        snap = data["sections"][1]["snapshot"]
+        mob_state = next(iter(snap.values()))
+        assert "stroke_opacity" in mob_state
+        assert mob_state["stroke_opacity"] == 0.5
+
+    def test_fill_opacity_serialized_in_snapshot(self):
+        class FillOpacityScene(ManimWidget):
+            def construct(self):
+                circle = Circle()
+                circle.set_fill(PINK, opacity=0.7)
+                self.add(circle)
+                self.next_section("after_add")
+
+        scene = FillOpacityScene()
+        data = json.loads(scene.scene_data)
+        snap = data["sections"][1]["snapshot"]
+        mob_state = next(iter(snap.values()))
+        assert "fill_opacity" in mob_state
+        assert mob_state["fill_opacity"] == 0.7
+
+    def test_z_index_serialized_in_snapshot(self):
+        class ZIndexScene(ManimWidget):
+            def construct(self):
+                circle = Circle()
+                circle.set_z_index(42)
+                self.add(circle)
+                self.next_section("after_add")
+
+        scene = ZIndexScene()
+        data = json.loads(scene.scene_data)
+        snap = data["sections"][1]["snapshot"]
+        mob_state = next(iter(snap.values()))
+        assert "z_index" in mob_state
+        assert mob_state["z_index"] == 42
+
     def test_color_and_opacity_together(self):
         class BothColorScene(ManimWidget):
             def construct(self):

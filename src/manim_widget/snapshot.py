@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from manim import ValueTracker, VGroup
+from manim import Text, ValueTracker, VGroup
 from manim.mobject.types.vectorized_mobject import VMobject
 
 if TYPE_CHECKING:
@@ -59,16 +59,29 @@ def serialize_mobject(mob: Mobject) -> dict[str, object]:
         "opacity": _opacity_for(mob),
     }
 
+    if isinstance(mob, Text):
+        state["text"] = mob.text
+        state["font_size"] = mob.font_size
+
     if isinstance(mob, VMobject) and not isinstance(mob, VGroup):
         fill_color = mob.get_fill_color()
         if fill_color:
             state["fill_color"] = _color_to_hex(fill_color)
+        fill_opacity = mob.get_fill_opacity()
+        if fill_opacity is not None:
+            state["fill_opacity"] = fill_opacity
         stroke_color = mob.get_stroke_color()
         if stroke_color:
             state["stroke_color"] = _color_to_hex(stroke_color)
         stroke_width = mob.get_stroke_width()
         if stroke_width:
             state["stroke_width"] = stroke_width
+        stroke_opacity = mob.get_stroke_opacity()
+        if stroke_opacity is not None:
+            state["stroke_opacity"] = stroke_opacity
+        z_index = mob.get_z_index()
+        if z_index is not None:
+            state["z_index"] = z_index
 
     if hasattr(mob, "get_points"):
         subpaths = mob.get_subpaths()

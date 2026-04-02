@@ -49,3 +49,4 @@ This roadmap tracked V1 implementation and now tracks pre-V2 hardening.
 - `Restore` support
 - `DataCommand` compression
 - async/background `construct()`
+- Text serialization: `text` and `font_size` fields (blocked by multi-subpath SVG mobjects like Text)
