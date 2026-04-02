@@ -42,6 +42,93 @@ This roadmap tracked V1 implementation and now tracks pre-V2 hardening.
 - [ ] Check opacity and color default values
 - [ ] Open issues upstream to simplify our edge-cases
 
+---
+
+# 2.6) Issue #2: `.animate` methods not converted to native animations
+
+## Problem
+`shape.animate.move_to(destination)` and other `.animate` methods produce `_MethodAnimation` type in JSON instead of native animation types like `Shift`.
+
+## Root Cause
+In `renderer.py:_descriptor_from_animation()`, the `methods` attribute of `_MethodAnimation` is iterated to detect animation type. Only `shift`, `rotate`, and `scale` are handled.
+
+## Currently Handled Conversions
+| `.animate` method | Output Animation | Notes |
+|---|---|---|
+| `shift(vector)` | `Shift` | Direct mapping |
+| `rotate(angle)` | `Rotate` | Direct mapping |
+| `scale(factor)` | `Scale` | Direct mapping |
+| `move_to(point)` | `Shift` | Computes `target_center - mobject_center` |
+
+## Analyzed Methods (from testing)
+| Method | Can Map To | Shift Vector | Notes |
+|---|---|---|---|
+| `shift(v)` | `Shift` | `v` | Already works |
+| `move_to(p)` | `Shift` | `target_c - mobj_c` | Fixed |
+| `next_to(m, d)` | `Shift` | Computed | Works via target-center diff |
+| `to_corner(c)` | `Shift` | Computed | Works via target-center diff |
+| `to_edge(e)` | `Shift` | Computed | Works via target-center diff |
+| `align_to(m, a)` | `Shift` | `[0,0,0]` | Align doesn't move, only aligns |
+| `flip()` | **Cannot** | N/A | Changes points, not just position |
+| `scale_to_fit_width(w)` | **Cannot** | `[0,0,0]` | Resizes, not moves |
+| `scale_to_fit_height(h)` | **Cannot** | `[0,0,0]` | Resizes, not moves |
+| `set_width(w)` | **Cannot** | `[0,0,0]` | Resizes, not moves |
+| `set_height(h)` | **Cannot** | `[0,0,0]` | Resizes, not moves |
+
+## Methods That Can Use `Shift` (position-only)
+These can be converted to `Shift` by computing the vector from `target_mobject.get_center() - mobject.get_center()`:
+- `move_to`
+- `next_to`
+- `to_corner`
+- `to_edge`
+- `align_to` (when aligned to direction, not edge)
+
+## Methods That Need Fallback to `data` Command
+These change geometry (size, shape) not just position:
+- `flip` - reflection changes point arrangement
+- `scale_to_fit_width`, `scale_to_fit_height` - size changes
+- `set_width`, `set_height` - size changes
+
+## Implementation Status
+- [x] `move_to` → `Shift` (fixed)
+- [ ] `next_to`, `to_corner`, `to_edge`, `align_to` → `Shift` (same pattern)
+- [ ] `flip` → fallback to data path or mark unsupported
+- [ ] size-changing methods → fallback to data path or mark unsupported
+
+---
+
+# 2.7) Snapshot/Hidden Logic Postmortem (tentative)
+
+This section is a **working hypothesis**, not a final conclusion.
+
+## What I was trying to achieve
+- Keep geometry available in snapshots before first reveal (`Create`), using `hidden: true` instead of mutating Python mobjects.
+- Preserve section-jump behavior by including objects that are needed soon in a section, even if not yet visible.
+- Avoid export-shape breakage in JS animation constructors (class vs factory style).
+
+## Why this likely became unstable
+- I mixed two snapshot goals that may need separate rules:
+  - **section entry ground truth** (what is live now), and
+  - **future pre-registration** (what might be needed later).
+- The boundary for "future" was probably too implicit; objects leaked into snapshots where they were not expected.
+- Hidden-state replay in JS depended on command ordering details (`snapshot -> add -> animate`), and I under-specified those invariants.
+- Some fixes were correct in isolation but interacted poorly (Python snapshot capture + JS add/apply behavior).
+
+## Safer direction (if revisiting)
+- Define one explicit contract per section snapshot:
+  - either "live-only at section entry", or
+  - "live + future for this section only".
+- Add 2-3 table-driven tests for expected membership by section (`initial`, `a`, `b`) before changing runtime code.
+- Keep `hidden` semantics narrow and explicit:
+  - where it is allowed,
+  - which command clears it,
+  - and whether `add` must re-apply full state for existing registry objects.
+- Validate both source JS and bundled JS path for the same fixture payloads.
+
+## Confidence
+- Medium confidence that the bug cluster came from ambiguous snapshot scope + hidden-state lifecycle.
+- Low confidence on the best long-term model until contract examples are written first.
+
 # 2) V2 
 
 - Unsupported sections by data-size budget threshold
@@ -50,3 +137,29 @@ This roadmap tracked V1 implementation and now tracks pre-V2 hardening.
 - `DataCommand` compression
 - async/background `construct()`
 - Text serialization: `text` and `font_size` fields (blocked by multi-subpath SVG mobjects like Text)
+
+## Missing Animations (found in manim-web but not in spec.json)
+
+These animations exist in manim-web but are not yet in the `AnimationType` enum in spec.json:
+
+| Animation | Category | Status |
+|---|---|---|
+| `FadeTransformPieces` | Transform | V2 |
+| `Restore` | Transform | V2 |
+| `ApplyPointwiseFunction` | Transform | V2 |
+| `ApplyPointwiseFunctionToCenter` | Transform | V2 |
+| `ApplyFunction` | Transform | V2 |
+| `ApplyMethod` | Transform | V2 |
+| `ApplyMatrix` | Transform | V2 |
+| `ApplyComplexFunction` | Transform | V2 |
+| `MoveToTarget` | Transform/Movement | V2 |
+| `MoveToTargetPosition` | Movement | V2 |
+| `ComplexHomotopy` | Homotopy | V2 |
+| `SmoothedVectorizedHomotopy` | Homotopy | V2 |
+| `PhaseFlow` | Homotopy | V2 |
+| `TracedPath` | Changing | V2 |
+| `AnimatedBoundary` | Changing | V2 |
+| `ChangeSpeed` | Speed | V2 |
+| `MaintainPositionRelativeTo` | Utility | V2 |
+| `ShowPassingFlashWithThinningStrokeWidth` | Indication | V2 |
+| `TransformAnimations` | Transform | V2 |
