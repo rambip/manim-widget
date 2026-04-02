@@ -6,29 +6,23 @@ import os
 
 import pytest
 from jsonschema import validate
-from jsonschema import ValidationError as JsonSchemaValidationError
 from manim import (
     BLUE,
+    PINK,
+    RED,
+    WHITE,
     Circle,
     Create,
     FadeIn,
     FadeOut,
-    MathTex,
-    PINK,
-    RED,
     ReplacementTransform,
-    Rotate,
-    Scene,
     Square,
-    Text,
     ValueTracker,
     VGroup,
-    WHITE,
-    Write,
 )
 
 from manim_widget.serializer import serialize_scene
-from manim_widget.snapshot import build_snapshot, reset_id_counter, short_id
+from manim_widget.snapshot import reset_id_counter, short_id
 from manim_widget.widget import ManimWidget
 
 
@@ -146,7 +140,7 @@ class TestAnimations:
             def construct(self):
                 c = Circle()
                 self.play(Create(c))
-                self.play(c.animate.shift([1, 0, 0]))
+                self.play(c.animate.shift((1, 0, 0)))
 
         scene = ShiftScene()
         data = json.loads(scene.scene_data)
@@ -238,7 +232,7 @@ class TestDataCommand:
 
                 vt = ValueTracker(0)
                 dot = Dot()
-                dot.add_updater(lambda m: m.move_to([vt.get_value(), 0, 0]))
+                dot.add_updater(lambda m: m.move_to((vt.get_value(), 0, 0)))
                 self.add(dot)
                 self.play(vt.animate.set_value(3), run_time=0.5)
 
@@ -369,8 +363,8 @@ class TestSnapshotOrdering:
             def construct(self):
                 c1 = Circle()
                 c2 = Circle()
-                c1.shift([-1, 0, 0])
-                c2.shift([1, 0, 0])
+                c1.shift((-1, 0, 0))
+                c2.shift((1, 0, 0))
                 c1.set_z_index(1)
                 c2.set_z_index(2)
                 self.add(c1, c2)

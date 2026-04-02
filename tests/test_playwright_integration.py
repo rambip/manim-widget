@@ -4,6 +4,7 @@ import json
 import threading
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
+from typing import Generator
 
 import pytest
 from manim import LEFT, Circle, Create, FadeIn, Square
@@ -16,7 +17,7 @@ SRC_DIR = Path(__file__).parent.parent / "js" / "src"
 
 class TestPlaywrightIntegration:
     @pytest.fixture(scope="session", autouse=True)
-    def http_server(self, server_dir: Path) -> str:
+    def http_server(self, server_dir: Path) -> Generator[str]:
         """Starts a single HTTP server on an ephemeral port for the entire test session."""
 
         class Handler(SimpleHTTPRequestHandler):
@@ -189,7 +190,7 @@ class TestPlaywrightIntegration:
             for cmd in commands:
                 total_duration_s += float(cmd.get("duration", cmd.get("run_time", 0.0)))
 
-        wait_ms = int(total_duration_s * 1000) + 200
+        wait_ms = int(total_duration_s * 1000) + 500
 
         page.locator("#mw-play").click()
         page.wait_for_timeout(wait_ms)
