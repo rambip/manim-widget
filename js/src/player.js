@@ -81,9 +81,6 @@ export class Player {
   }
 
   _applyState(mob, state) {
-    if (state.position) {
-      mob.position.set(state.position[0], state.position[1], state.position[2]);
-    }
     if (state.opacity !== undefined && mob.setFillOpacity) {
       mob.setFillOpacity(state.opacity);
     }

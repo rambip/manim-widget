@@ -67,7 +67,7 @@
 
     "VMobjectState": {
       "type": "object",
-      "required": ["kind", "points", "position", "opacity"],
+      "required": ["kind", "points", "opacity"],
       "additionalProperties": false,
       "properties": {
         "kind": {
@@ -127,9 +127,6 @@
           },
           "description": "Bezier control points. Format: [p0, h0_a, h0_b, p1, h1_a, h1_b, p2, ...] where pi is a point and hi_a, hi_b are handles. Must have 3n+1 points (starting point + n cubic Bezier segments). Multiple disconnected subpaths are NOT supported; call get_subpaths() first."
         },
-        "position": {
-          "$ref": "#/definitions/Vec3"
-        },
         "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
         "color": { "$ref": "#/definitions/Color" },
         "fill_color": { "$ref": "#/definitions/Color" },
@@ -144,7 +141,7 @@
 
     "TextState": {
       "type": "object",
-      "required": ["kind", "text", "position", "opacity"],
+      "required": ["kind", "text", "opacity"],
       "additionalProperties": false,
       "properties": {
         "kind": {
@@ -152,7 +149,6 @@
           "enum": ["Text", "Paragraph", "MarkupText"]
         },
         "text": { "type": "string" },
-        "position": { "$ref": "#/definitions/Vec3" },
         "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
         "color": { "$ref": "#/definitions/Color" },
         "font_size": { "type": "number" },
@@ -166,7 +162,7 @@
 
     "MathTexState": {
       "type": "object",
-      "required": ["kind", "latex", "position", "opacity"],
+      "required": ["kind", "latex", "opacity"],
       "additionalProperties": false,
       "properties": {
         "kind": { "type": "string", "enum": ["MathTex", "Tex"] },
@@ -174,7 +170,6 @@
           "type": "string",
           "description": "Raw LaTeX string. Rendered in JS via KaTeX."
         },
-        "position": { "$ref": "#/definitions/Vec3" },
         "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
         "color": { "$ref": "#/definitions/Color" },
         "font_size": { "type": "number" },
@@ -188,7 +183,7 @@
 
     "VGroupState": {
       "type": "object",
-      "required": ["kind", "children", "position", "opacity"],
+      "required": ["kind", "children", "opacity"],
       "additionalProperties": false,
       "properties": {
         "kind": { "type": "string", "const": "VGroup" },
@@ -197,7 +192,6 @@
           "items": { "type": "string" },
           "description": "Ordered list of mob_ids. Children are always independently present in the same snapshot or registered before use."
         },
-        "position": { "$ref": "#/definitions/Vec3" },
         "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
         "z_index": { "type": "number" },
         "hidden": {
@@ -303,7 +297,6 @@
           },
           "description": "Same 3n+1 Bezier format as VMobjectState.points."
         },
-        "position": { "$ref": "#/definitions/Vec3" },
         "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
         "value": {
           "type": "number",

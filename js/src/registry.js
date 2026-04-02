@@ -153,9 +153,6 @@ export class MobjectRegistry {
     const mob = this._registry.get(id);
     if (!mob) return;
 
-    if (state.position) {
-      mob.setPosition(state.position[0], state.position[1], state.position[2]);
-    }
     if (state.opacity !== undefined && mob.setFillOpacity) {
       mob.setFillOpacity(state.opacity);
     }

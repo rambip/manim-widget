@@ -57,7 +57,6 @@ def serialize_mobject(mob: Mobject) -> dict[str, object]:
     state: dict[str, object] = {
         "kind": type(mob).__name__,
         "opacity": _opacity_for(mob),
-        "position": mob.get_center().tolist(),
     }
 
     if isinstance(mob, VMobject) and not isinstance(mob, VGroup):

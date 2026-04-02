@@ -222,9 +222,7 @@ class CaptureRenderer:
             frame: dict[str, Any] = {}
             for mob in tracked:
                 mob_id = short_id(mob)
-                entry: dict[str, Any] = {
-                    "position": mob.get_center().tolist(),
-                }
+                entry: dict[str, Any] = {}
                 entry["opacity"] = self._opacity_for(mob)
                 pts = mob.get_points()
                 if len(pts) > 0:
