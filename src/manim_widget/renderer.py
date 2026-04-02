@@ -160,8 +160,6 @@ class CaptureRenderer:
             descriptor["id"] = short_id(anim.mobject)
 
         target_mobject = getattr(anim, "target_mobject", None)
-        if target_mobject is not None:
-            descriptor["target_id"] = short_id(target_mobject)
 
         if hasattr(anim, "rate_func"):
             rate_func_name = getattr(anim.rate_func, "__name__", "smooth")
@@ -171,10 +169,12 @@ class CaptureRenderer:
                 descriptor["rate_func"] = rate_func_name
 
         methods = getattr(anim, "methods", None)
+        is_method_animation = False
         if methods:
             for mwa in methods:
                 method_name = mwa.method.__name__
                 method_args = mwa.args
+                is_method_animation = True
                 if method_name == "shift":
                     anim_name = "Shift"
                     params["vector"] = list(method_args[0])
@@ -184,8 +184,41 @@ class CaptureRenderer:
                     if len(method_args) > 1:
                         params["axis"] = list(method_args[1])
                 elif method_name == "scale":
-                    anim_name = "Scale"
+                    anim_name = "ScaleInPlace"
                     params["scale_factor"] = method_args[0]
+                elif method_name in (
+                    "scale_to_fit_width",
+                    "scale_to_fit_height",
+                    "set_width",
+                    "set_height",
+                ):
+                    anim_name = "ScaleInPlace"
+                    mob = anim.mobject
+                    if mob is not None:
+                        if method_name in ("scale_to_fit_width", "set_width"):
+                            target = method_args[0]
+                            current = mob.get_width()
+                        else:
+                            target = method_args[0]
+                            current = mob.get_height()
+                        if current > 0:
+                            params["scale_factor"] = target / current
+                elif method_name in (
+                    "move_to",
+                    "next_to",
+                    "to_corner",
+                    "to_edge",
+                    "align_to",
+                ):
+                    anim_name = "Shift"
+                    if target_mobject is not None and anim.mobject is not None:
+                        shift_vec = (
+                            target_mobject.get_center() - anim.mobject.get_center()
+                        )
+                        params["vector"] = list(shift_vec)
+
+        if target_mobject is not None and not is_method_animation:
+            descriptor["target_id"] = short_id(target_mobject)
 
         descriptor["type"] = anim_name
         descriptor["params"] = params

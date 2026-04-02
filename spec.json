@@ -357,7 +357,6 @@
 
         "Shift",
         "Rotate",
-        "Scale",
         "GrowFromCenter",
         "GrowFromEdge",
         "GrowFromPoint",
@@ -422,7 +421,7 @@
 
         "scale_factor": {
           "type": "number",
-          "description": "Scale / ScaleInPlace."
+          "description": "ScaleInPlace."
         },
 
         "color": {

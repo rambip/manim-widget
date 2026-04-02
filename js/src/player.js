@@ -1,4 +1,4 @@
-import { Scene, VMobject, VGroup, Create, FadeIn, FadeOut, Write, ReplacementTransform, Shift, Rotate, Scale } from "manim-web";
+import { Scene, VMobject, VGroup, Create, FadeIn, FadeOut, Write, ReplacementTransform, Shift, Rotate, Scale, ScaleInPlace } from "manim-web";
 
 export class Player {
   constructor(scene, mobjectRegistry) {
@@ -227,6 +227,10 @@ export class Player {
         const { Scale } = this._getAnimClasses();
         return new Scale(mob, params.scale_factor);
       }
+      case "ScaleInPlace": {
+        const { ScaleInPlace } = this._getAnimClasses();
+        return new ScaleInPlace(mob, params.scale_factor);
+      }
     }
     return null;
   }
@@ -241,6 +245,7 @@ export class Player {
       Shift,
       Rotate,
       Scale,
+      ScaleInPlace,
     };
   }
 

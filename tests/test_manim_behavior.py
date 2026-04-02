@@ -9,18 +9,14 @@ Focus on:
 from __future__ import annotations
 
 import math
-import pytest
 from manim import (
     Circle,
     Square,
-    Triangle,
     Create,
     FadeIn,
     FadeOut,
-    Write,
     ReplacementTransform,
     Transform,
-    Rotate,
 )
 from manim import Scene, VGroup
 from manim.animation.animation import Animation

@@ -150,6 +150,89 @@ class TestAnimations:
         assert shift_cmd["animations"][0]["type"] == "Shift"
         assert shift_cmd["animations"][0]["params"]["vector"] == [1.0, 0.0, 0.0]
 
+    def test_animate_move_to_emits_shift_animation(self):
+        class MoveToScene(ManimWidget):
+            def construct(self):
+                c = Circle()
+                self.play(Create(c))
+                self.play(c.animate.move_to([2.0, 1.0, 0.0]))
+
+        scene = MoveToScene()
+        data = json.loads(scene.scene_data)
+        commands = data["sections"][0]["construct"]
+        animate_cmds = [c for c in commands if c["cmd"] == "animate"]
+        move_to_cmd = animate_cmds[1]
+        assert move_to_cmd["animations"][0]["type"] == "Shift"
+        assert move_to_cmd["animations"][0]["params"]["vector"] == [2.0, 1.0, 0.0]
+
+    def test_animate_next_to_emits_shift_animation(self):
+        from manim import Square, RIGHT
+
+        class NextToScene(ManimWidget):
+            def construct(self):
+                c = Circle()
+                s = Square()
+                self.add(s)
+                self.play(Create(c))
+                self.play(c.animate.next_to(s, RIGHT))
+
+        scene = NextToScene()
+        data = json.loads(scene.scene_data)
+        commands = data["sections"][0]["construct"]
+        animate_cmds = [c for c in commands if c["cmd"] == "animate"]
+        next_to_cmd = animate_cmds[1]
+        assert next_to_cmd["animations"][0]["type"] == "Shift"
+
+    def test_animate_to_corner_emits_shift_animation(self):
+        from manim import ORIGIN
+
+        class ToCornerScene(ManimWidget):
+            def construct(self):
+                c = Circle()
+                self.play(Create(c))
+                self.play(c.animate.to_corner(ORIGIN))
+
+        scene = ToCornerScene()
+        data = json.loads(scene.scene_data)
+        commands = data["sections"][0]["construct"]
+        animate_cmds = [c for c in commands if c["cmd"] == "animate"]
+        to_corner_cmd = animate_cmds[1]
+        assert to_corner_cmd["animations"][0]["type"] == "Shift"
+
+    def test_animate_to_edge_emits_shift_animation(self):
+        from manim import LEFT
+
+        class ToEdgeScene(ManimWidget):
+            def construct(self):
+                c = Circle()
+                self.play(Create(c))
+                self.play(c.animate.to_edge(LEFT))
+
+        scene = ToEdgeScene()
+        data = json.loads(scene.scene_data)
+        commands = data["sections"][0]["construct"]
+        animate_cmds = [c for c in commands if c["cmd"] == "animate"]
+        to_edge_cmd = animate_cmds[1]
+        assert to_edge_cmd["animations"][0]["type"] == "Shift"
+
+    def test_animate_align_to_emits_shift_animation(self):
+        from manim import Square, RIGHT
+
+        class AlignToScene(ManimWidget):
+            def construct(self):
+                c = Circle()
+                s = Square()
+                self.add(s)
+                self.play(Create(c))
+                self.play(c.animate.align_to(s, RIGHT))
+
+        scene = AlignToScene()
+        data = json.loads(scene.scene_data)
+        commands = data["sections"][0]["construct"]
+        animate_cmds = [c for c in commands if c["cmd"] == "animate"]
+        align_to_cmd = animate_cmds[1]
+        assert align_to_cmd["animations"][0]["type"] == "Shift"
+
     def test_animate_rotate_emits_rotate_animation(self):
         class RotateScene(ManimWidget):
             def construct(self):
