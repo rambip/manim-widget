@@ -9,7 +9,7 @@
   "properties": {
     "version": {
       "type": "integer",
-      "const": 1
+      "const": 2
     },
     "fps": {
       "type": "integer",
@@ -25,7 +25,7 @@
   "definitions": {
     "Section": {
       "type": "object",
-      "required": ["name"],
+      "required": ["name", "snapshot", "states", "construct"],
       "additionalProperties": false,
       "properties": {
         "name": { "type": "string" },
@@ -40,6 +40,11 @@
         "snapshot": {
           "oneOf": [{ "$ref": "#/definitions/Snapshot" }, { "type": "null" }],
           "description": "Full scene state at section entry. Null only when unsupported=true."
+        },
+        "states": {
+          "type": "array",
+          "description": "Section-local state bank. Integer refs (state_ref) index into this array.",
+          "items": { "$ref": "#/definitions/MobjectState" }
         },
         "construct": {
           "type": "array",
@@ -134,8 +139,7 @@
         "stroke_color": { "$ref": "#/definitions/Color" },
         "stroke_width": { "type": "number", "minimum": 0 },
         "stroke_opacity": { "type": "number", "minimum": 0, "maximum": 1 },
-        "z_index": { "type": "number" },
-        "hidden": { "type": "boolean" }
+        "z_index": { "type": "number" }
       }
     },
 
@@ -152,11 +156,7 @@
         "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
         "color": { "$ref": "#/definitions/Color" },
         "font_size": { "type": "number" },
-        "z_index": { "type": "number" },
-        "hidden": {
-          "type": "boolean",
-          "description": "Whether the object is initially hidden. Used for Transform animations; override opacity"
-        }
+        "z_index": { "type": "number" }
       }
     },
 
@@ -174,10 +174,6 @@
         "color": { "$ref": "#/definitions/Color" },
         "font_size": { "type": "number" },
         "z_index": { "type": "number" }
-      },
-      "hidden": {
-        "type": "boolean",
-        "description": "Whether the object is initially hidden. Used for Transform animations; override opacity"
       }
     },
 
@@ -193,11 +189,7 @@
           "description": "Ordered list of mob_ids. Children are always independently present in the same snapshot or registered before use."
         },
         "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
-        "z_index": { "type": "number" },
-        "hidden": {
-          "type": "boolean",
-          "description": "Whether the object is initially hidden. Used for Transform animations; override opacity"
-        }
+        "z_index": { "type": "number" }
       }
     },
 
@@ -218,6 +210,7 @@
       "oneOf": [
         { "$ref": "#/definitions/AddCommand" },
         { "$ref": "#/definitions/RemoveCommand" },
+        { "$ref": "#/definitions/RebindCommand" },
         { "$ref": "#/definitions/AnimateCommand" },
         { "$ref": "#/definitions/DataCommand" }
       ]
@@ -225,13 +218,17 @@
 
     "AddCommand": {
       "type": "object",
-      "description": "Register or update a mobject in the JS scene graph. Used for scene.add() and pre-registration of Transform targets (opacity 0).",
-      "required": ["cmd", "id", "state"],
+      "description": "Register or update a mobject in the JS scene graph by binding id to a section-local state_ref.",
+      "required": ["cmd", "id", "state_ref"],
       "additionalProperties": false,
       "properties": {
         "cmd": { "type": "string", "const": "add" },
         "id": { "type": "string" },
-        "state": { "$ref": "#/definitions/MobjectState" }
+        "state_ref": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Index into section.states."
+        }
       }
     },
 
@@ -243,6 +240,24 @@
       "properties": {
         "cmd": { "type": "string", "const": "remove" },
         "id": { "type": "string" }
+      }
+    },
+
+    "RebindCommand": {
+      "type": "object",
+      "description": "Rebind an existing runtime mobject identity from one id to another.",
+      "required": ["cmd", "source_id", "target_id"],
+      "additionalProperties": false,
+      "properties": {
+        "cmd": { "type": "string", "const": "rebind" },
+        "source_id": {
+          "type": "string",
+          "description": "Current registry id for the runtime object."
+        },
+        "target_id": {
+          "type": "string",
+          "description": "New registry id for the same runtime object."
+        }
       }
     },
 
@@ -264,7 +279,7 @@
 
     "DataCommand": {
       "type": "object",
-      "description": "One scene.play() call that involves updaters. Dense per-frame geometry for all affected mobjects.",
+      "description": "One scene.play() call that involves updaters. Frames reference section.states entries.",
       "required": ["cmd", "duration", "frames"],
       "additionalProperties": false,
       "properties": {
@@ -272,10 +287,10 @@
         "duration": { "type": "number", "minimum": 0 },
         "frames": {
           "type": "array",
-          "description": "Length = ceil(duration * fps). Each entry is a partial MobjectState map.",
+          "description": "Length = ceil(duration * fps). Each entry maps mob_id to frame state references.",
           "items": {
             "type": "object",
-            "description": "Map of mob_id -> partial frame state.",
+            "description": "Map of mob_id -> frame state entry.",
             "additionalProperties": { "$ref": "#/definitions/FrameState" }
           }
         }
@@ -284,132 +299,171 @@
 
     "FrameState": {
       "type": "object",
-      "description": "Per-frame update. Only fields that change frame-to-frame are included.",
+      "description": "Per-frame update by reference into section.states.",
+      "required": ["state_ref"],
       "additionalProperties": false,
       "properties": {
-        "points": {
-          "type": "array",
-          "items": {
-            "type": "array",
-            "items": { "type": "number" },
-            "minItems": 3,
-            "maxItems": 3
-          },
-          "description": "Same 3n+1 Bezier format as VMobjectState.points."
-        },
-        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
-        "value": {
-          "type": "number",
-          "description": "For ValueTracker only."
+        "state_ref": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Index into section.states for this frame's full state."
         }
       }
     },
 
     "AnimationDescriptor": {
-      "type": "object",
-      "required": ["type", "id"],
-      "properties": {
-        "type": { "$ref": "#/definitions/AnimationType" },
-        "id": {
-          "type": "string",
-          "description": "mob_id of the primary target mobject."
-        },
-        "rate_func": { "$ref": "#/definitions/RateFunc" },
-        "params": { "$ref": "#/definitions/AnimationParams" }
-      },
-      "additionalProperties": false
-    },
-
-    "AnimationType": {
-      "type": "string",
-      "enum": [
-        "Create",
-        "Uncreate",
-        "DrawBorderThenFill",
-        "Write",
-        "Unwrite",
-        "AddTextLetterByLetter",
-        "RemoveTextLetterByLetter",
-        "TypeWithCursor",
-        "UntypeWithCursor",
-        "AddTextWordByWord",
-        "ShowIncreasingSubsets",
-        "ShowPartial",
-        "ShowSubmobjectsOneByOne",
-        "SpiralIn",
-
-        "FadeIn",
-        "FadeOut",
-
-        "Transform",
-        "ReplacementTransform",
-        "TransformFromCopy",
-        "FadeTransform",
-        "ClockwiseTransform",
-        "CounterclockwiseTransform",
-        "Swap",
-        "CyclicReplace",
-        "ScaleInPlace",
-        "ShrinkToCenter",
-        "FadeToColor",
-        "TransformMatchingShapes",
-        "TransformMatchingTex",
-
-        "Shift",
-        "Rotate",
-        "GrowFromCenter",
-        "GrowFromEdge",
-        "GrowFromPoint",
-        "GrowArrow",
-        "SpinInFromNothing",
-        "MoveAlongPath",
-        "Homotopy",
-
-        "Indicate",
-        "Flash",
-        "Circumscribe",
-        "Wiggle",
-        "ShowPassingFlash",
-        "ApplyWave",
-        "FocusOn",
-        "Pulse",
-        "ShowCreationThenDestruction",
-        "WiggleOutThenIn",
-        "Blink",
-
-        "AnimationGroup",
-        "LaggedStart",
-        "Succession",
-        "LaggedStartMap",
-
-        "UpdateFromFunc",
-        "UpdateFromAlphaFunc",
-
-        "ChangingDecimal",
-        "ChangeDecimalToValue",
-
-        "Rotating",
-        "Broadcast",
-
-        "Wait"
+      "oneOf": [
+        { "$ref": "#/definitions/SimpleAnimation" },
+        { "$ref": "#/definitions/PairAnimation" },
+        { "$ref": "#/definitions/GroupAnimation" },
+        { "$ref": "#/definitions/TransformAnimation" }
       ]
     },
 
-    "AnimationParams": {
+    "SimpleAnimation": {
       "type": "object",
-      "description": "Animation-specific parameters. All fields are optional; omit when unused.",
+      "required": ["type", "kind", "id"],
       "additionalProperties": false,
       "properties": {
+        "type": { "type": "string", "const": "simple" },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "Create",
+            "Uncreate",
+            "Write",
+            "Unwrite",
+            "FadeIn",
+            "FadeOut",
+            "Shift",
+            "Rotate",
+            "ScaleInPlace",
+            "ShrinkToCenter",
+            "FadeToColor",
+            "GrowFromCenter",
+            "GrowFromEdge",
+            "GrowFromPoint",
+            "GrowArrow",
+            "SpinInFromNothing",
+            "MoveAlongPath",
+            "Indicate",
+            "Flash",
+            "Circumscribe",
+            "Wiggle",
+            "ShowPassingFlash",
+            "ApplyWave",
+            "FocusOn",
+            "Pulse",
+            "ShowCreationThenDestruction",
+            "WiggleOutThenIn",
+            "Blink",
+            "ChangingDecimal",
+            "ChangeDecimalToValue",
+            "Rotating",
+            "Broadcast",
+            "Wait"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "description": "mob_id of the target mobject."
+        },
+        "rate_func": { "$ref": "#/definitions/RateFunc" },
+        "params": { "$ref": "#/definitions/SimpleAnimationParams" }
+      }
+    },
+
+    "PairAnimation": {
+      "type": "object",
+      "required": ["type", "kind", "source_id", "target_id"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "const": "pair" },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "Swap"
+          ]
+        },
+        "source_id": {
+          "type": "string",
+          "description": "mob_id of the source mobject."
+        },
         "target_id": {
           "type": "string",
-          "description": "For Transform, ReplacementTransform, TransformFromCopy, FadeTransform: mob_id of the pre-registered target (added with opacity 0 before this animate command)."
+          "description": "mob_id of the target mobject."
         },
+        "rate_func": { "$ref": "#/definitions/RateFunc" },
+        "params": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      }
+    },
 
+    "GroupAnimation": {
+      "type": "object",
+      "required": ["type", "kind", "ids"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "const": "group" },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "CyclicReplace"
+          ]
+        },
+        "ids": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "type": "string" },
+          "description": "Ordered mob_ids participating in the group animation."
+        },
+        "rate_func": { "$ref": "#/definitions/RateFunc" },
+        "params": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        }
+      }
+    },
+
+    "TransformAnimation": {
+      "type": "object",
+      "required": ["type", "kind", "id", "state_ref"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "const": "transform" },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "Transform"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "description": "mob_id of the transformed mobject."
+        },
+        "state_ref": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Index into section.states for destination state."
+        },
+        "rate_func": { "$ref": "#/definitions/RateFunc" },
+        "params": { "$ref": "#/definitions/TransformAnimationParams" }
+      }
+    },
+
+    "SimpleAnimationParams": {
+      "type": "object",
+      "description": "Animation-specific parameters for simple animations.",
+      "additionalProperties": false,
+      "properties": {
         "vector": {
           "$ref": "#/definitions/Vec3",
           "description": "Shift: displacement vector."
         },
-
         "angle": {
           "type": "number",
           "description": "Rotate: angle in radians."
@@ -418,47 +472,41 @@
           "$ref": "#/definitions/Vec3",
           "description": "Rotate: rotation axis. Defaults to [0,0,1]."
         },
-
         "scale_factor": {
           "type": "number",
           "description": "ScaleInPlace."
         },
-
         "color": {
           "$ref": "#/definitions/Color",
           "description": "FadeToColor: target color."
         },
-
         "point": {
           "$ref": "#/definitions/Vec3",
           "description": "GrowFromPoint: origin point."
         },
-
         "path_id": {
           "type": "string",
           "description": "MoveAlongPath: mob_id of the path VMobject."
         },
-
         "value": {
           "type": "number",
           "description": "ChangeDecimalToValue: target value."
-        },
+        }
+      }
+    },
 
-        "lag_ratio": {
+    "TransformAnimationParams": {
+      "type": "object",
+      "description": "Animation-specific parameters for transform animations.",
+      "additionalProperties": false,
+      "properties": {
+        "path_arc": {
           "type": "number",
-          "minimum": 0,
-          "description": "LaggedStart / LaggedStartMap: stagger ratio."
+          "description": "Optional transform path arc in radians."
         },
-
-        "animations": {
-          "type": "array",
-          "items": { "$ref": "#/definitions/AnimationDescriptor" },
-          "description": "AnimationGroup, Succession, LaggedStart: child animation descriptors."
-        },
-
-        "remover": {
-          "type": "boolean",
-          "description": "Always false in V1. FadeOut/Uncreate/Unwrite use an explicit remove command instead."
+        "path_arc_axis": {
+          "$ref": "#/definitions/Vec3",
+          "description": "Optional transform path arc axis."
         }
       }
     },

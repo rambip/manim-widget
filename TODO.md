@@ -2,6 +2,14 @@
 
 This roadmap tracked V1 implementation and now tracks pre-V2 hardening.
 
+## Current Mission
+
+- Finalize and implement the V2 wire contract before runtime changes.
+- Replace mixed inline state payloads with section-local `states` + integer `state_ref` references.
+- Keep snapshots as section-entry live state only (no pre-registration semantics).
+- Split identity operations from geometry operations (`rebind` command vs transform animation).
+- Remove remaining `hidden` semantics from Python/JS runtime and tests.
+
 ---
 
 # 0) Ground Rules
@@ -97,38 +105,6 @@ These change geometry (size, shape) not just position:
 
 ---
 
-# 2.7) Snapshot/Hidden Logic Postmortem (tentative)
-
-This section is a **working hypothesis**, not a final conclusion.
-
-## What I was trying to achieve
-- Keep geometry available in snapshots before first reveal (`Create`), using `hidden: true` instead of mutating Python mobjects.
-- Preserve section-jump behavior by including objects that are needed soon in a section, even if not yet visible.
-- Avoid export-shape breakage in JS animation constructors (class vs factory style).
-
-## Why this likely became unstable
-- I mixed two snapshot goals that may need separate rules:
-  - **section entry ground truth** (what is live now), and
-  - **future pre-registration** (what might be needed later).
-- The boundary for "future" was probably too implicit; objects leaked into snapshots where they were not expected.
-- Hidden-state replay in JS depended on command ordering details (`snapshot -> add -> animate`), and I under-specified those invariants.
-- Some fixes were correct in isolation but interacted poorly (Python snapshot capture + JS add/apply behavior).
-
-## Safer direction (if revisiting)
-- Define one explicit contract per section snapshot:
-  - either "live-only at section entry", or
-  - "live + future for this section only".
-- Add 2-3 table-driven tests for expected membership by section (`initial`, `a`, `b`) before changing runtime code.
-- Keep `hidden` semantics narrow and explicit:
-  - where it is allowed,
-  - which command clears it,
-  - and whether `add` must re-apply full state for existing registry objects.
-- Validate both source JS and bundled JS path for the same fixture payloads.
-
-## Confidence
-- Medium confidence that the bug cluster came from ambiguous snapshot scope + hidden-state lifecycle.
-- Low confidence on the best long-term model until contract examples are written first.
-
 # 2) V2 
 
 - Unsupported sections by data-size budget threshold
@@ -137,6 +113,7 @@ This section is a **working hypothesis**, not a final conclusion.
 - `DataCommand` compression
 - async/background `construct()`
 - Text serialization: `text` and `font_size` fields (blocked by multi-subpath SVG mobjects like Text)
+- Remove `kind` from serialized state shape (replace with a clearer discriminator or schema-safe alternative)
 
 ## Missing Animations (found in manim-web but not in spec.json)
 

@@ -252,33 +252,30 @@ class TestPlaywrightIntegration:
 
     def test_invalid_points_raises_js_error(self, render_scene, page: Page):
         invalid_scene_data = {
-            "version": 1,
+            "version": 2,
             "fps": 10,
             "sections": [
                 {
                     "name": "intro",
-                    "construct": [
+                    "snapshot": {},
+                    "states": [
                         {
-                            "cmd": "add",
-                            "id": "circle1",
-                            "state": {
-                                "kind": "Circle",
-                                "points": [
-                                    [0, 0, 0],
-                                    [1, 1, 1],
-                                    [2, 0, 0],
-                                    [3, 1, 1],
-                                    [4, 0, 0],
-                                    [5, 1, 1],
-                                    [6, 0, 0],
-                                    [7, 1, 1],
-                                    [8, 0, 0],
-                                ],
-                                "position": [0, 0, 0],
-                                "opacity": 1,
-                            },
+                            "kind": "Circle",
+                            "points": [
+                                [0, 0, 0],
+                                [1, 1, 1],
+                                [2, 0, 0],
+                                [3, 1, 1],
+                                [4, 0, 0],
+                                [5, 1, 1],
+                                [6, 0, 0],
+                                [7, 1, 1],
+                                [8, 0, 0],
+                            ],
+                            "opacity": 1,
                         }
                     ],
+                    "construct": [{"cmd": "add", "id": "circle1", "state_ref": 0}],
                 }
             ],
         }

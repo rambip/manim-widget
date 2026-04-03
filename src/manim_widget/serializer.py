@@ -12,12 +12,13 @@ def serialize_scene(
     snapshots: dict[str, dict[str, object]],
 ) -> dict[str, object]:
     return {
-        "version": 1,
+        "version": 2,
         "fps": fps,
         "sections": [
             {
                 "name": s.name,
-                "snapshot": snapshots.get(s.name),
+                "snapshot": snapshots.get(s.name, {}),
+                "states": s.states,
                 "construct": s.commands,
             }
             for s in sections

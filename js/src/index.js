@@ -1,134 +1,138 @@
 import { Scene } from "manim-web";
 import { MobjectRegistry } from "./registry.js";
-import { Player } from "./player.js";
+import { createPlayer } from "./player.js";
 
-async function render({ model, el }) {
+function buildUi(el) {
   el.innerHTML = `
     <div style="position:relative;width:100%;height:100%;">
       <div id="mw-container" style="width:100%;height:100%;"></div>
-      <div id="mw-controls" style="position:absolute;bottom:0;left:0;right:0;padding:10px;background:rgba(0,0,0,0.5);display:flex;gap:10px;align-items:center;">
+      <div id="mw-controls" style="position:absolute;bottom:0;left:0;right:0;padding:10px;background:rgba(0,0,0,0.55);display:flex;gap:10px;align-items:center;">
         <button id="mw-play">Play</button>
         <button id="mw-pause">Pause</button>
         <input type="range" id="mw-scrubber" min="0" max="0" value="0" style="flex:1;cursor:pointer;">
-        <span id="mw-section-info" style="color:white;min-width:80px;"></span>
+        <span id="mw-section-info" style="color:white;min-width:100px;"></span>
       </div>
-      <div id="mw-warning" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(200,0,0,0.9);color:white;padding:20px;border-radius:8px;font-weight:bold;">
-        Unsupported section: geometry updates detected
+      <div id="mw-warning" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(200,0,0,0.9);color:white;padding:14px;border-radius:8px;font-weight:bold;">
+        Unsupported section
       </div>
     </div>
   `;
 
-  const container = el.querySelector("#mw-container");
-  const playBtn = el.querySelector("#mw-play");
-  const pauseBtn = el.querySelector("#mw-pause");
-  const scrubber = el.querySelector("#mw-scrubber");
-  const sectionInfo = el.querySelector("#mw-section-info");
-  const warning = el.querySelector("#mw-warning");
+  return {
+    container: el.querySelector("#mw-container"),
+    playBtn: el.querySelector("#mw-play"),
+    pauseBtn: el.querySelector("#mw-pause"),
+    scrubber: el.querySelector("#mw-scrubber"),
+    sectionInfo: el.querySelector("#mw-section-info"),
+    warning: el.querySelector("#mw-warning"),
+  };
+}
 
-  let scene = null;
-  let registry = null;
+async function render({ model, el }) {
+  const ui = buildUi(el);
+
   let player = null;
-  let jsonData = null;
+  let sceneData = null;
 
-  async function loadScene(data) {
-    if (!data || !data.sections) {
-      console.warn("Invalid scene data");
+  async function renderSection(index) {
+    if (!player || !sceneData) {
       return;
     }
 
-    jsonData = data;
-    container.innerHTML = "";
-
-    scene = new Scene(container, { width: 600, height: 400 });
-    registry = new MobjectRegistry();
-    player = new Player(scene, registry);
-
-    if (data.mobjects) {
-      const mobjectMap = new Map(data.mobjects.map((m) => [m.id, m]));
-      registry.load(mobjectMap);
+    const section = sceneData.sections[index];
+    if (!section) {
+      return;
     }
 
+    ui.sectionInfo.textContent = section.name || "";
+    ui.scrubber.value = String(index);
+
+    if (section.unsupported) {
+      ui.warning.style.display = "block";
+      ui.warning.textContent = section.unsupported_reason
+        ? `Unsupported section: ${section.unsupported_reason}`
+        : "Unsupported section";
+      return;
+    }
+
+    ui.warning.style.display = "none";
+    await player.seekToSection(index);
+  }
+
+  async function loadScene(data) {
+    if (!data || data.version !== 2 || !Array.isArray(data.sections)) {
+      console.warn("Invalid V2 scene payload");
+      return;
+    }
+
+    sceneData = data;
+    ui.container.innerHTML = "";
+
+    const scene = new Scene(ui.container, { width: 600, height: 400 });
+    const registry = new MobjectRegistry();
+    player = createPlayer(scene, registry);
     player.setfps(data.fps || 10);
     player.setSections(data.sections);
 
-    scrubber.max = data.sections.length - 1;
-    scrubber.value = 0;
+    ui.scrubber.max = String(Math.max(0, data.sections.length - 1));
+    ui.scrubber.value = "0";
 
-    player.setOnSectionChange((index) => {
-      const section = jsonData.sections[index];
-      if (section) {
-        sectionInfo.textContent = section.name;
-        scrubber.value = index;
-        if (section.unsupported) {
-          warning.style.display = "block";
-        } else {
-          warning.style.display = "none";
-        }
-      }
-    });
-
-    if (jsonData.sections.length > 0) {
-      const firstSection = jsonData.sections[0];
-      sectionInfo.textContent = firstSection.name;
-      if (firstSection.unsupported) {
-        warning.style.display = "block";
-      }
-    }
-
-    await player.play();
-    for (let i = 0; i < jsonData.sections.length; i++) {
-      if (!player.isPlaying) break;
-      await player._playSection(jsonData.sections[i]);
+    if (data.sections.length > 0) {
+      await renderSection(0);
     }
   }
 
-  playBtn.addEventListener("click", () => {
-    if (player) player.play();
-  });
-
-  pauseBtn.addEventListener("click", () => {
-    if (player) player.pause();
-  });
-
-  let isScrubbing = false;
-  scrubber.addEventListener("mousedown", () => {
-    isScrubbing = true;
-  });
-  scrubber.addEventListener("mouseup", () => {
-    if (isScrubbing && player) {
-      player.seekToSection(parseInt(scrubber.value, 10));
+  ui.playBtn.addEventListener("click", async () => {
+    if (!player || !sceneData) {
+      return;
     }
-    isScrubbing = false;
-  });
-  scrubber.addEventListener("touchstart", () => {
-    isScrubbing = true;
-  });
-  scrubber.addEventListener("touchend", () => {
-    if (isScrubbing && player) {
-      player.seekToSection(parseInt(scrubber.value, 10));
-    }
-    isScrubbing = false;
-  });
 
-  model.on("change:scene_data", () => {
-    const jsonStr = model.get("scene_data");
-    if (jsonStr) {
-      try {
-        const jsonData = JSON.parse(jsonStr);
-        loadScene(jsonData);
-      } catch (e) {
-        console.error("Failed to parse scene_data:", e);
+    await player.play();
+    let start = Number.parseInt(ui.scrubber.value || "0", 10);
+    if (!Number.isFinite(start) || start < 0) {
+      start = 0;
+    }
+
+    for (let i = start; i < sceneData.sections.length; i += 1) {
+      if (!player.isPlaying) {
+        break;
       }
+      await renderSection(i);
+    }
+  });
+
+  ui.pauseBtn.addEventListener("click", async () => {
+    if (player) {
+      await player.pause();
+    }
+  });
+
+  ui.scrubber.addEventListener("input", async () => {
+    if (!sceneData) {
+      return;
+    }
+    const index = Number.parseInt(ui.scrubber.value, 10);
+    await renderSection(index);
+  });
+
+  model.on("change:scene_data", async () => {
+    const jsonStr = model.get("scene_data");
+    if (!jsonStr) {
+      return;
+    }
+    try {
+      await loadScene(JSON.parse(jsonStr));
+    } catch (error) {
+      console.error("Failed to parse scene_data", error);
     }
   });
 
   const initialData = model.get("scene_data");
   if (initialData) {
     try {
-      const jsonData = JSON.parse(initialData);
-      loadScene(jsonData);
-    } catch (e) {
-      console.error("Failed to parse initial scene_data:", e);
+      await loadScene(JSON.parse(initialData));
+    } catch (error) {
+      console.error("Failed to parse initial scene_data", error);
     }
   }
 }

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from manim import Create, FadeIn, FadeOut, ReplacementTransform, Write
+from manim import Create, FadeIn, FadeOut, ReplacementTransform, Transform, Write
 from manim.animation.animation import Animation
 from manim.mobject.types.vectorized_mobject import VMobject
 from manim.mobject.mobject import Mobject
@@ -24,6 +25,8 @@ class _DummyCamera:
 class SectionRecord:
     name: str
     commands: list[dict] = field(default_factory=list)
+    states: list[dict[str, object]] = field(default_factory=list)
+    _state_ref_map: dict[str, int] = field(default_factory=dict)
 
 
 class CaptureRenderer:
@@ -46,6 +49,23 @@ class CaptureRenderer:
     def open_section(self, name: str) -> None:
         self._current = SectionRecord(name=name, commands=[])
         self.sections.append(self._current)
+
+    def state_ref_for(self, mob: Mobject) -> int:
+        return self._intern_state(serialize_mobject(mob))
+
+    def _intern_state(self, state: dict[str, object]) -> int:
+        current = self._current
+        if current is None:
+            msg = "No active section"
+            raise RuntimeError(msg)
+        key = json.dumps(state, sort_keys=True, separators=(",", ":"))
+        existing = current._state_ref_map.get(key)
+        if existing is not None:
+            return existing
+        ref = len(current.states)
+        current.states.append(state)
+        current._state_ref_map[key] = ref
+        return ref
 
     def update_frame(
         self,
@@ -110,13 +130,14 @@ class CaptureRenderer:
                 target = anim.target_mobject
                 if not self.is_active(target):
                     self.register_mobject(target)
-                    state = serialize_mobject(target)
-                    state["hidden"] = True
-                    pre_commands.append(
-                        {"cmd": "add", "id": short_id(target), "state": state}
-                    )
                 source = anim.mobject
-                post_commands.append({"cmd": "remove", "id": short_id(source)})
+                post_commands.append(
+                    {
+                        "cmd": "rebind",
+                        "source_id": short_id(source),
+                        "target_id": short_id(target),
+                    }
+                )
 
             elif isinstance(anim, (Create, FadeIn, Write)):
                 self.register_mobject(anim.mobject)
@@ -154,7 +175,7 @@ class CaptureRenderer:
     def _descriptor_from_animation(self, anim: Animation) -> dict[str, Any]:
         anim_name = type(anim).__name__
         params: dict[str, Any] = {}
-        descriptor: dict[str, Any] = {"type": anim_name}
+        descriptor: dict[str, Any] = {}
 
         if hasattr(anim, "mobject"):
             descriptor["id"] = short_id(anim.mobject)
@@ -217,11 +238,32 @@ class CaptureRenderer:
                         )
                         params["vector"] = list(shift_vec)
 
-        if target_mobject is not None and not is_method_animation:
-            descriptor["target_id"] = short_id(target_mobject)
+        if is_method_animation:
+            descriptor["type"] = "simple"
+            descriptor["kind"] = anim_name
+            descriptor["params"] = params
+            return descriptor
 
-        descriptor["type"] = anim_name
-        descriptor["params"] = params
+        if anim_name in ("Transform", "ReplacementTransform"):
+            if target_mobject is None:
+                msg = "Transform animation missing target_mobject"
+                raise RuntimeError(msg)
+            descriptor["type"] = "transform"
+            descriptor["kind"] = "Transform"
+            descriptor["state_ref"] = self.state_ref_for(target_mobject)
+            transform_params: dict[str, Any] = {}
+            if hasattr(anim, "path_arc") and anim.path_arc is not None:
+                transform_params["path_arc"] = float(anim.path_arc)
+            if hasattr(anim, "path_arc_axis") and anim.path_arc_axis is not None:
+                transform_params["path_arc_axis"] = list(anim.path_arc_axis)
+            if transform_params:
+                descriptor["params"] = transform_params
+            return descriptor
+
+        descriptor["type"] = "simple"
+        descriptor["kind"] = anim_name
+        if params:
+            descriptor["params"] = params
         return descriptor
 
     def _play_data_path(
@@ -231,12 +273,22 @@ class CaptureRenderer:
         if current is None:
             return
 
-        tracked = set()
+        tracked: list[Mobject] = []
+        seen: set[int] = set()
         for m in scene.get_mobject_family_members():
-            tracked.update(m.get_family())
+            for member in m.get_family():
+                member_id = id(member)
+                if member_id in seen:
+                    continue
+                seen.add(member_id)
+                tracked.append(member)
         for anim in animations:
             if hasattr(anim, "mobject"):
-                tracked.add(anim.mobject)
+                member = anim.mobject
+                member_id = id(member)
+                if member_id not in seen:
+                    seen.add(member_id)
+                    tracked.append(member)
 
         scene.animations = animations
         scene.last_t = 0.0
@@ -255,12 +307,7 @@ class CaptureRenderer:
             frame: dict[str, Any] = {}
             for mob in tracked:
                 mob_id = short_id(mob)
-                entry: dict[str, Any] = {}
-                entry["opacity"] = self._opacity_for(mob)
-                pts = mob.get_points()
-                if len(pts) > 0:
-                    entry["points"] = pts.tolist()
-                frame[mob_id] = entry
+                frame[mob_id] = {"state_ref": self.state_ref_for(mob)}
             frames.append(frame)
 
         for anim in animations:

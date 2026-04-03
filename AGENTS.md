@@ -2,7 +2,7 @@
 
 ## Vision
 
-`manim-widget` provides a Jupyter-compatible interactive Manim viewer without rendering video first. The Python side captures scene intent and state as JSON, and the JavaScript side replays it with `manim-web` in the browser.
+`manim-widget` provides a Jupyter-compatible interactive Manim viewer without rendering video first. The Python side captures scene intent/state as JSON, and the JavaScript side replays it with `manim-web` in the browser.
 
 Primary target is **marimo**, while staying compatible with any `anywidget` frontend (JupyterLab, VS Code notebooks, etc.).
 
@@ -10,14 +10,14 @@ Primary target is **marimo**, while staying compatible with any `anywidget` fron
 
 ## Current Project Status
 
-- V1 core is complete and passing local tests.
-- Current focus is pre-V2 hardening:
-  - docs updates,
-  - broader integration coverage,
-  - source/bundle sync safeguards,
-  - upstream issues for API shape inconsistencies.
+- V2 wire format is now the active contract (`spec.json`, `version: 2`).
+- Python capture/serialization has been migrated to V2.
+- Current focus is JS/runtime alignment and integration hardening:
+  - consume section `states` + `state_ref` across commands,
+  - support `rebind` behavior for replacement transforms,
+  - maintain source/bundle parity and import-shape compatibility.
 
-See `TODO.md` for the current checklist and priorities.
+See `TODO.md` for current priorities.
 
 ---
 
@@ -30,10 +30,10 @@ Time from notebook execution to visible playback should be minimal. No video ren
 Playback and camera interactions run in JS without Python round-trips.
 
 ### G3 - Section-aware navigation
-`next_section()` boundaries are preserved. Each section has a snapshot so the player can jump directly to sections.
+`next_section()` boundaries are preserved. Each section has a section-entry snapshot so the player can jump directly.
 
 ### G4 - Deterministic data contract
-`spec.json` is the wire contract between Python and JS. Changes must remain schema-valid.
+`spec.json` is the wire contract between Python and JS. Output should be deterministic and schema-valid.
 
 ### G5 - Clear unsupported behavior
 When features are unsupported, surface predictable warnings/errors instead of silent degradation.
@@ -44,8 +44,9 @@ When features are unsupported, surface predictable warnings/errors instead of si
 
 - **Scene**: full execution of `construct()`.
 - **Section**: named region delimited by `next_section()`.
-- **Command stream**: serialized list of `add` / `remove` / `animate` / `data` commands for a section.
-- **Snapshot**: full mobject state at section entry.
+- **State bank**: section-local list of serialized mobject states (`states`) addressed by integer `state_ref`.
+- **Snapshot**: section-entry full map of `mob_id -> serialized state` used for direct section restore.
+- **Command stream**: section operations (`add`, `remove`, `animate`, `data`, `rebind`).
 - **Dry-run**: execute scene logic to capture structured playback data only (no video file output).
 
 ---
@@ -56,15 +57,18 @@ When features are unsupported, surface predictable warnings/errors instead of si
 
 - `widget.py`
   - Defines `ManimWidget` and trait payload (`scene_data`).
-  - Owns section lifecycle and emits section snapshots + commands.
+  - Owns section lifecycle and emits section snapshots + command streams.
+  - Uses renderer registry active set for section-entry snapshots.
 - `renderer.py`
-  - Custom capture renderer compatible with Manim `Scene.play` lifecycle.
-  - Intercepts play/update flow to emit `animate` or `data` commands.
+  - Custom capture renderer integrated with Manim `Scene.play` lifecycle.
+  - Emits V2 commands/descriptors for animate/update flows.
+  - Maintains section-local deduplicated state banks (`states`) and allocates `state_ref` values.
+  - Emits `rebind` for replacement semantics.
 - `snapshot.py`
-  - Short-id generation and mobject serialization.
-  - Builds section snapshots from scene families.
+  - Short-id generation and mobject serialization primitives.
+  - Note: legacy snapshot helpers may still exist; current section snapshots are widget/renderer-driven.
 - `serializer.py`
-  - Produces final JSON envelope consumed by JS.
+  - Produces top-level V2 envelope consumed by JS.
 
 ### JavaScript side (`js/src/`)
 
@@ -74,8 +78,9 @@ When features are unsupported, surface predictable warnings/errors instead of si
 - `registry.js`
   - Runtime mobject registry keyed by stable IDs.
 - `player.js`
-  - Snapshot restore + command execution.
-  - Animation adapter layer to `manim-web` constructors/factories.
+  - Restores section snapshots and executes command streams.
+  - Must resolve `state_ref` through section `states` and apply `rebind` semantics.
+  - Animation adapter layer should remain defensive against class-vs-factory exports.
 
 ### Bundled runtime (`src/manim_widget/static/index.js`)
 
@@ -84,25 +89,34 @@ When features are unsupported, surface predictable warnings/errors instead of si
 
 ---
 
-## Data Model (V1)
+## Data Model (V2)
 
 Top-level payload shape:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "fps": 10,
   "sections": [
     {
       "name": "initial",
       "snapshot": {},
+      "states": [
+        { "kind": "Circle" }
+      ],
       "construct": [
-        { "cmd": "add", "id": "0", "state": { "kind": "Circle" } },
+        { "cmd": "add", "id": "0", "state_ref": 0 },
         {
           "cmd": "animate",
           "duration": 1.0,
           "animations": [
-            { "type": "Create", "id": "0", "rate_func": "smooth", "params": {} }
+            {
+              "type": "simple",
+              "kind": "Create",
+              "id": "0",
+              "rate_func": "smooth",
+              "params": {}
+            }
           ]
         }
       ]
@@ -113,25 +127,32 @@ Top-level payload shape:
 
 Core commands:
 
-- `add`: introduce mobject state into JS scene.
-- `remove`: remove mobject by id.
-- `animate`: high-level animation descriptors.
-- `data`: per-frame data for updater-driven sections.
+- `add`: introduce mobject by `id` using `state_ref` into section `states`.
+- `remove`: remove mobject by `id`.
+- `animate`: high-level animation descriptors (`type` family + `kind`).
+- `data`: updater-driven frame stream where per-mobject payload is `{ "state_ref": <int> }`.
+- `rebind`: remap IDs after replacement-style transforms (`source_id -> target_id`).
+
+Key semantics:
+
+- `snapshot` is always a full state map at section entry.
+- `states` is a deduplicated per-section bank referenced by commands/frames.
+- No `hidden` semantics in V2.
+- `ReplacementTransform` is represented as transform animation + `rebind` command.
 
 ---
 
-## Supported/Important Behavior (V1)
+## Supported/Important Behavior
 
-- `Create`, `FadeIn`, `FadeOut`, `Write`, `ReplacementTransform`.
-- `.animate.shift`, `.animate.rotate`, `.animate.scale` mapped through descriptor params.
-- Snapshot restoration at section boundaries.
-- Invalid point-array shape (not `3n+1`) raises JS error.
+- Supported descriptor families include simple animations (`Create`, `FadeIn`, `FadeOut`, `Write`) and transform (`Transform`, `ReplacementTransform` lowering to transform + `rebind`).
+- Method animations (`.animate.shift`, `.animate.rotate`, `.animate.scale`, etc.) map to `type: "simple"` with explicit params.
+- Snapshot restoration at section boundaries remains core behavior.
+- Invalid point-array shape (not `3n+1`) should raise JS-side playback error.
 
 Known integration nuance:
 
 - Some `manim-web` animation exports may appear class-like in one runtime path and factory-like in another.
-- `Shift` currently has explicit compatibility handling in `player.js` for class-vs-factory shape.
-- Pre-V2 work includes extending this hardening pattern to other animations.
+- Adapter logic in `player.js` should not assume one shape.
 
 ---
 
@@ -139,18 +160,20 @@ Known integration nuance:
 
 ### Python tests
 
-- Validate serialization/snapshot semantics and command stream correctness.
+- Prefer fewer, more exhaustive deterministic tests asserting full JSON payloads.
+- Validate schema compatibility against `spec.json`.
+- Validate updater/data frames use `state_ref` indirection (not inline frame state).
 
 ### Playwright integration (`tests/test_playwright_integration.py`)
 
 - Spins local HTTP server.
 - Serves JS modules and generated HTML scene pages.
 - Captures browser console/page errors through a fixture.
-- Verifies UI + runtime behavior, including playback error checks.
+- Verifies UI + runtime behavior, including playback errors and section navigation.
 
-Important current gap being addressed:
+Current integration priority:
 
-- Source-vs-bundle parity and runtime import-shape parity (CDN/module path vs packaged bundle).
+- V2 runtime parity (`states`/`state_ref`, `rebind`, transform descriptors).
 
 ---
 
@@ -162,13 +185,13 @@ Two separate risks exist and both matter:
    - Tests can run against `js/src/*` while users run `src/manim_widget/static/index.js`.
    - If bundle is stale, tests may pass while notebooks fail.
 
-2. **Runtime export-shape drift**
-   - Different module pipelines can expose animation APIs differently (class-like vs factory-like).
-   - Adapter logic in `player.js` should avoid assuming one shape.
+2. **Python V2 vs JS runtime skew**
+   - Python now emits V2 shape; JS path may lag on command/state semantics.
+   - Integration tests must cover full replay path to detect contract mismatches.
 
 Mitigation direction:
 
-- Add tests covering packaged bundle path.
+- Add/maintain tests covering packaged bundle path.
 - Enforce source/bundle sync checks in CI.
 - Keep animation adapter defensive for both constructor and factory APIs.
 
@@ -194,6 +217,7 @@ manim-widget/
       registry.js
     package.json
   tests/
+    test_widget.py
     test_playwright_integration.py
   spec.json
   pyproject.toml
@@ -213,6 +237,7 @@ manim-widget/
 Useful commands:
 
 - `uv run pytest -q`
+- `uv run pytest -q tests/test_widget.py`
 - `uv run pytest -q tests/test_playwright_integration.py`
 - `bun run build` (from `js/`)
 
@@ -223,6 +248,7 @@ Useful commands:
 - Keep Python mobjects as source of truth for end-state; transition hints belong in command metadata.
 - Prefer explicit serializer/adapter logic over implicit conversion.
 - When changing payload shape, update `spec.json` and tests together.
+- Preserve deterministic ordering in emitted JSON wherever possible.
 - For JS animation adapters, prefer compatibility wrappers over runtime assumptions.
 
 ---

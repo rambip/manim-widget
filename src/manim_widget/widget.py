@@ -10,7 +10,7 @@ from manim import Mobject, Scene
 
 from .renderer import CaptureRenderer
 from .serializer import serialize_scene
-from .snapshot import build_snapshot, serialize_mobject, short_id
+from .snapshot import serialize_mobject, short_id
 
 _ESM = Path(__file__).parent / "static" / "index.js"
 _JS_BUNDLE = _ESM.read_text()
@@ -30,9 +30,8 @@ class ManimWidget(anywidget.AnyWidget, Scene):
 
         self._renderer.init_scene(self)
         self._renderer.open_section("initial")
+        self._snapshots["initial"] = self._snapshot_from_registry()
         self.construct()
-        if self._renderer._current is not None:
-            self._snapshots[self._renderer._current.name] = build_snapshot(self)
 
         data = serialize_scene(
             fps=self._fps,
@@ -48,14 +47,14 @@ class ManimWidget(anywidget.AnyWidget, Scene):
         skip_animations: bool = False,
     ) -> None:
         del section_type, skip_animations
-        current = self._renderer._current
-        if current is not None:
-            self._snapshots[current.name] = self._snapshot_from_registry()
         self._renderer.open_section(name)
+        self._snapshots[name] = self._snapshot_from_registry()
 
     def _snapshot_from_registry(self) -> dict[str, dict[str, Any]]:
         snapshot: dict[str, dict[str, Any]] = {}
-        for mob in self._renderer.registry.values():
+        for mob_id, mob in self._renderer.registry.items():
+            if mob_id not in self._renderer._active_ids:
+                continue
             mob_sid = short_id(mob)
             if mob_sid not in snapshot:
                 snapshot[mob_sid] = serialize_mobject(mob)
@@ -72,7 +71,7 @@ class ManimWidget(anywidget.AnyWidget, Scene):
                         {
                             "cmd": "add",
                             "id": short_id(mob),
-                            "state": serialize_mobject(mob),
+                            "state_ref": self._renderer.state_ref_for(mob),
                         }
                     )
         Scene.add(self, *mobjects)
