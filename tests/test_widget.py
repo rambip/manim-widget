@@ -4,7 +4,7 @@ import json
 import os
 
 from jsonschema import validate
-from manim import Circle, Dot, ReplacementTransform, Square, ValueTracker
+from manim import GREEN, Circle, Create, Dot, ReplacementTransform, Square, ValueTracker
 
 from manim_widget.snapshot import reset_id_counter
 from manim_widget.widget import ManimWidget
@@ -168,33 +168,95 @@ def test_v2_data_command_uses_state_refs_and_dedup_is_deterministic():
     scene = DataScene(fps=10)
     data = json.loads(scene.scene_data)
 
-    section = data["sections"][0]
-    assert data["version"] == 2
-    assert section["name"] == "initial"
-    assert section["snapshot"] == {}
+    expected = {
+        "version": 2,
+        "fps": 10,
+        "sections": [
+            {
+                "name": "initial",
+                "snapshot": {},
+                "states": [
+                    {"kind": "ValueTracker", "value": 0.0},
+                    {
+                        "kind": "Dot",
+                        "opacity": 1.0,
+                        "fill_color": "#FFFFFF",
+                        "fill_opacity": 1.0,
+                        "stroke_color": "#FFFFFF",
+                        "stroke_opacity": 1.0,
+                        "z_index": 0,
+                    },
+                    {"kind": "ValueTracker", "value": 0.12385697935738824},
+                    {
+                        "kind": "Dot",
+                        "opacity": 1.0,
+                        "fill_color": "#FFFFFF",
+                        "fill_opacity": 1.0,
+                        "stroke_color": "#FFFFFF",
+                        "stroke_opacity": 1.0,
+                        "z_index": 0,
+                    },
+                    {"kind": "ValueTracker", "value": 0.7974197341465827},
+                    {
+                        "kind": "Dot",
+                        "opacity": 1.0,
+                        "fill_color": "#FFFFFF",
+                        "fill_opacity": 1.0,
+                        "stroke_color": "#FFFFFF",
+                        "stroke_opacity": 1.0,
+                        "z_index": 0,
+                    },
+                    {"kind": "ValueTracker", "value": 2.2025802658534173},
+                    {
+                        "kind": "Dot",
+                        "opacity": 1.0,
+                        "fill_color": "#FFFFFF",
+                        "fill_opacity": 1.0,
+                        "stroke_color": "#FFFFFF",
+                        "stroke_opacity": 1.0,
+                        "z_index": 0,
+                    },
+                    {"kind": "ValueTracker", "value": 2.8761430206426124},
+                    {
+                        "kind": "Dot",
+                        "opacity": 1.0,
+                        "fill_color": "#FFFFFF",
+                        "fill_opacity": 1.0,
+                        "stroke_color": "#FFFFFF",
+                        "stroke_opacity": 1.0,
+                        "z_index": 0,
+                    },
+                    {"kind": "ValueTracker", "value": 3.0},
+                    {
+                        "kind": "Dot",
+                        "opacity": 1.0,
+                        "fill_color": "#FFFFFF",
+                        "fill_opacity": 1.0,
+                        "stroke_color": "#FFFFFF",
+                        "stroke_opacity": 1.0,
+                        "z_index": 0,
+                    },
+                ],
+                "construct": [
+                    {"cmd": "add", "id": "0", "state_ref": 0},
+                    {"cmd": "add", "id": "1", "state_ref": 1},
+                    {
+                        "cmd": "data",
+                        "duration": 0.5,
+                        "frames": [
+                            {"0": {"state_ref": 2}, "1": {"state_ref": 3}},
+                            {"0": {"state_ref": 4}, "1": {"state_ref": 5}},
+                            {"0": {"state_ref": 6}, "1": {"state_ref": 7}},
+                            {"0": {"state_ref": 8}, "1": {"state_ref": 9}},
+                            {"0": {"state_ref": 10}, "1": {"state_ref": 11}},
+                        ],
+                    },
+                ],
+            }
+        ],
+    }
 
-    construct = section["construct"]
-    assert construct[0]["cmd"] == "add"
-    assert construct[1]["cmd"] == "add"
-    assert construct[2]["cmd"] == "data"
-
-    data_cmd = construct[2]
-    assert data_cmd["duration"] == 0.5
-    assert len(data_cmd["frames"]) == 5
-
-    states = section["states"]
-    assert isinstance(states, list)
-    assert len(states) >= 3
-
-    for frame in data_cmd["frames"]:
-        assert set(frame.keys()) == {"0", "1"}
-        assert set(frame["0"].keys()) == {"state_ref"}
-        assert set(frame["1"].keys()) == {"state_ref"}
-        assert 0 <= frame["0"]["state_ref"] < len(states)
-        assert 0 <= frame["1"]["state_ref"] < len(states)
-
-    dot_ref_seq = [frame["1"]["state_ref"] for frame in data_cmd["frames"]]
-    assert dot_ref_seq == sorted(dot_ref_seq)
+    assert_close(strip_points(data), strip_points(expected))
 
 
 def test_v2_scene_validates_against_schema():
@@ -209,7 +271,117 @@ def test_v2_scene_validates_against_schema():
 
     scene = SchemaScene()
     data = json.loads(scene.scene_data)
+    expected = {
+        "version": 2,
+        "fps": 10,
+        "sections": [
+            {
+                "name": "initial",
+                "snapshot": {},
+                "states": [
+                    {
+                        "kind": "Circle",
+                        "opacity": 0.0,
+                        "fill_color": "#FC6255",
+                        "fill_opacity": 0.0,
+                        "stroke_color": "#FC6255",
+                        "stroke_width": 4,
+                        "stroke_opacity": 1.0,
+                        "z_index": 0,
+                    }
+                ],
+                "construct": [
+                    {"cmd": "add", "id": "0", "state_ref": 0},
+                    {
+                        "cmd": "animate",
+                        "duration": 1.0,
+                        "animations": [
+                            {
+                                "id": "0",
+                                "rate_func": "smooth",
+                                "type": "simple",
+                                "kind": "Shift",
+                                "params": {"vector": [1, 0, 0]},
+                            }
+                        ],
+                    },
+                ],
+            }
+        ],
+    }
+
+    assert_close(strip_points(data), strip_points(expected))
     validate(instance=data, schema=schema)
+
+
+def test_v2_create_then_next_section_snapshot_only_second_section():
+    reset_id_counter()
+
+    class Move(ManimWidget):
+        def construct(self):
+            circle = Circle(1, color=GREEN, fill_opacity=1, stroke_opacity=1)
+            self.play(Create(circle))
+            self.next_section("a")
+
+    scene = Move()
+    data = json.loads(scene.scene_data)
+
+    expected = {
+        "version": 2,
+        "fps": 10,
+        "sections": [
+            {
+                "name": "initial",
+                "snapshot": {},
+                "states": [
+                    {
+                        "kind": "Circle",
+                        "opacity": 1.0,
+                        "fill_color": "#83C167",
+                        "fill_opacity": 1.0,
+                        "stroke_color": "#83C167",
+                        "stroke_width": 4,
+                        "stroke_opacity": 1.0,
+                        "z_index": 0,
+                    }
+                ],
+                "construct": [
+                    {"cmd": "add", "id": "0", "state_ref": 0},
+                    {
+                        "cmd": "animate",
+                        "duration": 1.0,
+                        "animations": [
+                            {
+                                "id": "0",
+                                "rate_func": "smooth",
+                                "type": "simple",
+                                "kind": "Create",
+                            }
+                        ],
+                    },
+                ],
+            },
+            {
+                "name": "a",
+                "snapshot": {
+                    "0": {
+                        "kind": "Circle",
+                        "opacity": 1.0,
+                        "fill_color": "#83C167",
+                        "fill_opacity": 1.0,
+                        "stroke_color": "#83C167",
+                        "stroke_width": 4,
+                        "stroke_opacity": 1.0,
+                        "z_index": 0,
+                    }
+                },
+                "states": [],
+                "construct": [],
+            },
+        ],
+    }
+
+    assert_close(strip_points(data), strip_points(expected))
 
 
 def test_v2_multiple_sections():

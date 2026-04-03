@@ -140,7 +140,16 @@ class CaptureRenderer:
                 )
 
             elif isinstance(anim, (Create, FadeIn, Write)):
-                self.register_mobject(anim.mobject)
+                mob = anim.mobject
+                if not self.is_active(mob):
+                    self.register_mobject(mob)
+                pre_commands.append(
+                    {
+                        "cmd": "add",
+                        "id": short_id(mob),
+                        "state_ref": self.state_ref_for(mob),
+                    }
+                )
 
             elif isinstance(anim, FadeOut):
                 post_commands.append({"cmd": "remove", "id": short_id(anim.mobject)})
@@ -252,10 +261,12 @@ class CaptureRenderer:
             descriptor["kind"] = "Transform"
             descriptor["state_ref"] = self.state_ref_for(target_mobject)
             transform_params: dict[str, Any] = {}
-            if hasattr(anim, "path_arc") and anim.path_arc is not None:
-                transform_params["path_arc"] = float(anim.path_arc)
-            if hasattr(anim, "path_arc_axis") and anim.path_arc_axis is not None:
-                transform_params["path_arc_axis"] = list(anim.path_arc_axis)
+            path_arc = getattr(anim, "path_arc", None)
+            if path_arc is not None:
+                transform_params["path_arc"] = float(path_arc)
+            path_arc_axis = getattr(anim, "path_arc_axis", None)
+            if path_arc_axis is not None:
+                transform_params["path_arc_axis"] = list(path_arc_axis)
             if transform_params:
                 descriptor["params"] = transform_params
             return descriptor
