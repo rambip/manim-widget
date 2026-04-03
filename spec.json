@@ -142,7 +142,7 @@
             "minItems": 3,
             "maxItems": 3
           },
-          "description": "Bezier control points. Format: [p0, h0_a, h0_b, p1, h1_a, h1_b, p2, ...] where pi is a point and hi_a, hi_b are handles. Must have 3n+1 points (starting point + n cubic Bezier segments). Multiple disconnected subpaths are NOT supported; call get_subpaths() first."
+          "description": "Bezier control points. Format: [p0, h0_a, h0_b, p1, h1_a, h1_b, p2, ...] where pi is a point and hi_a, hi_b are handles. Must have 3n+1 points (starting point + n cubic Bezier segments). Mobjects with multiple disconnected subpaths are serialized as VGroup with each subpath as a child."
         },
         "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
         "color": { "$ref": "#/definitions/Color" },

@@ -47,6 +47,51 @@ def _color_to_hex(color: object) -> str:
     return str(color)
 
 
+def _serialize_multi_subpath(mob: Mobject, subpaths: list) -> dict[str, object]:
+    child_states: list[dict[str, object]] = []
+    for subpath in subpaths:
+        if len(subpath) == 0:
+            continue
+        points_3n1: list[list[float]] = []
+        for i in range(0, len(subpath), 4):
+            chunk = subpath[i : i + 4]
+            if i == 0:
+                points_3n1.extend(chunk.tolist())
+            else:
+                points_3n1.extend(chunk[1:].tolist())
+        child_state: dict[str, object] = {
+            "kind": type(mob).__name__,
+            "points": points_3n1,
+            "opacity": _opacity_for(mob),
+        }
+        if isinstance(mob, VMobject):
+            fill_color = mob.get_fill_color()
+            if fill_color:
+                child_state["fill_color"] = _color_to_hex(fill_color)
+            fill_opacity = mob.get_fill_opacity()
+            if fill_opacity is not None:
+                child_state["fill_opacity"] = fill_opacity
+            stroke_color = mob.get_stroke_color()
+            if stroke_color:
+                child_state["stroke_color"] = _color_to_hex(stroke_color)
+            stroke_width = mob.get_stroke_width()
+            if stroke_width:
+                child_state["stroke_width"] = stroke_width
+            stroke_opacity = mob.get_stroke_opacity()
+            if stroke_opacity is not None:
+                child_state["stroke_opacity"] = stroke_opacity
+            z_index = mob.get_z_index()
+            if z_index is not None:
+                child_state["z_index"] = z_index
+        child_states.append(child_state)
+
+    return {
+        "kind": "VGroup",
+        "opacity": _opacity_for(mob),
+        "children": child_states,
+    }
+
+
 def serialize_mobject(mob: Mobject) -> dict[str, object]:
     if isinstance(mob, ValueTracker):
         return {
@@ -86,8 +131,7 @@ def serialize_mobject(mob: Mobject) -> dict[str, object]:
     if hasattr(mob, "get_points"):
         subpaths = mob.get_subpaths()
         if len(subpaths) > 1:
-            msg = f"Mobject {type(mob).__name__} has multiple subpaths ({len(subpaths)}); not supported"
-            raise ValueError(msg)
+            return _serialize_multi_subpath(mob, subpaths)
         if subpaths:
             raw_points = subpaths[0]
             if len(raw_points) > 0:

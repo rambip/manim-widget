@@ -24,7 +24,9 @@ from manim import (
     MarkupText,
     Text,
     Intersection,
+    VMobject,
 )
+import numpy as np
 
 from manim_widget.widget import ManimWidget
 
@@ -122,6 +124,23 @@ class TestCLIIntegration:
         scene = BooleanOperations()
         return scene.scene_data
 
+    @pytest.fixture
+    def multi_subpath_data(self) -> str:
+        class MultiSubpathScene(ManimWidget):
+            def construct(self):
+                vmob = VMobject()
+                vmob.set_stroke(color=GREEN, width=5)
+                vmob.start_new_path(np.array([0, 0, 0]))
+                vmob.add_line_to(np.array([1, 0, 0]))
+                vmob.add_line_to(np.array([1, 1, 0]))
+                vmob.start_new_path(np.array([2, 0, 0]))
+                vmob.add_line_to(np.array([3, 0, 0]))
+                vmob.add_line_to(np.array([3, 1, 0]))
+                self.play(Create(vmob))
+
+        scene = MultiSubpathScene()
+        return scene.scene_data
+
     def test_simple_scene(self, simple_scene_data):
         returncode, stdout, stderr = run_cli(simple_scene_data)
         assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
@@ -140,6 +159,22 @@ class TestCLIIntegration:
 
     def test_boolean_operations(self, boolean_operations_data):
         returncode, stdout, stderr = run_cli(boolean_operations_data)
+        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
+
+    def test_multi_subpath(self, multi_subpath_data):
+        vmob = VMobject()
+        vmob.start_new_path(np.array([0, 0, 0]))
+        vmob.add_line_to(np.array([1, 0, 0]))
+        vmob.add_line_to(np.array([1, 1, 0]))
+        vmob.start_new_path(np.array([2, 0, 0]))
+        vmob.add_line_to(np.array([3, 0, 0]))
+        vmob.add_line_to(np.array([3, 1, 0]))
+        subpaths = vmob.get_subpaths()
+        assert len(subpaths) == 2, (
+            f"VMobject should have 2 subpaths, got {len(subpaths)}"
+        )
+
+        returncode, stdout, stderr = run_cli(multi_subpath_data)
         assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
 
     def test_invalid_points_raises_error(self):
