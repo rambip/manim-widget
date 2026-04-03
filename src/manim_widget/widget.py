@@ -57,7 +57,9 @@ class ManimWidget(anywidget.AnyWidget, Scene):
                 continue
             mob_sid = short_id(mob)
             if mob_sid not in snapshot:
-                snapshot[mob_sid] = self._renderer.serialize_mobject(mob)
+                snapshot[mob_sid] = self._renderer.serialize_mobject(
+                    mob, for_snapshot=True
+                )
         return snapshot
 
     def add(self, *mobjects: Mobject) -> None:  # type: ignore[override]

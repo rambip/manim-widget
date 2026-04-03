@@ -137,6 +137,10 @@ Key semantics:
 
 - `snapshot` is always a full state map at section entry.
 - `states` is a deduplicated per-section bank referenced by commands/frames.
+- Group encoding is intentionally split by context:
+  - snapshot uses `VGroup` with `children` as snapshot mob ids (self-contained restore graph),
+  - section state bank uses `StateGroup` with `state_children` as integer `state_ref` entries.
+  - JS runtime must handle both paths explicitly (`_restoreSnapshot` for `VGroup`, `add`/state_ref path for `StateGroup`).
 - No `hidden` semantics in V2.
 - `ReplacementTransform` is represented as transform animation + `rebind` command.
 

@@ -56,16 +56,28 @@
 
     "Snapshot": {
       "type": "object",
-      "description": "Flat map of mob_id -> MobjectState. Fully self-contained.",
-      "additionalProperties": { "$ref": "#/definitions/MobjectState" }
+      "description": "Flat map of mob_id -> SnapshotMobjectState. Fully self-contained.",
+      "additionalProperties": { "$ref": "#/definitions/SnapshotMobjectState" }
     },
 
-    "MobjectState": {
+    "SnapshotMobjectState": {
+      "description": "State variants valid inside section snapshots. Snapshot is self-contained, so group children reference snapshot mob_ids.",
       "oneOf": [
         { "$ref": "#/definitions/VMobjectState" },
         { "$ref": "#/definitions/TextState" },
         { "$ref": "#/definitions/MathTexState" },
         { "$ref": "#/definitions/VGroupState" },
+        { "$ref": "#/definitions/ValueTrackerState" }
+      ]
+    },
+
+    "MobjectState": {
+      "description": "State variants valid inside section.states. This state bank is referenced by integer state_ref indices.",
+      "oneOf": [
+        { "$ref": "#/definitions/VMobjectState" },
+        { "$ref": "#/definitions/TextState" },
+        { "$ref": "#/definitions/MathTexState" },
+        { "$ref": "#/definitions/StateGroupState" },
         { "$ref": "#/definitions/ValueTrackerState" }
       ]
     },
@@ -185,8 +197,24 @@
         "kind": { "type": "string", "const": "VGroup" },
         "children": {
           "type": "array",
+          "items": { "type": "string" },
+          "description": "Ordered list of child snapshot mob_ids. Snapshot-only representation to keep snapshot self-contained."
+        },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "z_index": { "type": "number" }
+      }
+    },
+
+    "StateGroupState": {
+      "type": "object",
+      "required": ["kind", "state_children", "opacity"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "type": "string", "const": "StateGroup" },
+        "state_children": {
+          "type": "array",
           "items": { "type": "integer", "minimum": 0 },
-          "description": "Ordered list of child state references. Each entry indexes into section.states."
+          "description": "Ordered list of child state references. State-bank-only representation; each entry indexes into section.states."
         },
         "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
         "z_index": { "type": "number" }

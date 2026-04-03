@@ -97,24 +97,45 @@ export class Player {
   }
 
   _restoreSnapshot(snapshot, section) {
-    const vgroupChildren = [];
+    // Snapshot is self-contained: VGroup children are snapshot mob ids.
+    const snapshotGroupChildren = [];
 
     for (const [id, state] of Object.entries(snapshot)) {
       const mob = this._ensureMobject(id, state);
       this._applyState(mob, state);
       this._scene.add(mob);
       if (state.kind === "VGroup" && Array.isArray(state.children)) {
-        vgroupChildren.push([id, state.children]);
+        snapshotGroupChildren.push([id, state.children]);
       }
     }
 
-    for (const [parentId, childStateRefs] of vgroupChildren) {
+    for (const [parentId, childSnapshotIds] of snapshotGroupChildren) {
       const parent = this._registry.get(parentId);
-      this._attachVGroupChildren(parent, childStateRefs, section);
+      this._attachSnapshotGroupChildren(parent, childSnapshotIds);
     }
   }
 
-  _attachVGroupChildren(parent, childStateRefs, section) {
+  _attachSnapshotGroupChildren(parent, childSnapshotIds) {
+    if (!parent || typeof parent.add !== "function") {
+      return;
+    }
+    if (!Array.isArray(childSnapshotIds) || childSnapshotIds.length === 0) {
+      return;
+    }
+    const existingCount = Array.isArray(parent.submobjects) ? parent.submobjects.length : 0;
+    if (existingCount > 0) {
+      return;
+    }
+
+    for (const childSnapshotId of childSnapshotIds) {
+      const child = this._registry.get(childSnapshotId);
+      if (child) {
+        parent.add(child);
+      }
+    }
+  }
+
+  _attachStateGroupChildren(parent, childStateRefs, section) {
     if (!parent || typeof parent.add !== "function") {
       return;
     }
@@ -126,10 +147,13 @@ export class Player {
       return;
     }
 
+    // section.states path is compact: StateGroup children are state_ref entries.
     for (const childStateRef of childStateRefs) {
       const childState = this._stateFromRef(section, childStateRef);
       const child = this._createMobjectFromState(childState);
       this._applyState(child, childState);
+      // No stable mob_id exists for these anonymous state-bank children.
+      // They are attached structurally under the parent group only.
       parent.add(child);
     }
   }
@@ -146,7 +170,7 @@ export class Player {
   }
 
   _createMobjectFromState(state) {
-    if (state?.kind === "VGroup") {
+    if (state?.kind === "VGroup" || state?.kind === "StateGroup") {
       return new VGroup();
     }
 
@@ -210,8 +234,8 @@ export class Player {
         const state = this._stateFromRef(section, cmd.state_ref);
         const mob = this._ensureMobject(cmd.id, state);
         this._applyState(mob, state);
-        if (state.kind === "VGroup" && Array.isArray(state.children)) {
-          this._attachVGroupChildren(mob, state.children, section);
+        if (state.kind === "StateGroup" && Array.isArray(state.state_children)) {
+          this._attachStateGroupChildren(mob, state.state_children, section);
         }
         this._scene.add(mob);
         return;

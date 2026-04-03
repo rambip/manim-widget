@@ -61,9 +61,11 @@ class CaptureRenderer:
         self.sections.append(self._current)
 
     def state_ref_for(self, mob: Mobject) -> int:
-        return self._intern_state(self.serialize_mobject(mob))
+        return self._intern_state(self.serialize_mobject(mob, for_snapshot=False))
 
-    def serialize_mobject(self, mob: Mobject) -> dict[str, object]:
+    def serialize_mobject(
+        self, mob: Mobject, *, for_snapshot: bool
+    ) -> dict[str, object]:
         if isinstance(mob, ValueTracker):
             return {
                 "kind": "ValueTracker",
@@ -117,7 +119,13 @@ class CaptureRenderer:
                     state["points"] = points_3n1
 
         if isinstance(mob, VGroup):
-            state["children"] = [self.state_ref_for(child) for child in mob.submobjects]
+            if for_snapshot:
+                state["children"] = [short_id(child) for child in mob.submobjects]
+            else:
+                state["kind"] = "StateGroup"
+                state["state_children"] = [
+                    self.state_ref_for(child) for child in mob.submobjects
+                ]
 
         return state
 
