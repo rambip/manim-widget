@@ -202,6 +202,17 @@ class CaptureRenderer:
             desc = self._descriptor_from_animation(anim)
             animate_descriptors.append(desc)
 
+            mob = anim.mobject
+            if not self.is_active(mob):
+                self.register_mobject(mob)
+                pre_commands.append(
+                    {
+                        "cmd": "add",
+                        "id": short_id(mob),
+                        "state_ref": self.state_ref_for(mob),
+                    }
+                )
+
             if isinstance(anim, ReplacementTransform):
                 target = anim.target_mobject
                 if not self.is_active(target):
@@ -212,18 +223,6 @@ class CaptureRenderer:
                         "cmd": "rebind",
                         "source_id": short_id(source),
                         "target_id": short_id(target),
-                    }
-                )
-
-            elif isinstance(anim, (Create, FadeIn, Write)):
-                mob = anim.mobject
-                if not self.is_active(mob):
-                    self.register_mobject(mob)
-                pre_commands.append(
-                    {
-                        "cmd": "add",
-                        "id": short_id(mob),
-                        "state_ref": self.state_ref_for(mob),
                     }
                 )
 

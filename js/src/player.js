@@ -295,8 +295,7 @@ export class Player {
   _buildSimpleAnimation(desc) {
     const mob = this._registry.get(desc.id);
     if (!mob) {
-      console.warn(`Mobject not found: ${desc.id}`);
-      return null;
+      throw new Error(`mobject_not_found - Mobject not found: ${desc.id}`);
     }
 
     if (desc.kind === "Shift") {
@@ -323,8 +322,7 @@ export class Player {
   _buildTransformAnimation(desc, section) {
     const mob = this._registry.get(desc.id);
     if (!mob) {
-      console.warn(`Mobject not found: ${desc.id}`);
-      return null;
+      throw new Error(`mobject_not_found - Mobject not found: ${desc.id}`);
     }
 
     const targetState = this._stateFromRef(section, desc.state_ref);

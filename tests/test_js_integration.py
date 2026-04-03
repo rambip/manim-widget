@@ -6,7 +6,25 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from manim import LEFT, ORIGIN, Circle, Create, FadeIn, Square, Triangle, VGroup
+from manim import (
+    LEFT,
+    RIGHT,
+    ORIGIN,
+    Circle,
+    Create,
+    FadeIn,
+    Square,
+    Triangle,
+    VGroup,
+    Ellipse,
+    RED,
+    BLUE,
+    GREEN,
+    UP,
+    MarkupText,
+    Text,
+    Intersection,
+)
 
 from manim_widget.widget import ManimWidget
 
@@ -80,6 +98,30 @@ class TestCLIIntegration:
         scene = VGroupScene()
         return scene.scene_data
 
+    @pytest.fixture
+    def boolean_operations_data(self) -> str:
+        class BooleanOperations(ManimWidget):
+            def construct(self):
+                ellipse1 = Ellipse(
+                    width=4.0, height=5.0, fill_opacity=0.5, color=BLUE, stroke_width=10
+                ).move_to(LEFT)
+                ellipse2 = ellipse1.copy().set_color(color=RED).move_to(RIGHT)
+                bool_ops_text = MarkupText("<u>Boolean Operation</u>").next_to(
+                    ellipse1, UP * 3
+                )
+                ellipse_group = VGroup(bool_ops_text, ellipse1, ellipse2).move_to(
+                    LEFT * 3
+                )
+                self.play(FadeIn(ellipse_group))
+
+                i = Intersection(ellipse1, ellipse2, color=GREEN, fill_opacity=0.5)
+                self.play(i.animate.scale(0.25).move_to(RIGHT * 5 + UP * 2.5))
+                intersection_text = Text("Intersection", font_size=23).next_to(i, UP)
+                self.play(FadeIn(intersection_text))
+
+        scene = BooleanOperations()
+        return scene.scene_data
+
     def test_simple_scene(self, simple_scene_data):
         returncode, stdout, stderr = run_cli(simple_scene_data)
         assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
@@ -94,6 +136,10 @@ class TestCLIIntegration:
 
     def test_create_vgroup(self, vgroup_create_data):
         returncode, stdout, stderr = run_cli(vgroup_create_data)
+        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
+
+    def test_boolean_operations(self, boolean_operations_data):
+        returncode, stdout, stderr = run_cli(boolean_operations_data)
         assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
 
     def test_invalid_points_raises_error(self):
