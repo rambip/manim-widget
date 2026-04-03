@@ -10,7 +10,7 @@ from manim import Mobject, Scene
 
 from .renderer import CaptureRenderer
 from .serializer import serialize_scene
-from .snapshot import serialize_mobject, short_id
+from .snapshot import short_id
 
 _ESM = Path(__file__).parent / "static" / "index.js"
 _JS_BUNDLE = _ESM.read_text()
@@ -57,7 +57,7 @@ class ManimWidget(anywidget.AnyWidget, Scene):
                 continue
             mob_sid = short_id(mob)
             if mob_sid not in snapshot:
-                snapshot[mob_sid] = serialize_mobject(mob)
+                snapshot[mob_sid] = self._renderer.serialize_mobject(mob)
         return snapshot
 
     def add(self, *mobjects: Mobject) -> None:  # type: ignore[override]

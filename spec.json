@@ -185,8 +185,8 @@
         "kind": { "type": "string", "const": "VGroup" },
         "children": {
           "type": "array",
-          "items": { "type": "string" },
-          "description": "Ordered list of mob_ids. Children are always independently present in the same snapshot or registered before use."
+          "items": { "type": "integer", "minimum": 0 },
+          "description": "Ordered list of child state references. Each entry indexes into section.states."
         },
         "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
         "z_index": { "type": "number" }

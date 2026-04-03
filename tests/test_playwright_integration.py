@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Generator
 
 import pytest
-from manim import LEFT, Circle, Create, FadeIn, Square
+from manim import LEFT, ORIGIN, Circle, Create, FadeIn, Square, Triangle, VGroup
 from playwright.sync_api import Page, expect
 
 from manim_widget.widget import ManimWidget
@@ -249,6 +249,31 @@ class TestPlaywrightIntegration:
         scrubber = page.locator("#mw-scrubber")
         expect(scrubber).to_be_visible()
         expect(scrubber).to_have_attribute("max", "1")
+
+    @pytest.fixture
+    def vgroup_create_data(self) -> str:
+        class VGroupScene(ManimWidget):
+            def construct(self):
+                logo_green = "#87c2a5"
+                logo_blue = "#525893"
+                logo_red = "#e07a5f"
+                circle = Circle(color=logo_green, fill_opacity=1).shift(LEFT)
+                square = Square(color=logo_blue, fill_opacity=1).shift((0, 1, 0))
+                triangle = Triangle(color=logo_red, fill_opacity=1).shift((1, 0, 0))
+                logo = VGroup(triangle, square, circle)
+                logo.move_to(ORIGIN)
+                self.play(Create(logo))
+
+        scene = VGroupScene()
+        return scene.scene_data
+
+    def test_create_vgroup_renders(self, vgroup_create_data, render_scene, page: Page):
+        render_scene(vgroup_create_data, "test_create_vgroup.html")
+
+        container = page.locator("#mw-container")
+        expect(container).to_be_visible()
+        warning = page.locator("#mw-warning")
+        expect(warning).to_be_hidden()
 
     def test_invalid_points_raises_js_error(self, render_scene, page: Page):
         invalid_scene_data = {

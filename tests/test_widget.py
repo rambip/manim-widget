@@ -4,7 +4,16 @@ import json
 import os
 
 from jsonschema import validate
-from manim import GREEN, Circle, Create, Dot, ReplacementTransform, Square, ValueTracker
+from manim import (
+    GREEN,
+    Circle,
+    Create,
+    Dot,
+    ReplacementTransform,
+    Square,
+    VGroup,
+    ValueTracker,
+)
 
 from manim_widget.snapshot import reset_id_counter
 from manim_widget.widget import ManimWidget
@@ -539,3 +548,26 @@ def test_v2_multiple_sections():
     }
 
     assert_close(strip_points(data), strip_points(expected))
+
+
+def test_v2_vgroup_children_are_state_refs():
+    reset_id_counter()
+
+    class GroupScene(ManimWidget):
+        def construct(self):
+            c = Circle()
+            s = Square()
+            g = VGroup(c, s)
+            self.add(g)
+
+    scene = GroupScene()
+    data = json.loads(scene.scene_data)
+    section = data["sections"][0]
+    states = section["states"]
+
+    assert section["construct"][0]["cmd"] == "add"
+    group_state = states[section["construct"][0]["state_ref"]]
+    assert group_state["kind"] == "VGroup"
+    assert group_state["children"] == [0, 1]
+    assert states[0]["kind"] == "Circle"
+    assert states[1]["kind"] == "Square"

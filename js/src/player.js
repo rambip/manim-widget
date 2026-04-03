@@ -77,7 +77,7 @@ export class Player {
     this._scene.clear();
     this._registry.clear();
 
-    this._restoreSnapshot(section.snapshot || {});
+    this._restoreSnapshot(section.snapshot || {}, section);
 
     const commands = Array.isArray(section.construct) ? section.construct : [];
     for (const cmd of commands) {
@@ -96,7 +96,7 @@ export class Player {
     return states[stateRef];
   }
 
-  _restoreSnapshot(snapshot) {
+  _restoreSnapshot(snapshot, section) {
     const vgroupChildren = [];
 
     for (const [id, state] of Object.entries(snapshot)) {
@@ -108,17 +108,29 @@ export class Player {
       }
     }
 
-    for (const [parentId, childIds] of vgroupChildren) {
+    for (const [parentId, childStateRefs] of vgroupChildren) {
       const parent = this._registry.get(parentId);
-      if (!parent || typeof parent.add !== "function") {
-        continue;
-      }
-      for (const childId of childIds) {
-        const child = this._registry.get(childId);
-        if (child) {
-          parent.add(child);
-        }
-      }
+      this._attachVGroupChildren(parent, childStateRefs, section);
+    }
+  }
+
+  _attachVGroupChildren(parent, childStateRefs, section) {
+    if (!parent || typeof parent.add !== "function") {
+      return;
+    }
+    if (!Array.isArray(childStateRefs) || childStateRefs.length === 0) {
+      return;
+    }
+    const existingCount = Array.isArray(parent.submobjects) ? parent.submobjects.length : 0;
+    if (existingCount > 0) {
+      return;
+    }
+
+    for (const childStateRef of childStateRefs) {
+      const childState = this._stateFromRef(section, childStateRef);
+      const child = this._createMobjectFromState(childState);
+      this._applyState(child, childState);
+      parent.add(child);
     }
   }
 
@@ -198,6 +210,9 @@ export class Player {
         const state = this._stateFromRef(section, cmd.state_ref);
         const mob = this._ensureMobject(cmd.id, state);
         this._applyState(mob, state);
+        if (state.kind === "VGroup" && Array.isArray(state.children)) {
+          this._attachVGroupChildren(mob, state.children, section);
+        }
         this._scene.add(mob);
         return;
       }
