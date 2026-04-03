@@ -81,6 +81,11 @@ When features are unsupported, surface predictable warnings/errors instead of si
   - Restores section snapshots and executes command streams.
   - Must resolve `state_ref` through section `states` and apply `rebind` semantics.
   - Animation adapter layer should remain defensive against class-vs-factory exports.
+- `cli.js`
+  - CLI entry point for JS integration testing.
+  - Uses happy-dom to provide browser-like environment.
+  - Mocks manim-web to avoid WebGL dependencies.
+  - Plays scene spec from stdin and reports errors to stderr.
 
 ### Bundled runtime (`src/manim_widget/static/index.js`)
 
@@ -168,16 +173,19 @@ Known integration nuance:
 - Validate schema compatibility against `spec.json`.
 - Validate updater/data frames use `state_ref` indirection (not inline frame state).
 
-### Playwright integration (`tests/test_playwright_integration.py`)
+### JS integration tests (`tests/test_js_integration.py`)
 
-- Spins local HTTP server.
-- Serves JS modules and generated HTML scene pages.
-- Captures browser console/page errors through a fixture.
-- Verifies UI + runtime behavior, including playback errors and section navigation.
+- Uses CLI script (`js/src/cli.js`) with happy-dom to test JS runtime without a browser.
+- Mocks manim-web to avoid WebGL/Three.js dependencies.
+- Takes scene spec JSON via stdin and plays through all sections/commands.
+- Captures errors and warnings, exits non-zero on playback errors.
+- Run with: `bun run src/cli.js < scene-spec.json`
 
-Current integration priority:
-
-- V2 runtime parity (`states`/`state_ref`, `rebind`, transform descriptors).
+Test coverage includes:
+- Simple scenes (Create, FadeIn)
+- Multi-section navigation
+- VGroup handling
+- Error conditions (invalid point arrays, missing state refs)
 
 ---
 
@@ -186,17 +194,17 @@ Current integration priority:
 Two separate risks exist and both matter:
 
 1. **Source vs bundled artifact drift**
-   - Tests can run against `js/src/*` while users run `src/manim_widget/static/index.js`.
+   - JS integration tests run against `js/src/*` via CLI imports.
+   - Users run `src/manim_widget/static/index.js` (the bundled version).
    - If bundle is stale, tests may pass while notebooks fail.
 
 2. **Python V2 vs JS runtime skew**
-   - Python now emits V2 shape; JS path may lag on command/state semantics.
-   - Integration tests must cover full replay path to detect contract mismatches.
+   - Python emits V2 shape; JS path must handle command/state semantics.
+   - Integration tests cover full replay path to detect contract mismatches.
 
-Mitigation direction:
+Mitigation:
 
-- Add/maintain tests covering packaged bundle path.
-- Enforce source/bundle sync checks in CI.
+- Run `bun run build` after JS source changes.
 - Keep animation adapter defensive for both constructor and factory APIs.
 
 ---
@@ -219,10 +227,11 @@ manim-widget/
       index.js
       player.js
       registry.js
+      cli.js
     package.json
   tests/
     test_widget.py
-    test_playwright_integration.py
+    test_js_integration.py
   spec.json
   pyproject.toml
   TODO.md
@@ -236,14 +245,15 @@ manim-widget/
 - Python env/deps: `uv`
 - JS deps/build: `bun`
 - Widget bridge: `anywidget`
-- Browser integration tests: `pytest` + `pytest-playwright`
+- JS integration tests: `bun` + `happy-dom`
 
 Useful commands:
 
 - `uv run pytest -q`
 - `uv run pytest -q tests/test_widget.py`
-- `uv run pytest -q tests/test_playwright_integration.py`
+- `uv run pytest -q tests/test_js_integration.py`
 - `bun run build` (from `js/`)
+- `bun run cli < scene-spec.json` (from `js/`, for manual JS runtime testing)
 
 ---
 

@@ -19,6 +19,7 @@ _JS_BUNDLE = _ESM.read_text()
 class ManimWidget(anywidget.AnyWidget, Scene):
     _esm = _JS_BUNDLE
     scene_data = traitlets.Unicode("").tag(sync=True)
+    playback_error = traitlets.Unicode("").tag(sync=True)
 
     def __init__(self, fps: int = 10, **kwargs: Any) -> None:
         self._fps = fps
