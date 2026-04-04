@@ -101,7 +101,7 @@ class CaptureRenderer:
             if z_index is not None:
                 state["z_index"] = z_index
 
-        if hasattr(mob, "get_points"):
+        if isinstance(mob, VMobject):
             subpaths = mob.get_subpaths()
             if len(subpaths) > 1:
                 return self._serialize_multi_subpath(
@@ -258,6 +258,10 @@ class CaptureRenderer:
             animate_descriptors.append(desc)
 
             mob = anim.mobject
+            if isinstance(mob, Mobject) and not isinstance(
+                mob, VMobject | ValueTracker
+            ):
+                continue
             if not self.is_active(mob):
                 self.register_mobject(mob)
                 pre_commands.append(

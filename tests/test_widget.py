@@ -677,3 +677,21 @@ def test_v2_chained_method_animation_uses_transform_with_correct_end_state():
     }
 
     assert_close(strip_points(data), strip_points(expected))
+
+
+def test_wait_with_vmobject():
+    class SceneWithWait(ManimWidget):
+        def construct(self):
+            dot = Dot()
+            self.add(dot)
+            self.play(Create(dot))
+            self.wait()
+
+    widget = SceneWithWait()
+    data = json.loads(widget.scene_data)
+    schema = load_schema()
+    validate(data, schema)
+
+    assert data["version"] == 2
+    assert len(data["sections"]) == 1
+    assert len(data["sections"][0]["construct"]) == 3
