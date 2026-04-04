@@ -591,3 +591,89 @@ def test_v2_snapshot_group_is_self_contained_with_child_ids():
     snapshot_group = second["snapshot"]["0"]
     assert snapshot_group["kind"] == "VGroup"
     assert snapshot_group["children"] == ["1", "2"]
+
+
+def test_v2_chained_method_animation_uses_transform_with_correct_end_state():
+    reset_id_counter()
+
+    class ChainedAnimScene(ManimWidget):
+        def construct(self):
+            s = Square(side_length=1.0)
+            self.add(s)
+            self.play(s.animate.scale(2.0).shift((1, 0, 0)))
+
+    scene = ChainedAnimScene()
+    data = json.loads(scene.scene_data)
+    section = data["sections"][0]
+
+    anim_cmd = section["construct"][1]
+    assert anim_cmd["cmd"] == "animate"
+
+    anim_desc = anim_cmd["animations"][0]
+    assert anim_desc["id"] == "0"
+    assert anim_desc["type"] == "transform"
+    assert anim_desc["kind"] == "Transform"
+    assert "state_ref" in anim_desc
+
+    state_ref = anim_desc["state_ref"]
+    end_state = section["states"][state_ref]
+    assert end_state["kind"] == "Square"
+
+    anim = anim_desc.get("params", {})
+    assert anim.get("path_arc") == 0.0
+    assert anim.get("path_arc_axis") == [0.0, 0.0, 1.0]
+
+    expected = {
+        "version": 2,
+        "fps": 10,
+        "sections": [
+            {
+                "name": "initial",
+                "snapshot": {},
+                "states": [
+                    {
+                        "kind": "Square",
+                        "opacity": 0.0,
+                        "fill_color": "#FFFFFF",
+                        "fill_opacity": 0.0,
+                        "stroke_color": "#FFFFFF",
+                        "stroke_width": 4,
+                        "stroke_opacity": 1.0,
+                        "z_index": 0,
+                    },
+                    {
+                        "kind": "Square",
+                        "opacity": 0.0,
+                        "fill_color": "#FFFFFF",
+                        "fill_opacity": 0.0,
+                        "stroke_color": "#FFFFFF",
+                        "stroke_width": 4,
+                        "stroke_opacity": 1.0,
+                        "z_index": 0,
+                    },
+                ],
+                "construct": [
+                    {"cmd": "add", "id": "0", "state_ref": 0},
+                    {
+                        "cmd": "animate",
+                        "duration": 1.0,
+                        "animations": [
+                            {
+                                "id": "0",
+                                "rate_func": "smooth",
+                                "type": "transform",
+                                "kind": "Transform",
+                                "state_ref": 1,
+                                "params": {
+                                    "path_arc": 0.0,
+                                    "path_arc_axis": [0.0, 0.0, 1.0],
+                                },
+                            }
+                        ],
+                    },
+                ],
+            }
+        ],
+    }
+
+    assert_close(strip_points(data), strip_points(expected))

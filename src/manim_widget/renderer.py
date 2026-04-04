@@ -331,6 +331,26 @@ class CaptureRenderer:
         methods = getattr(anim, "methods", None)
         is_method_animation = False
         if methods:
+            # For chained method animations, use Transform with target_mobject
+            if len(methods) > 1:
+                if target_mobject is None:
+                    msg = "Chained method animation missing target_mobject"
+                    raise RuntimeError(msg)
+                descriptor["type"] = "transform"
+                descriptor["kind"] = "Transform"
+                descriptor["state_ref"] = self.state_ref_for(target_mobject)
+                transform_params: dict[str, Any] = {}
+                path_arc = getattr(anim, "path_arc", None)
+                if path_arc is not None:
+                    transform_params["path_arc"] = float(path_arc)
+                path_arc_axis = getattr(anim, "path_arc_axis", None)
+                if path_arc_axis is not None:
+                    transform_params["path_arc_axis"] = list(path_arc_axis)
+                if transform_params:
+                    descriptor["params"] = transform_params
+                return descriptor
+
+            # Single method animation - decode method parameters
             for mwa in methods:
                 method_name = mwa.method.__name__
                 method_args = mwa.args

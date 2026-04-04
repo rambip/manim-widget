@@ -155,6 +155,7 @@ Key semantics:
 
 - Supported descriptor families include simple animations (`Create`, `FadeIn`, `FadeOut`, `Write`) and transform (`Transform`, `ReplacementTransform` lowering to transform + `rebind`).
 - Method animations (`.animate.shift`, `.animate.rotate`, `.animate.scale`, etc.) map to `type: "simple"` with explicit params.
+- **Chained method animations** (`.animate.scale(0.5).next_to(...)`) are handled by emitting a Transform with the final `target_mobject` state. This correctly captures all method effects without needing to decode each method individually.
 - Snapshot restoration at section boundaries remains core behavior.
 - Invalid point-array shape (not `3n+1`) should raise JS-side playback error.
 
@@ -162,6 +163,7 @@ Known integration nuance:
 
 - Some `manim-web` animation exports may appear class-like in one runtime path and factory-like in another.
 - Adapter logic in `player.js` should not assume one shape.
+- Chained `.animate` methods are emitted as Transform animations, which manim-web handles correctly.
 
 ---
 
