@@ -22,7 +22,7 @@ const SIMPLE_ANIM_BUILDERS = {
 };
 
 export class Player {
-  constructor(scene, registry) {
+  constructor(scene, registry, options = {}) {
     this._scene = scene;
     this._registry = registry;
     this._sections = [];
@@ -30,6 +30,21 @@ export class Player {
     this._isPlaying = false;
     this._currentSectionIndex = 0;
     this._onSectionChange = null;
+    this._debug = options.debug || false;
+  }
+
+  _log(...args) {
+    if (this._debug) {
+      console.log("[Player]", ...args);
+    }
+  }
+
+  _warn(...args) {
+    console.warn("[Player]", ...args);
+  }
+
+  _error(...args) {
+    console.error("[Player]", ...args);
   }
 
   setfps(fps) {
@@ -65,24 +80,32 @@ export class Player {
 
   async _playSection(section) {
     if (!section) {
+      this._warn("_playSection: section is null or undefined");
       return;
     }
 
+    this._log(`_playSection: playing section '${section.name || "unnamed"}'`);
+
     if (section.unsupported) {
       const reason = section.unsupported_reason || section.reason || "unknown reason";
-      console.warn(`Section \"${section.name}\" is unsupported: ${reason}`);
+      this._warn(`Section "${section.name}" is unsupported: ${reason}`);
       return;
     }
 
     this._scene.clear();
     this._registry.clear();
 
+    this._log("_playSection: cleared scene and registry");
+
     this._restoreSnapshot(section.snapshot || {}, section);
 
     const commands = Array.isArray(section.construct) ? section.construct : [];
-    for (const cmd of commands) {
-      await this._executeCommand(cmd, section);
+    this._log(`_playSection: executing ${commands.length} commands`);
+    for (let i = 0; i < commands.length; i++) {
+      this._log(`_playSection: command ${i}/${commands.length}`);
+      await this._executeCommand(commands[i], section);
     }
+    this._log(`_playSection: completed section '${section.name || "unnamed"}'`);
   }
 
   _stateFromRef(section, stateRef) {
@@ -99,96 +122,197 @@ export class Player {
   _restoreSnapshot(snapshot, section) {
     // Snapshot is self-contained: VGroup children are snapshot mob ids.
     const snapshotGroupChildren = [];
+    const entries = Object.entries(snapshot);
+    
+    this._log(`_restoreSnapshot: restoring ${entries.length} mobjects from snapshot`);
 
-    for (const [id, state] of Object.entries(snapshot)) {
+    for (const [id, state] of entries) {
+      this._log(`_restoreSnapshot: restoring mobject '${id}' (kind='${state?.kind || "unknown"}')`);
       const mob = this._ensureMobject(id, state);
       this._applyState(mob, state);
       this._scene.add(mob);
       if (state.kind === "VGroup" && Array.isArray(state.children)) {
         snapshotGroupChildren.push([id, state.children]);
+        this._log(`_restoreSnapshot: VGroup '${id}' has ${state.children.length} snapshot children`);
       }
     }
 
+    if (snapshotGroupChildren.length > 0) {
+      this._log(`_restoreSnapshot: attaching children to ${snapshotGroupChildren.length} VGroups`);
+    }
     for (const [parentId, childSnapshotIds] of snapshotGroupChildren) {
       const parent = this._registry.get(parentId);
+      if (!parent) {
+        throw new Error(`_restoreSnapshot: parent VGroup '${parentId}' not found in registry`);
+      }
       this._attachSnapshotGroupChildren(parent, childSnapshotIds);
     }
   }
 
   _attachSnapshotGroupChildren(parent, childSnapshotIds) {
-    if (!parent || typeof parent.add !== "function") {
+    if (!parent) {
+      this._warn("_attachSnapshotGroupChildren: parent is null or undefined");
       return;
     }
-    if (!Array.isArray(childSnapshotIds) || childSnapshotIds.length === 0) {
+    if (typeof parent.add !== "function") {
+      throw new Error(`_attachSnapshotGroupChildren: parent does not have 'add' method (got ${typeof parent})`);
+    }
+    if (!Array.isArray(childSnapshotIds)) {
+      this._warn("_attachSnapshotGroupChildren: childSnapshotIds is not an array");
+      return;
+    }
+    if (childSnapshotIds.length === 0) {
+      this._log("_attachSnapshotGroupChildren: no children to attach");
       return;
     }
     const existingCount = Array.isArray(parent.submobjects) ? parent.submobjects.length : 0;
     if (existingCount > 0) {
+      this._log(`_attachSnapshotGroupChildren: parent already has ${existingCount} submobjects, skipping`);
       return;
     }
 
+    this._log(`_attachSnapshotGroupChildren: attaching ${childSnapshotIds.length} children to VGroup`);
     for (const childSnapshotId of childSnapshotIds) {
       const child = this._registry.get(childSnapshotId);
-      if (child) {
-        parent.add(child);
+      if (!child) {
+        throw new Error(`_attachSnapshotGroupChildren: child with snapshot id '${childSnapshotId}' not found in registry`);
       }
+      parent.add(child);
+      this._log(`_attachSnapshotGroupChildren: attached child '${childSnapshotId}'`);
     }
   }
 
   _attachStateGroupChildren(parent, childStateRefs, section) {
-    if (!parent || typeof parent.add !== "function") {
-      return;
+    if (!parent) {
+      throw new Error("_attachStateGroupChildren: parent is null or undefined");
     }
-    if (!Array.isArray(childStateRefs) || childStateRefs.length === 0) {
+    if (typeof parent.add !== "function") {
+      throw new Error(`_attachStateGroupChildren: parent does not have 'add' method (got ${typeof parent})`);
+    }
+    if (!Array.isArray(childStateRefs)) {
+      throw new Error(`_attachStateGroupChildren: childStateRefs is not an array (got ${typeof childStateRefs})`);
+    }
+    if (childStateRefs.length === 0) {
+      this._log("_attachStateGroupChildren: no children to attach");
       return;
     }
     const existingCount = Array.isArray(parent.submobjects) ? parent.submobjects.length : 0;
     if (existingCount > 0) {
+      this._log(`_attachStateGroupChildren: parent already has ${existingCount} submobjects, skipping`);
       return;
     }
 
     // section.states path is compact: StateGroup children are state_ref entries.
-    for (const childStateRef of childStateRefs) {
-      const childState = this._stateFromRef(section, childStateRef);
-      const child = this._createMobjectFromState(childState);
+    this._log(`_attachStateGroupChildren: attaching ${childStateRefs.length} children to StateGroup`);
+    for (let i = 0; i < childStateRefs.length; i++) {
+      const childStateRef = childStateRefs[i];
+      let childState;
+      try {
+        childState = this._stateFromRef(section, childStateRef);
+      } catch (e) {
+        throw new Error(`_attachStateGroupChildren: failed to resolve state_ref ${childStateRef} for child ${i}: ${e.message}`);
+      }
+      
+      let child;
+      try {
+        child = this._createMobjectFromState(childState);
+      } catch (e) {
+        throw new Error(`_attachStateGroupChildren: failed to create mobject for child ${i} with state_ref ${childStateRef}: ${e.message}`);
+      }
+      
+      if (!child) {
+        throw new Error(`_attachStateGroupChildren: _createMobjectFromState returned null for child ${i} with state_ref ${childStateRef}`);
+      }
+      
       this._applyState(child, childState);
       // No stable mob_id exists for these anonymous state-bank children.
       // They are attached structurally under the parent group only.
       parent.add(child);
+      this._log(`_attachStateGroupChildren: attached child ${i} (state_ref=${childStateRef})`);
     }
   }
 
   _ensureMobject(id, state) {
+    if (!id || typeof id !== "string") {
+      throw new Error(`_ensureMobject: invalid id (got ${typeof id})`);
+    }
+    
     const existing = this._registry.get(id);
     if (existing) {
+      this._log(`_ensureMobject: returning existing mobject for id '${id}'`);
       return existing;
     }
 
-    const mob = this._createMobjectFromState(state);
+    if (!state || typeof state !== "object") {
+      throw new Error(`_ensureMobject: invalid state for id '${id}' (got ${typeof state})`);
+    }
+
+    let mob;
+    try {
+      mob = this._createMobjectFromState(state);
+    } catch (e) {
+      throw new Error(`_ensureMobject: failed to create mobject for id '${id}': ${e.message}`);
+    }
+    
+    if (!mob) {
+      throw new Error(`_ensureMobject: _createMobjectFromState returned null for id '${id}'`);
+    }
+    
     this._registry.set(id, mob);
+    this._log(`_ensureMobject: created and registered mobject for id '${id}'`);
     return mob;
   }
 
   _createMobjectFromState(state) {
-    if (state?.kind === "VGroup" || state?.kind === "StateGroup") {
+    if (!state || typeof state !== "object") {
+      throw new Error(`_createMobjectFromState: invalid state (got ${typeof state})`);
+    }
+    
+    if (state.kind === "VGroup") {
+      this._log(`_createMobjectFromState: creating VGroup for kind='${state.kind}'`);
       return new VGroup();
     }
 
+    if (state.kind === "StateGroup") {
+      if (Array.isArray(state.points) && state.points.length > 0) {
+        this._log(`_createMobjectFromState: creating VMobject for StateGroup with points`);
+        const mob = new VMobject();
+        if ((state.points.length - 1) % 3 !== 0) {
+          throw new Error(
+            `Invalid points array length: ${state.points.length}. Expected 3n+1.`
+          );
+        }
+        mob.setPoints3D(state.points);
+        this._log(`_createMobjectFromState: set ${state.points.length} points`);
+        return mob;
+      }
+      this._log(`_createMobjectFromState: creating VGroup for StateGroup without points`);
+      return new VGroup();
+    }
+
+    this._log(`_createMobjectFromState: creating VMobject for kind='${state.kind || 'unknown'}'`);
     const mob = new VMobject();
-    if (Array.isArray(state?.points) && state.points.length > 0) {
+    if (Array.isArray(state.points) && state.points.length > 0) {
       if ((state.points.length - 1) % 3 !== 0) {
         throw new Error(
           `Invalid points array length: ${state.points.length}. Expected 3n+1.`
         );
       }
       mob.setPoints3D(state.points);
+      this._log(`_createMobjectFromState: set ${state.points.length} points`);
     }
     return mob;
   }
 
   _applyState(mob, state) {
-    if (!mob || !state) {
-      return;
+    if (!mob) {
+      throw new Error("_applyState: mob is null or undefined");
+    }
+    if (!state) {
+      throw new Error("_applyState: state is null or undefined");
+    }
+    if (typeof state !== "object") {
+      throw new Error(`_applyState: state must be an object (got ${typeof state})`);
     }
 
     if (Array.isArray(state.points) && state.points.length > 0 && typeof mob.setPoints3D === "function") {
@@ -229,27 +353,70 @@ export class Player {
   }
 
   async _executeCommand(cmd, section) {
-    switch (cmd?.cmd) {
+    if (!cmd || typeof cmd !== "object") {
+      throw new Error(`_executeCommand: invalid command (got ${typeof cmd})`);
+    }
+    
+    this._log(`_executeCommand: executing '${cmd.cmd}'`);
+    
+    switch (cmd.cmd) {
       case "add": {
-        const state = this._stateFromRef(section, cmd.state_ref);
-        const mob = this._ensureMobject(cmd.id, state);
-        this._applyState(mob, state);
-        if (state.kind === "StateGroup" && Array.isArray(state.state_children)) {
-          this._attachStateGroupChildren(mob, state.state_children, section);
+        if (!cmd.id) {
+          throw new Error("_executeCommand 'add': missing 'id' field");
         }
+        if (cmd.state_ref === undefined || cmd.state_ref === null) {
+          throw new Error(`_executeCommand 'add': missing 'state_ref' field for id '${cmd.id}'`);
+        }
+        
+        let state;
+        try {
+          state = this._stateFromRef(section, cmd.state_ref);
+        } catch (e) {
+          throw new Error(`_executeCommand 'add': failed to resolve state_ref ${cmd.state_ref} for id '${cmd.id}': ${e.message}`);
+        }
+        
+        let mob;
+        try {
+          mob = this._ensureMobject(cmd.id, state);
+        } catch (e) {
+          throw new Error(`_executeCommand 'add': failed to ensure mobject for id '${cmd.id}': ${e.message}`);
+        }
+        
+        this._applyState(mob, state);
+        
+        if (state.kind === "StateGroup" && Array.isArray(state.state_children)) {
+          this._log(`_executeCommand 'add': StateGroup with ${state.state_children.length} children`);
+          try {
+            this._attachStateGroupChildren(mob, state.state_children, section);
+          } catch (e) {
+            throw new Error(`_executeCommand 'add': failed to attach StateGroup children for id '${cmd.id}': ${e.message}`);
+          }
+        }
+        
         this._scene.add(mob);
+        this._log(`_executeCommand 'add': added mobject '${cmd.id}' to scene`);
         return;
       }
       case "remove": {
+        if (!cmd.id) {
+          throw new Error("_executeCommand 'remove': missing 'id' field");
+        }
         const mob = this._registry.get(cmd.id);
         if (mob) {
           this._scene.remove(mob);
           this._registry.delete(cmd.id);
+          this._log(`_executeCommand 'remove': removed mobject '${cmd.id}' from scene`);
+        } else {
+          this._warn(`_executeCommand 'remove': mobject '${cmd.id}' not found in registry`);
         }
         return;
       }
       case "rebind": {
+        if (!cmd.source_id || !cmd.target_id) {
+          throw new Error("_executeCommand 'rebind': missing 'source_id' or 'target_id' field");
+        }
         this._registry.rebind(cmd.source_id, cmd.target_id);
+        this._log(`_executeCommand 'rebind': rebound '${cmd.source_id}' to '${cmd.target_id}'`);
         return;
       }
       case "animate": {
@@ -261,7 +428,7 @@ export class Player {
         return;
       }
       default:
-        console.warn(`Unknown command: ${cmd?.cmd}`);
+        this._warn(`Unknown command: ${cmd.cmd}`);
     }
   }
 

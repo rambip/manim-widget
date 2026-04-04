@@ -25,6 +25,7 @@ from manim import (
     Text,
     Intersection,
     VMobject,
+    Arrow,
 )
 import numpy as np
 
@@ -141,6 +142,18 @@ class TestCLIIntegration:
         scene = MultiSubpathScene()
         return scene.scene_data
 
+    @pytest.fixture
+    def arrow_with_tip_data(self) -> str:
+        class VectorArrow(ManimWidget):
+            def construct(self):
+                arrow = Arrow(
+                    ORIGIN, [1, 1, 0], buff=0, fill_opacity=1, stroke_opacity=1
+                )
+                self.add(arrow)
+
+        scene = VectorArrow()
+        return scene.scene_data
+
     def test_simple_scene(self, simple_scene_data):
         returncode, stdout, stderr = run_cli(simple_scene_data)
         assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
@@ -176,6 +189,11 @@ class TestCLIIntegration:
 
         returncode, stdout, stderr = run_cli(multi_subpath_data)
         assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
+
+    def test_arrow_with_tip(self, arrow_with_tip_data):
+        returncode, stdout, stderr = run_cli(arrow_with_tip_data)
+        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
+        assert "Errors: 0" in stdout, f"Expected no errors. stdout:\n{stdout}"
 
     def test_invalid_points_raises_error(self):
         invalid_scene_data = {

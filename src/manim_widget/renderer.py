@@ -119,7 +119,7 @@ class CaptureRenderer:
                             points_3n1.extend(chunk[1:].tolist())
                     state["points"] = points_3n1
 
-        if isinstance(mob, VGroup):
+        if isinstance(mob, VGroup) or (isinstance(mob, VMobject) and mob.submobjects):
             if for_snapshot:
                 state["children"] = [short_id(child) for child in mob.submobjects]
             else:
