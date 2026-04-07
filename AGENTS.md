@@ -80,11 +80,12 @@ When features are unsupported, surface predictable warnings/errors instead of si
   - Restores section snapshots and executes command streams.
   - Must resolve `state_ref` through section `states` and apply `rebind` semantics.
   - Animation adapter layer should remain defensive against class-vs-factory exports.
-- `cli.js`
+- `test_cli.js`
   - CLI entry point for JS integration testing.
   - Uses happy-dom to provide browser-like environment.
   - Mocks manim-web to avoid WebGL dependencies.
   - Plays scene spec from stdin and reports errors to stderr.
+  - Use `--output-ids` to output JSON with mobject IDs at end of each section.
 
 ### Bundled runtime (`src/manim_widget/static/index.js`)
 
@@ -174,11 +175,11 @@ Known integration nuance:
 
 ### JS integration tests (`tests/test_js_integration.py`)
 
-- Uses CLI script (`js/src/cli.js`) with happy-dom to test JS runtime without a browser.
+- Uses CLI script (`js/src/test_cli.js`) with happy-dom to test JS runtime without a browser.
 - Mocks manim-web to avoid WebGL/Three.js dependencies.
 - Takes scene spec JSON via stdin and plays through all sections/commands.
 - Captures errors and warnings, exits non-zero on playback errors.
-- Run with: `bun run src/cli.js < scene-spec.json`
+- Run with: `bun run src/test_cli.js < scene-spec.json`
 
 Test coverage includes:
 - Simple scenes (Create, FadeIn)
@@ -226,7 +227,7 @@ manim-widget/
       index.js
       player.js
       registry.js
-      cli.js
+      test_cli.js
     package.json
   tests/
     test_widget.py

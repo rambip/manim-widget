@@ -11,6 +11,7 @@ import * as THREE from "three";
 
 const args = process.argv.slice(2);
 const verbose = args.includes("--verbose") || args.includes("-v");
+const outputIds = args.includes("--output-ids");
 const filePathArg = args.find(arg => !arg.startsWith("-"));
 
 async function readInput() {
@@ -432,6 +433,9 @@ const player = new Player(mockScene, registry, { debug: verbose });
 player.setfps(spec.fps || 10);
 player.setSections(spec.sections || []);
 
+// Track mobject IDs at the end of each section
+const sectionIds = [];
+
 for (let i = 0; i < spec.sections.length; i++) {
   const section = spec.sections[i];
   operations.push({ type: "section_start", index: i, name: section.name });
@@ -448,6 +452,18 @@ for (let i = 0; i < spec.sections.length; i++) {
   try {
     await player.seekToSection(i);
     operations.push({ type: "section_end", index: i, name: section.name });
+    
+    // Capture mobject IDs at the end of this section
+    const ids = [];
+    for (const mob of mockScene.mobjects) {
+      if (mob._id) {
+        ids.push(mob._id);
+      }
+    }
+    sectionIds.push({
+      name: section.name,
+      ids: ids.sort(), // Sort for deterministic output
+    });
   } catch (e) {
     errors.push({
       section: i,
@@ -555,6 +571,13 @@ if (verbose) {
   for (const op of operations) {
     console.log(`  ${JSON.stringify(op)}`);
   }
+}
+
+// Output section mobject IDs if requested
+if (outputIds) {
+  console.log("\n=== Section Mobject IDs ===");
+  const output = { sections: sectionIds };
+  console.log(JSON.stringify(output, null, 2));
 }
 
 process.exit(0);

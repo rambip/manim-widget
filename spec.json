@@ -186,8 +186,8 @@
         "kind": { "type": "string", "const": "VGroup" },
         "children": {
           "type": "array",
-          "items": { "type": "string" },
-          "description": "Ordered list of child mob_ids. References snapshot mob_ids for self-contained restore."
+          "items": { "type": "integer", "minimum": 0 },
+          "description": "Ordered list of child state_refs. Resolved through section.states to create child mobjects."
         },
         "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
         "z_index": { "type": "number" }

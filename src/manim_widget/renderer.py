@@ -124,16 +124,15 @@ class CaptureRenderer:
                     state["points"] = points_3n1
 
         if isinstance(mob, VGroup) or (isinstance(mob, VMobject) and mob.submobjects):
-            # Always use VGroup with children as mob_ids (consistent with spec)
             state["kind"] = "VGroup"
-            state["children"] = [short_id(child) for child in mob.submobjects]
+            state["children"] = [self.state_ref_for(child) for child in mob.submobjects]
 
         return state
 
     def _serialize_multi_subpath(
         self, mob: Mobject, subpaths: list, *, for_snapshot: bool
     ) -> dict[str, object]:
-        child_states: list[dict[str, object]] = []
+        child_refs: list[int] = []
         for subpath in subpaths:
             if len(subpath) == 0:
                 continue
@@ -168,13 +167,12 @@ class CaptureRenderer:
                 z_index = mob.get_z_index()
                 if z_index is not None:
                     child_state["z_index"] = z_index
-            child_states.append(child_state)
+            child_refs.append(self._intern_state(child_state))
 
-        # Always use VGroup with children as mob_ids (consistent with spec)
         return {
             "kind": "VGroup",
             "opacity": self._opacity_for(mob),
-            "children": child_states,
+            "children": child_refs,
         }
 
     def _intern_state(self, state: dict[str, object]) -> int:

@@ -33,22 +33,36 @@ from manim import (
 
 from manim_widget.widget import ManimWidget
 
-CLI_PATH = Path(__file__).parent.parent / "js" / "src" / "cli.js"
+CLI_PATH = Path(__file__).parent.parent / "js" / "src" / "test_cli.js"
 
 
-def run_cli(scene_data: str | dict) -> tuple[int, str, str]:
+def run_cli(scene_data: str | dict, output_ids: bool = False) -> tuple[int, str, str]:
     if isinstance(scene_data, dict):
         scene_json = json.dumps(scene_data)
     else:
         scene_json = scene_data
 
+    args = ["bun", "run", str(CLI_PATH)]
+    if output_ids:
+        args.append("--output-ids")
+
     result = subprocess.run(
-        ["bun", "run", str(CLI_PATH)],
+        args,
         input=scene_json,
         capture_output=True,
         text=True,
     )
     return result.returncode, result.stdout, result.stderr
+
+
+def parse_section_ids(stdout: str) -> list[dict]:
+    marker = "=== Section Mobject IDs ==="
+    idx = stdout.find(marker)
+    if idx == -1:
+        return []
+    json_str = stdout[idx + len(marker) :].strip()
+    data = json.loads(json_str)
+    return data.get("sections", [])
 
 
 class TestCLIIntegration:
@@ -104,6 +118,25 @@ class TestCLIIntegration:
         return scene.scene_data
 
     @pytest.fixture
+    def vgroup_reordered_data(self) -> str:
+        class VGroupReordered(ManimWidget):
+            def construct(self):
+                self.camera.background_color = "#ece6e2"
+                logo_green = "#87c2a5"
+                logo_blue = "#525893"
+                logo_red = "#e07a5f"
+                logo_black = "#343434"
+                circle = Circle(color=logo_green, fill_opacity=1).shift(LEFT)
+                square = Square(color=logo_blue, fill_opacity=1).shift(UP)
+                triangle = Triangle(color=logo_red, fill_opacity=1).shift(RIGHT)
+                logo = VGroup(triangle, square, circle)
+                logo.move_to(ORIGIN + LEFT)
+                self.play(Create(logo))
+
+        scene = VGroupReordered()
+        return scene.scene_data
+
+    @pytest.fixture
     def boolean_operations_data(self) -> str:
         class BooleanOperations(ManimWidget):
             def construct(self):
@@ -156,10 +189,10 @@ class TestCLIIntegration:
                     width=4.0,
                     height=5.0,
                     fill_opacity=0.5,
-                    color=mn.BLUE,
+                    color=BLUE,
                     stroke_width=10,
                 ).move_to(LEFT)
-                ellipse2 = ellipse1.copy().set_color(color=mn.RED).move_to(RIGHT)
+                ellipse2 = ellipse1.copy().set_color(color=RED).move_to(RIGHT)
                 bool_ops_text = MarkupText("<u>Boolean Operation</u>").next_to(
                     ellipse1, UP * 3
                 )
@@ -168,24 +201,24 @@ class TestCLIIntegration:
                 )
                 self.play(FadeIn(ellipse_group))
 
-                # i = Intersection(ellipse1, ellipse2, color=mn.GREEN, fill_opacity=0.5)
+                # i = Intersection(ellipse1, ellipse2, color=GREEN, fill_opacity=0.5)
                 # self.play(i.animate.scale(0.25).move_to(RIGHT * 5 + UP * 2.5))
                 # intersection_text = Text("Intersection", font_size=23).next_to(i, UP)
                 # self.play(FadeIn(intersection_text))
                 #
-                # u = Union(ellipse1, ellipse2, color=mn.ORANGE, fill_opacity=0.5)
+                # u = Union(ellipse1, ellipse2, color=ORANGE, fill_opacity=0.5)
                 # union_text = Text("Union", font_size=23)
                 # self.play(u.animate.scale(0.3).next_to(i, DOWN, buff=union_text.height * 3))
                 # union_text.next_to(u, UP)
                 # self.play(FadeIn(union_text))
                 #
-                e = Exclusion(ellipse1, ellipse2, color=mn.YELLOW, fill_opacity=0.5)
+                e = Exclusion(ellipse1, ellipse2, color=GREEN, fill_opacity=0.5)
                 exclusion_text = Text("Exclusion", font_size=23)
                 self.play(e.animate.scale(0.3).move_to(LEFT * 3))
                 exclusion_text.next_to(e, UP)
                 self.play(FadeIn(exclusion_text))
                 ##
-                d = Difference(ellipse1, ellipse2, color=mn.PINK, fill_opacity=0.5)
+                d = Difference(ellipse1, ellipse2, color=GREEN, fill_opacity=0.5)
                 difference_text = Text("Difference", font_size=23)
                 self.play(
                     d.animate.scale(0.3).next_to(
@@ -199,24 +232,50 @@ class TestCLIIntegration:
         return scene.scene_data
 
     def test_simple_scene(self, simple_scene_data):
-        returncode, stdout, stderr = run_cli(simple_scene_data)
+        returncode, stdout, stderr = run_cli(simple_scene_data, output_ids=True)
         assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
+        sections = parse_section_ids(stdout)
+        assert len(sections) == 1
+        assert sections[0]["name"] == "initial"
+        assert len(sections[0]["ids"]) == 1
 
     def test_animate_shift_left(self, animate_shift_left_data):
-        returncode, stdout, stderr = run_cli(animate_shift_left_data)
+        returncode, stdout, stderr = run_cli(animate_shift_left_data, output_ids=True)
         assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
+        sections = parse_section_ids(stdout)
+        assert len(sections) == 1
+        assert len(sections[0]["ids"]) == 1
 
     def test_multi_section_scene(self, multi_section_data):
-        returncode, stdout, stderr = run_cli(multi_section_data)
+        returncode, stdout, stderr = run_cli(multi_section_data, output_ids=True)
         assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
+        sections = parse_section_ids(stdout)
+        assert len(sections) == 2
+        assert sections[0]["name"] == "initial"
+        assert sections[1]["name"] == "second"
+        assert len(sections[0]["ids"]) == 1
+        assert len(sections[1]["ids"]) == 2
 
     def test_create_vgroup(self, vgroup_create_data):
-        returncode, stdout, stderr = run_cli(vgroup_create_data)
+        returncode, stdout, stderr = run_cli(vgroup_create_data, output_ids=True)
         assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
+        sections = parse_section_ids(stdout)
+        assert len(sections) == 1
+        assert len(sections[0]["ids"]) == 1
+
+    def test_vgroup_reordered(self, vgroup_reordered_data):
+        returncode, stdout, stderr = run_cli(vgroup_reordered_data, output_ids=True)
+        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
+        sections = parse_section_ids(stdout)
+        assert len(sections) == 1
+        assert len(sections[0]["ids"]) == 1
 
     def test_boolean_operations(self, boolean_operations_data):
-        returncode, stdout, stderr = run_cli(boolean_operations_data)
+        returncode, stdout, stderr = run_cli(boolean_operations_data, output_ids=True)
         assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
+        sections = parse_section_ids(stdout)
+        assert len(sections) == 1
+        assert len(sections[0]["ids"]) == 2
 
     def test_multi_subpath(self, multi_subpath_data):
         vmob = VMobject()
@@ -231,13 +290,19 @@ class TestCLIIntegration:
             f"VMobject should have 2 subpaths, got {len(subpaths)}"
         )
 
-        returncode, stdout, stderr = run_cli(multi_subpath_data)
+        returncode, stdout, stderr = run_cli(multi_subpath_data, output_ids=True)
         assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
+        sections = parse_section_ids(stdout)
+        assert len(sections) == 1
+        assert len(sections[0]["ids"]) == 1
 
     def test_arrow_with_tip(self, arrow_with_tip_data):
-        returncode, stdout, stderr = run_cli(arrow_with_tip_data)
+        returncode, stdout, stderr = run_cli(arrow_with_tip_data, output_ids=True)
         assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
         assert "Errors: 0" in stdout, f"Expected no errors. stdout:\n{stdout}"
+        sections = parse_section_ids(stdout)
+        assert len(sections) == 1
+        assert len(sections[0]["ids"]) >= 1
 
     def test_invalid_points_raises_error(self):
         invalid_scene_data = {
@@ -276,5 +341,8 @@ class TestCLIIntegration:
         )
 
     def test_boolean_operation(self, bool_operations_data):
-        returncode, stdout, stderr = run_cli(bool_operations_data)
+        returncode, stdout, stderr = run_cli(bool_operations_data, output_ids=True)
         assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
+        sections = parse_section_ids(stdout)
+        assert len(sections) == 1
+        assert len(sections[0]["ids"]) >= 3

@@ -547,52 +547,6 @@ def test_v2_multiple_sections():
     assert_close(strip_points(data), strip_points(expected))
 
 
-def test_v2_state_group_uses_state_refs_and_snapshot_group_uses_ids():
-    reset_id_counter()
-
-    class GroupScene(ManimWidget):
-        def construct(self):
-            c = Circle()
-            s = Square()
-            g = VGroup(c, s)
-            self.add(g)
-
-    scene = GroupScene()
-    data = json.loads(scene.scene_data)
-    section = data["sections"][0]
-    states = section["states"]
-
-    assert section["construct"][0]["cmd"] == "add"
-    group_state = states[section["construct"][0]["state_ref"]]
-    assert group_state["kind"] == "VGroup"
-    assert group_state["children"] == ["1", "2"]
-    assert group_state["opacity"] == 0.0
-    assert states[0]["kind"] == "Circle"
-    assert states[1]["kind"] == "Square"
-
-
-def test_v2_snapshot_group_is_self_contained_with_child_ids():
-    reset_id_counter()
-
-    class GroupSectionScene(ManimWidget):
-        def construct(self):
-            c = Circle()
-            s = Square()
-            g = VGroup(c, s)
-            self.add(g)
-            self.next_section("second")
-
-    scene = GroupSectionScene()
-    data = json.loads(scene.scene_data)
-    second = data["sections"][1]
-
-    assert second["snapshot"] == {"0": 2, "1": 0, "2": 1}
-    vgroup_state = second["states"][2]
-    assert vgroup_state["kind"] == "VGroup"
-    assert vgroup_state["children"] == ["1", "2"]
-    assert vgroup_state["opacity"] == 0.0
-
-
 def test_v2_chained_method_animation_uses_transform_with_correct_end_state():
     reset_id_counter()
 

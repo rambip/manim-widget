@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "bun build src/index.js --minify --format=esm --outdir=../src/manim_widget/static --naming-pattern=[name].js",
-    "cli": "bun run src/cli.js"
+    "cli": "bun run src/test_cli.js"
   },
   "dependencies": {
     "katex": "^0.16.22",

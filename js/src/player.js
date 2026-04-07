@@ -123,7 +123,6 @@ export class Player {
     // Snapshot is { mob_id: state_ref }, resolve to actual states.
     const snapshotGroupChildren = [];
     const entries = Object.entries(snapshot);
-    const states = section.states;
     
     this._log(`_restoreSnapshot: restoring ${entries.length} mobjects from snapshot`);
 
@@ -142,95 +141,68 @@ export class Player {
     if (snapshotGroupChildren.length > 0) {
       this._log(`_restoreSnapshot: attaching children to ${snapshotGroupChildren.length} VGroups`);
     }
-    for (const [parentId, childSnapshotIds] of snapshotGroupChildren) {
+    for (const [parentId, childRefs] of snapshotGroupChildren) {
       const parent = this._registry.get(parentId);
       if (!parent) {
         throw new Error(`_restoreSnapshot: parent VGroup '${parentId}' not found in registry`);
       }
-      this._attachSnapshotGroupChildren(parent, childSnapshotIds);
+      this._attachVGroupChildren(parent, childRefs, section);
     }
   }
 
-  _attachSnapshotGroupChildren(parent, childSnapshotIds) {
+  _attachVGroupChildren(parent, childRefs, section) {
     if (!parent) {
-      this._warn("_attachSnapshotGroupChildren: parent is null or undefined");
-      return;
+      throw new Error("_attachVGroupChildren: parent is null or undefined");
     }
     if (typeof parent.add !== "function") {
-      throw new Error(`_attachSnapshotGroupChildren: parent does not have 'add' method (got ${typeof parent})`);
+      throw new Error(`_attachVGroupChildren: parent does not have 'add' method (got ${typeof parent})`);
     }
-    if (!Array.isArray(childSnapshotIds)) {
-      this._warn("_attachSnapshotGroupChildren: childSnapshotIds is not an array");
-      return;
+    if (!Array.isArray(childRefs)) {
+      throw new Error(`_attachVGroupChildren: childRefs is not an array (got ${typeof childRefs})`);
     }
-    if (childSnapshotIds.length === 0) {
-      this._log("_attachSnapshotGroupChildren: no children to attach");
+    if (childRefs.length === 0) {
+      this._log("_attachVGroupChildren: no children to attach");
       return;
     }
     const existingCount = Array.isArray(parent.submobjects) ? parent.submobjects.length : 0;
     if (existingCount > 0) {
-      this._log(`_attachSnapshotGroupChildren: parent already has ${existingCount} submobjects, skipping`);
+      this._log(`_attachVGroupChildren: parent already has ${existingCount} submobjects, skipping`);
       return;
     }
 
-    this._log(`_attachSnapshotGroupChildren: attaching ${childSnapshotIds.length} children to VGroup`);
-    for (const childSnapshotId of childSnapshotIds) {
-      const child = this._registry.get(childSnapshotId);
-      if (!child) {
-        throw new Error(`_attachSnapshotGroupChildren: child with snapshot id '${childSnapshotId}' not found in registry`);
-      }
-      parent.add(child);
-      this._log(`_attachSnapshotGroupChildren: attached child '${childSnapshotId}'`);
-    }
-  }
-
-  _attachStateGroupChildren(parent, childStateRefs, section) {
-    if (!parent) {
-      throw new Error("_attachStateGroupChildren: parent is null or undefined");
-    }
-    if (typeof parent.add !== "function") {
-      throw new Error(`_attachStateGroupChildren: parent does not have 'add' method (got ${typeof parent})`);
-    }
-    if (!Array.isArray(childStateRefs)) {
-      throw new Error(`_attachStateGroupChildren: childStateRefs is not an array (got ${typeof childStateRefs})`);
-    }
-    if (childStateRefs.length === 0) {
-      this._log("_attachStateGroupChildren: no children to attach");
-      return;
-    }
-    const existingCount = Array.isArray(parent.submobjects) ? parent.submobjects.length : 0;
-    if (existingCount > 0) {
-      this._log(`_attachStateGroupChildren: parent already has ${existingCount} submobjects, skipping`);
-      return;
-    }
-
-    // section.states path is compact: StateGroup children are state_ref entries.
-    this._log(`_attachStateGroupChildren: attaching ${childStateRefs.length} children to StateGroup`);
-    for (let i = 0; i < childStateRefs.length; i++) {
-      const childStateRef = childStateRefs[i];
+    this._log(`_attachVGroupChildren: attaching ${childRefs.length} children to VGroup`);
+    for (let i = 0; i < childRefs.length; i++) {
+      const childRef = childRefs[i];
       let childState;
       try {
-        childState = this._stateFromRef(section, childStateRef);
+        childState = this._stateFromRef(section, childRef);
       } catch (e) {
-        throw new Error(`_attachStateGroupChildren: failed to resolve state_ref ${childStateRef} for child ${i}: ${e.message}`);
+        throw new Error(`_attachVGroupChildren: failed to resolve state_ref ${childRef} for child ${i}: ${e.message}`);
       }
       
       let child;
       try {
         child = this._createMobjectFromState(childState);
       } catch (e) {
-        throw new Error(`_attachStateGroupChildren: failed to create mobject for child ${i} with state_ref ${childStateRef}: ${e.message}`);
+        throw new Error(`_attachVGroupChildren: failed to create mobject for child ${i} with state_ref ${childRef}: ${e.message}`);
       }
       
       if (!child) {
-        throw new Error(`_attachStateGroupChildren: _createMobjectFromState returned null for child ${i} with state_ref ${childStateRef}`);
+        throw new Error(`_attachVGroupChildren: _createMobjectFromState returned null for child ${i} with state_ref ${childRef}`);
       }
       
       this._applyState(child, childState);
-      // No stable mob_id exists for these anonymous state-bank children.
-      // They are attached structurally under the parent group only.
+      
+      if (childState.kind === "VGroup" && Array.isArray(childState.children)) {
+        try {
+          this._attachVGroupChildren(child, childState.children, section);
+        } catch (e) {
+          throw new Error(`_attachVGroupChildren: failed to attach nested VGroup children for child ${i}: ${e.message}`);
+        }
+      }
+      
       parent.add(child);
-      this._log(`_attachStateGroupChildren: attached child ${i} (state_ref=${childStateRef})`);
+      this._log(`_attachVGroupChildren: attached child ${i} (state_ref=${childRef})`);
     }
   }
 
@@ -272,23 +244,6 @@ export class Player {
     
     if (state.kind === "VGroup") {
       this._log(`_createMobjectFromState: creating VGroup for kind='${state.kind}'`);
-      return new VGroup();
-    }
-
-    if (state.kind === "StateGroup") {
-      if (Array.isArray(state.points) && state.points.length > 0) {
-        this._log(`_createMobjectFromState: creating VMobject for StateGroup with points`);
-        const mob = new VMobject();
-        if ((state.points.length - 1) % 3 !== 0) {
-          throw new Error(
-            `Invalid points array length: ${state.points.length}. Expected 3n+1.`
-          );
-        }
-        mob.setPoints3D(state.points);
-        this._log(`_createMobjectFromState: set ${state.points.length} points`);
-        return mob;
-      }
-      this._log(`_createMobjectFromState: creating VGroup for StateGroup without points`);
       return new VGroup();
     }
 
@@ -386,12 +341,12 @@ export class Player {
         
         this._applyState(mob, state);
         
-        if (state.kind === "StateGroup" && Array.isArray(state.state_children)) {
-          this._log(`_executeCommand 'add': StateGroup with ${state.state_children.length} children`);
+        if (state.kind === "VGroup" && Array.isArray(state.children)) {
+          this._log(`_executeCommand 'add': VGroup with ${state.children.length} children`);
           try {
-            this._attachStateGroupChildren(mob, state.state_children, section);
+            this._attachVGroupChildren(mob, state.children, section);
           } catch (e) {
-            throw new Error(`_executeCommand 'add': failed to attach StateGroup children for id '${cmd.id}': ${e.message}`);
+            throw new Error(`_executeCommand 'add': failed to attach VGroup children for id '${cmd.id}': ${e.message}`);
           }
         }
         
