@@ -12,10 +12,9 @@ Primary target is **marimo**, while staying compatible with any `anywidget` fron
 
 - V2 wire format is now the active contract (`spec.json`, `version: 2`).
 - Python capture/serialization has been migrated to V2.
-- Current focus is JS/runtime alignment and integration hardening:
-  - consume section `states` + `state_ref` across commands,
-  - support `rebind` behavior for replacement transforms,
-  - maintain source/bundle parity and import-shape compatibility.
+- **Snapshot format simplified**: `snapshot` now uses integer `state_ref` indices instead of inline state objects.
+- VGroup representation unified: single `VGroupState` with `children: ["mob_id", ...]` for both snapshot and state bank contexts.
+- JS runtime updated to resolve `state_ref` from snapshot before restoring mobjects.
 
 See `TODO.md` for current priorities.
 
@@ -140,12 +139,10 @@ Core commands:
 
 Key semantics:
 
-- `snapshot` is always a full state map at section entry.
-- `states` is a deduplicated per-section bank referenced by commands/frames.
-- Group encoding is intentionally split by context:
-  - snapshot uses `VGroup` with `children` as snapshot mob ids (self-contained restore graph),
-  - section state bank uses `StateGroup` with `state_children` as integer `state_ref` entries.
-  - JS runtime must handle both paths explicitly (`_restoreSnapshot` for `VGroup`, `add`/state_ref path for `StateGroup`).
+- `snapshot` is `{ mob_id: state_ref }` at section entry - integer indices into section's `states` array.
+- `states` is a deduplicated per-section bank referenced by commands/frames/snapshot.
+- VGroup uses single representation: `VGroupState` with `children: ["mob_id", ...]` for all contexts.
+- JS runtime resolves snapshot values (integers) through section's `states` before restoring.
 - No `hidden` semantics in V2.
 - `ReplacementTransform` is represented as transform animation + `rebind` command.
 

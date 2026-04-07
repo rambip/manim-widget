@@ -7,6 +7,7 @@ GlobalRegistrator.register();
 import { mock, spyOn, beforeEach, afterEach } from "bun:test";
 import * as fs from "fs";
 import * as path from "path";
+import * as THREE from "three";
 
 const args = process.argv.slice(2);
 const verbose = args.includes("--verbose") || args.includes("-v");
@@ -47,6 +48,23 @@ class MockVMobject {
     this._points = [];
     this._opacity = 1;
     this._color = "#ffffff";
+    this._fillOpacity = 1;
+    this._fillColor = "#ffffff";
+    
+    // Enhanced position/scale tracking using real THREE.js types
+    this._position = new THREE.Vector3(0, 0, 0);
+    this._scaleVector = new THREE.Vector3(1, 1, 1);
+    this._rotation = new THREE.Euler(0, 0, 0, "XYZ");
+    // Lazy init like manim-web: null until getThreeObject() is called
+    this._threeObject = null;
+    
+    // Styling state
+    this.fillColor = "#ffffff";
+    this.fillOpacity = 1;
+    this.strokeColor = "#ffffff";
+    this.strokeWidth = 2;
+    this.zIndex = 0;
+    
     mobjectTracking.set(this._id, {
       type: "VMobject",
       instance: this,
@@ -56,6 +74,57 @@ class MockVMobject {
     });
     operations.push({ type: "mobject_create", id: this._id, kind: "VMobject" });
   }
+
+  // Position and bounds methods for interaction support
+  getCenter() {
+    return [this._position.x, this._position.y, this._position.z];
+  }
+
+  getBoundingBox() {
+    // Simple bounding box based on position
+    return {
+      width: 1.0 * this._scaleVector.x,
+      height: 1.0 * this._scaleVector.y,
+    };
+  }
+
+  moveTo(pos) {
+    if (Array.isArray(pos)) {
+      this._position.x = pos[0] ?? this._position.x;
+      this._position.y = pos[1] ?? this._position.y;
+      this._position.z = pos[2] ?? this._position.z;
+    } else if (typeof pos === "object") {
+      this._position.x = pos.x ?? this._position.x;
+      this._position.y = pos.y ?? this._position.y;
+      this._position.z = pos.z ?? this._position.z;
+    }
+    operations.push({
+      type: "moveTo",
+      id: this._id,
+      position: { x: this._position.x, y: this._position.y, z: this._position.z },
+    });
+  }
+
+  getThreeObject() {
+    if (!this._threeObject) {
+      this._threeObject = new THREE.Object3D();
+    }
+    return this._threeObject;
+  }
+
+  // Property accessors
+  get position() {
+    return this._position;
+  }
+
+  get scaleVector() {
+    return this._scaleVector;
+  }
+
+  get rotation() {
+    return this._rotation;
+  }
+
   setPoints3D(pts) {
     if ((pts.length - 1) % 3 !== 0) {
       const err = `Invalid points array length: ${pts.length}. Expected 3n+1.`;
@@ -67,9 +136,22 @@ class MockVMobject {
     if (tracking) tracking.pointsCount = pts.length;
     operations.push({ type: "setPoints3D", id: this._id, count: pts.length });
   }
-  setFillOpacity(op) { this._fillOpacity = op; }
-  setOpacity(op) { this._opacity = op; }
-  setColor(c) { this._color = c; }
+
+  setFillOpacity(op) {
+    this._fillOpacity = op;
+    this.fillOpacity = op;
+  }
+
+  setOpacity(op) {
+    this._opacity = op;
+  }
+
+  setColor(c) {
+    this._color = c;
+    this.fillColor = c;
+    this.strokeColor = c;
+  }
+
   add(mob) {
     if (!mob) {
       errors.push({ error: "add_null_child", description: "Attempted to add null/undefined child to VMobject" });
@@ -89,6 +171,14 @@ class MockVGroup {
   constructor() {
     this._id = `vgroup_${mobjectIdCounter++}`;
     this.submobjects = [];
+    
+    // Enhanced position/scale tracking using real THREE.js types
+    this._position = new THREE.Vector3(0, 0, 0);
+    this._scaleVector = new THREE.Vector3(1, 1, 1);
+    this._rotation = new THREE.Euler(0, 0, 0, "XYZ");
+    // Lazy init like manim-web: null until getThreeObject() is called
+    this._threeObject = null;
+    
     mobjectTracking.set(this._id, {
       type: "VGroup",
       instance: this,
@@ -97,6 +187,81 @@ class MockVGroup {
     });
     operations.push({ type: "mobject_create", id: this._id, kind: "VGroup" });
   }
+
+  // Position and bounds methods for interaction support
+  getCenter() {
+    // For groups, compute center from children if available
+    if (this.submobjects.length > 0) {
+      let sumX = 0, sumY = 0, sumZ = 0;
+      for (const child of this.submobjects) {
+        if (typeof child.getCenter === "function") {
+          const center = child.getCenter();
+          sumX += center[0] || 0;
+          sumY += center[1] || 0;
+          sumZ += center[2] || 0;
+        }
+      }
+      const n = this.submobjects.length;
+      return [sumX / n, sumY / n, sumZ / n];
+    }
+    return [this._position.x, this._position.y, this._position.z];
+  }
+
+  getBoundingBox() {
+    // For groups, compute bounds from children
+    if (this.submobjects.length > 0) {
+      let maxWidth = 0, maxHeight = 0;
+      for (const child of this.submobjects) {
+        if (typeof child.getBoundingBox === "function") {
+          const bb = child.getBoundingBox();
+          maxWidth = Math.max(maxWidth, bb.width);
+          maxHeight = Math.max(maxHeight, bb.height);
+        }
+      }
+      return { width: maxWidth, height: maxHeight };
+    }
+    return {
+      width: 1.0 * this._scaleVector.x,
+      height: 1.0 * this._scaleVector.y,
+    };
+  }
+
+  moveTo(pos) {
+    if (Array.isArray(pos)) {
+      this._position.x = pos[0] ?? this._position.x;
+      this._position.y = pos[1] ?? this._position.y;
+      this._position.z = pos[2] ?? this._position.z;
+    } else if (typeof pos === "object") {
+      this._position.x = pos.x ?? this._position.x;
+      this._position.y = pos.y ?? this._position.y;
+      this._position.z = pos.z ?? this._position.z;
+    }
+    operations.push({
+      type: "moveTo",
+      id: this._id,
+      position: { x: this._position.x, y: this._position.y, z: this._position.z },
+    });
+  }
+
+  getThreeObject() {
+    if (!this._threeObject) {
+      this._threeObject = new THREE.Object3D();
+    }
+    return this._threeObject;
+  }
+
+  get position() {
+    return this._position;
+  }
+
+  get scaleVector() {
+    return this._scaleVector;
+  }
+
+  get rotation() {
+    return this._rotation;
+  }
+
   add(mob) {
     if (!mob) {
       errors.push({ error: "add_null_child", description: "Attempted to add null/undefined child to VGroup" });
@@ -115,22 +280,69 @@ class MockVGroup {
 class MockScene {
   constructor() {
     this.mobjects = new Set();
+    
+    // Canvas mock with getBoundingClientRect for interaction coordinate mapping
+    this._canvas = {
+      width: 800,
+      height: 600,
+      getBoundingClientRect() {
+        return {
+          width: 800,
+          height: 600,
+          left: 0,
+          top: 0,
+          right: 800,
+          bottom: 600,
+          x: 0,
+          y: 0,
+        };
+      },
+      addEventListener() {},
+      removeEventListener() {},
+      dispatchEvent() { return true; },
+      style: {},
+    };
+    
+    // Camera mock for coordinate transformations
+    this._camera = {
+      frameWidth: 14,
+      frameHeight: 8,
+      frameCenter: [0, 0, 0],
+    };
   }
+
+  getCanvas() {
+    return this._canvas;
+  }
+
+  get camera() {
+    return this._camera;
+  }
+
   add(mob) {
     this.mobjects.add(mob);
     operations.push({ type: "scene_add", mob: mob?.constructor?.name || "unknown" });
   }
+
   remove(mob) {
     this.mobjects.delete(mob);
     operations.push({ type: "scene_remove", mob: mob?.constructor?.name || "unknown" });
   }
+
   clear() {
     this.mobjects.clear();
     operations.push({ type: "scene_clear" });
   }
+
   async play(anim) {
-    operations.push({ type: "scene_play", animation: anim?.constructor?.name || "unknown" });
+    operations.push({
+      type: "scene_play",
+      animation: anim?.constructor?.name || "unknown",
+      // Track animation parameters for better testing
+      params: anim?._params || {},
+    });
   }
+
   async wait(duration) {
     operations.push({ type: "scene_wait", duration });
   }
@@ -139,24 +351,74 @@ class MockScene {
 const mockScene = new MockScene();
 
 function createMockAnimation(name) {
-  return class {
+  return class MockAnimation {
     constructor(mob, ...args) {
       this.mobject = mob;
-      operations.push({ type: "animation_create", kind: name, mobject: mob?.constructor?.name || "unknown" });
+      this._params = {};
+      this._name = name;
+      
+      // Extract params from args based on animation type
+      if (args.length > 0) {
+        if (name === "Rotate" && args.length >= 1) {
+          this._params.angle = args[0];
+          if (args.length >= 2) this._params.axis = args[1];
+        } else if (name === "ScaleInPlace" && args.length >= 1) {
+          this._params.scale_factor = args[0];
+        } else if (name === "Shift" && args.length >= 1) {
+          this._params.vector = args[0];
+          if (typeof args[0] === "object" && !Array.isArray(args[0])) {
+            this._params = { ...this._params, ...args[0] };
+          }
+        } else if (name === "Transform" && args.length >= 1) {
+          this._params.target = args[0];
+          if (args[0]?._id) {
+            this._params.targetId = args[0]._id;
+          }
+        } else {
+          // Generic param capture
+          this._params.args = args;
+        }
+      }
+      
+      operations.push({
+        type: "animation_create",
+        kind: name,
+        mobject: mob?._id || mob?.constructor?.name || "unknown",
+        params: this._params,
+      });
+    }
+    
+    // Allow setting rate_func and other animation properties
+    set rate_func(fn) {
+      this._params.rate_func = fn;
+    }
+    
+    get rate_func() {
+      return this._params.rate_func;
     }
   };
 }
 
+// Create animation classes with enhanced tracking
+const MockCreate = createMockAnimation("Create");
+const MockFadeIn = createMockAnimation("FadeIn");
+const MockFadeOut = createMockAnimation("FadeOut");
+const MockWrite = createMockAnimation("Write");
+const MockRotate = createMockAnimation("Rotate");
+const MockScaleInPlace = createMockAnimation("ScaleInPlace");
+const MockShift = createMockAnimation("Shift");
+const MockTransform = createMockAnimation("Transform");
+
 mock.module("manim-web", () => ({
   Scene: MockScene,
-  Create: createMockAnimation("Create"),
-  FadeIn: createMockAnimation("FadeIn"),
-  FadeOut: createMockAnimation("FadeOut"),
-  Write: createMockAnimation("Write"),
-  Rotate: createMockAnimation("Rotate"),
-  ScaleInPlace: createMockAnimation("ScaleInPlace"),
-  Shift: createMockAnimation("Shift"),
-  Transform: createMockAnimation("Transform"),
+  Create: MockCreate,
+  FadeIn: MockFadeIn,
+  FadeOut: MockFadeOut,
+  Write: MockWrite,
+  Rotate: MockRotate,
+  ScaleInPlace: MockScaleInPlace,
+  Shift: MockShift,
+  Transform: MockTransform,
   VMobject: MockVMobject,
   VGroup: MockVGroup,
 }));

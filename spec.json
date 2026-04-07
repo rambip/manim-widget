@@ -39,11 +39,11 @@
         },
         "snapshot": {
           "oneOf": [{ "$ref": "#/definitions/Snapshot" }, { "type": "null" }],
-          "description": "Full scene state at section entry. Null only when unsupported=true."
+          "description": "Full scene state at section entry. Null only when unsupported=true. Maps mob_id to state_ref index into section.states."
         },
         "states": {
           "type": "array",
-          "description": "Section-local state bank. Integer refs (state_ref) index into this array.",
+          "description": "Section-local state bank. Single source of truth for all mobject state. Integer refs (state_ref) index into this array.",
           "items": { "$ref": "#/definitions/MobjectState" }
         },
         "construct": {
@@ -56,19 +56,8 @@
 
     "Snapshot": {
       "type": "object",
-      "description": "Flat map of mob_id -> SnapshotMobjectState. Fully self-contained.",
-      "additionalProperties": { "$ref": "#/definitions/SnapshotMobjectState" }
-    },
-
-    "SnapshotMobjectState": {
-      "description": "State variants valid inside section snapshots. Snapshot is self-contained, so group children reference snapshot mob_ids.",
-      "oneOf": [
-        { "$ref": "#/definitions/VMobjectState" },
-        { "$ref": "#/definitions/TextState" },
-        { "$ref": "#/definitions/MathTexState" },
-        { "$ref": "#/definitions/VGroupState" },
-        { "$ref": "#/definitions/ValueTrackerState" }
-      ]
+      "description": "Map of mob_id -> state_ref index into section.states",
+      "additionalProperties": { "type": "integer", "minimum": 0 }
     },
 
     "MobjectState": {
@@ -77,7 +66,7 @@
         { "$ref": "#/definitions/VMobjectState" },
         { "$ref": "#/definitions/TextState" },
         { "$ref": "#/definitions/MathTexState" },
-        { "$ref": "#/definitions/StateGroupState" },
+        { "$ref": "#/definitions/VGroupState" },
         { "$ref": "#/definitions/ValueTrackerState" }
       ]
     },
@@ -198,23 +187,7 @@
         "children": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Ordered list of child snapshot mob_ids. Snapshot-only representation to keep snapshot self-contained."
-        },
-        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
-        "z_index": { "type": "number" }
-      }
-    },
-
-    "StateGroupState": {
-      "type": "object",
-      "required": ["kind", "state_children", "opacity"],
-      "additionalProperties": false,
-      "properties": {
-        "kind": { "type": "string", "const": "StateGroup" },
-        "state_children": {
-          "type": "array",
-          "items": { "type": "integer", "minimum": 0 },
-          "description": "Ordered list of child state references. State-bank-only representation; each entry indexes into section.states."
+          "description": "Ordered list of child mob_ids. References snapshot mob_ids for self-contained restore."
         },
         "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
         "z_index": { "type": "number" }

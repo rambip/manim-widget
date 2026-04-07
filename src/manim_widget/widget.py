@@ -51,16 +51,15 @@ class ManimWidget(anywidget.AnyWidget, Scene):
         self._renderer.open_section(name)
         self._snapshots[name] = self._snapshot_from_registry()
 
-    def _snapshot_from_registry(self) -> dict[str, dict[str, Any]]:
-        snapshot: dict[str, dict[str, Any]] = {}
+    def _snapshot_from_registry(self) -> dict[str, int]:
+        """Build snapshot as mob_id -> state_ref mapping."""
+        snapshot: dict[str, int] = {}
         for mob_id, mob in self._renderer.registry.items():
             if mob_id not in self._renderer._active_ids:
                 continue
             mob_sid = short_id(mob)
             if mob_sid not in snapshot:
-                snapshot[mob_sid] = self._renderer.serialize_mobject(
-                    mob, for_snapshot=True
-                )
+                snapshot[mob_sid] = self._renderer.state_ref_for(mob)
         return snapshot
 
     def add(self, *mobjects: Mobject) -> None:  # type: ignore[override]

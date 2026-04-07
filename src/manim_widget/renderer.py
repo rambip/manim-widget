@@ -61,6 +61,10 @@ class CaptureRenderer:
         self.sections.append(self._current)
 
     def state_ref_for(self, mob: Mobject) -> int:
+        # For VGroups, ensure children are serialized first
+        if isinstance(mob, VGroup):
+            for child in mob.submobjects:
+                self.state_ref_for(child)
         return self._intern_state(self.serialize_mobject(mob, for_snapshot=False))
 
     def serialize_mobject(
@@ -120,13 +124,9 @@ class CaptureRenderer:
                     state["points"] = points_3n1
 
         if isinstance(mob, VGroup) or (isinstance(mob, VMobject) and mob.submobjects):
-            if for_snapshot:
-                state["children"] = [short_id(child) for child in mob.submobjects]
-            else:
-                state["kind"] = "StateGroup"
-                state["state_children"] = [
-                    self.state_ref_for(child) for child in mob.submobjects
-                ]
+            # Always use VGroup with children as mob_ids (consistent with spec)
+            state["kind"] = "VGroup"
+            state["children"] = [short_id(child) for child in mob.submobjects]
 
         return state
 
@@ -170,19 +170,12 @@ class CaptureRenderer:
                     child_state["z_index"] = z_index
             child_states.append(child_state)
 
-        if for_snapshot:
-            return {
-                "kind": "VGroup",
-                "opacity": self._opacity_for(mob),
-                "children": child_states,
-            }
-        else:
-            child_refs = [self._intern_state(cs) for cs in child_states]
-            return {
-                "kind": "StateGroup",
-                "opacity": self._opacity_for(mob),
-                "state_children": child_refs,
-            }
+        # Always use VGroup with children as mob_ids (consistent with spec)
+        return {
+            "kind": "VGroup",
+            "opacity": self._opacity_for(mob),
+            "children": child_states,
+        }
 
     def _intern_state(self, state: dict[str, object]) -> int:
         current = self._current

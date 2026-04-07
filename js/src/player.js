@@ -120,13 +120,15 @@ export class Player {
   }
 
   _restoreSnapshot(snapshot, section) {
-    // Snapshot is self-contained: VGroup children are snapshot mob ids.
+    // Snapshot is { mob_id: state_ref }, resolve to actual states.
     const snapshotGroupChildren = [];
     const entries = Object.entries(snapshot);
+    const states = section.states;
     
     this._log(`_restoreSnapshot: restoring ${entries.length} mobjects from snapshot`);
 
-    for (const [id, state] of entries) {
+    for (const [id, stateRef] of entries) {
+      const state = this._stateFromRef(section, stateRef);
       this._log(`_restoreSnapshot: restoring mobject '${id}' (kind='${state?.kind || "unknown"}')`);
       const mob = this._ensureMobject(id, state);
       this._applyState(mob, state);

@@ -112,8 +112,9 @@ def test_v2_scene_with_add_shift_transform_rebind_and_sections_exact_json():
             },
             {
                 "name": "second",
-                "snapshot": {
-                    "0": {
+                "snapshot": {"0": 0},
+                "states": [
+                    {
                         "kind": "Circle",
                         "opacity": 0.0,
                         "fill_color": "#FC6255",
@@ -122,9 +123,7 @@ def test_v2_scene_with_add_shift_transform_rebind_and_sections_exact_json():
                         "stroke_width": 4,
                         "stroke_opacity": 1.0,
                         "z_index": 0,
-                    }
-                },
-                "states": [
+                    },
                     {
                         "kind": "Square",
                         "opacity": 0.0,
@@ -134,7 +133,7 @@ def test_v2_scene_with_add_shift_transform_rebind_and_sections_exact_json():
                         "stroke_width": 4,
                         "stroke_opacity": 1.0,
                         "z_index": 0,
-                    }
+                    },
                 ],
                 "construct": [
                     {
@@ -146,7 +145,7 @@ def test_v2_scene_with_add_shift_transform_rebind_and_sections_exact_json():
                                 "rate_func": "smooth",
                                 "type": "transform",
                                 "kind": "Transform",
-                                "state_ref": 0,
+                                "state_ref": 1,
                                 "params": {
                                     "path_arc": 0.0,
                                     "path_arc_axis": [0.0, 0.0, 1.0],
@@ -372,8 +371,9 @@ def test_v2_create_then_next_section_snapshot_only_second_section():
             },
             {
                 "name": "a",
-                "snapshot": {
-                    "0": {
+                "snapshot": {"0": 0},
+                "states": [
+                    {
                         "kind": "Circle",
                         "opacity": 1.0,
                         "fill_color": "#83C167",
@@ -383,8 +383,7 @@ def test_v2_create_then_next_section_snapshot_only_second_section():
                         "stroke_opacity": 1.0,
                         "z_index": 0,
                     }
-                },
-                "states": [],
+                ],
                 "construct": [],
             },
         ],
@@ -451,8 +450,9 @@ def test_v2_multiple_sections():
             },
             {
                 "name": "second",
-                "snapshot": {
-                    "0": {
+                "snapshot": {"0": 0},
+                "states": [
+                    {
                         "kind": "Circle",
                         "opacity": 0.0,
                         "fill_color": "#FC6255",
@@ -461,9 +461,7 @@ def test_v2_multiple_sections():
                         "stroke_width": 4,
                         "stroke_opacity": 1.0,
                         "z_index": 0,
-                    }
-                },
-                "states": [
+                    },
                     {
                         "kind": "Square",
                         "opacity": 0.0,
@@ -473,10 +471,10 @@ def test_v2_multiple_sections():
                         "stroke_width": 4,
                         "stroke_opacity": 1.0,
                         "z_index": 0,
-                    }
+                    },
                 ],
                 "construct": [
-                    {"cmd": "add", "id": "1", "state_ref": 0},
+                    {"cmd": "add", "id": "1", "state_ref": 1},
                     {
                         "cmd": "animate",
                         "duration": 1.0,
@@ -494,8 +492,9 @@ def test_v2_multiple_sections():
             },
             {
                 "name": "third",
-                "snapshot": {
-                    "0": {
+                "snapshot": {"0": 0, "1": 1},
+                "states": [
+                    {
                         "kind": "Circle",
                         "opacity": 0.0,
                         "fill_color": "#FC6255",
@@ -505,7 +504,7 @@ def test_v2_multiple_sections():
                         "stroke_opacity": 1.0,
                         "z_index": 0,
                     },
-                    "1": {
+                    {
                         "kind": "Square",
                         "opacity": 0.0,
                         "fill_color": "#FFFFFF",
@@ -515,8 +514,6 @@ def test_v2_multiple_sections():
                         "stroke_opacity": 1.0,
                         "z_index": 0,
                     },
-                },
-                "states": [
                     {
                         "kind": "Dot",
                         "opacity": 1.0,
@@ -525,10 +522,10 @@ def test_v2_multiple_sections():
                         "stroke_color": "#FFFFFF",
                         "stroke_opacity": 1.0,
                         "z_index": 0,
-                    }
+                    },
                 ],
                 "construct": [
-                    {"cmd": "add", "id": "2", "state_ref": 0},
+                    {"cmd": "add", "id": "2", "state_ref": 2},
                     {
                         "cmd": "animate",
                         "duration": 1.0,
@@ -567,8 +564,9 @@ def test_v2_state_group_uses_state_refs_and_snapshot_group_uses_ids():
 
     assert section["construct"][0]["cmd"] == "add"
     group_state = states[section["construct"][0]["state_ref"]]
-    assert group_state["kind"] == "StateGroup"
-    assert group_state["state_children"] == [0, 1]
+    assert group_state["kind"] == "VGroup"
+    assert group_state["children"] == ["1", "2"]
+    assert group_state["opacity"] == 0.0
     assert states[0]["kind"] == "Circle"
     assert states[1]["kind"] == "Square"
 
@@ -588,9 +586,11 @@ def test_v2_snapshot_group_is_self_contained_with_child_ids():
     data = json.loads(scene.scene_data)
     second = data["sections"][1]
 
-    snapshot_group = second["snapshot"]["0"]
-    assert snapshot_group["kind"] == "VGroup"
-    assert snapshot_group["children"] == ["1", "2"]
+    assert second["snapshot"] == {"0": 2, "1": 0, "2": 1}
+    vgroup_state = second["states"][2]
+    assert vgroup_state["kind"] == "VGroup"
+    assert vgroup_state["children"] == ["1", "2"]
+    assert vgroup_state["opacity"] == 0.0
 
 
 def test_v2_chained_method_animation_uses_transform_with_correct_end_state():
