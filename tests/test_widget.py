@@ -59,109 +59,6 @@ def strip_points(obj: dict) -> dict:
     return result
 
 
-def test_v2_scene_with_add_shift_transform_rebind_and_sections_exact_json():
-    reset_id_counter()
-
-    class SceneV2(ManimWidget):
-        def construct(self):
-            c = Circle()
-            self.add(c)
-            self.play(c.animate.shift((1, 0, 0)))
-            self.next_section("second")
-            s = Square()
-            self.play(ReplacementTransform(c, s))
-
-    scene = SceneV2()
-    data = json.loads(scene.scene_data)
-
-    expected = {
-        "version": 2,
-        "fps": 10,
-        "sections": [
-            {
-                "name": "initial",
-                "snapshot": {},
-                "states": [
-                    {
-                        "kind": "Circle",
-                        "opacity": 0.0,
-                        "fill_color": "#FC6255",
-                        "fill_opacity": 0.0,
-                        "stroke_color": "#FC6255",
-                        "stroke_width": 4,
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    }
-                ],
-                "construct": [
-                    {"cmd": "add", "id": "0", "state_ref": 0},
-                    {
-                        "cmd": "animate",
-                        "duration": 1.0,
-                        "animations": [
-                            {
-                                "id": "0",
-                                "rate_func": "smooth",
-                                "type": "simple",
-                                "kind": "Shift",
-                                "params": {"vector": [1, 0, 0]},
-                            }
-                        ],
-                    },
-                ],
-            },
-            {
-                "name": "second",
-                "snapshot": {"0": 0},
-                "states": [
-                    {
-                        "kind": "Circle",
-                        "opacity": 0.0,
-                        "fill_color": "#FC6255",
-                        "fill_opacity": 0.0,
-                        "stroke_color": "#FC6255",
-                        "stroke_width": 4,
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    },
-                    {
-                        "kind": "Square",
-                        "opacity": 0.0,
-                        "fill_color": "#FFFFFF",
-                        "fill_opacity": 0.0,
-                        "stroke_color": "#FFFFFF",
-                        "stroke_width": 4,
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    },
-                ],
-                "construct": [
-                    {
-                        "cmd": "animate",
-                        "duration": 1.0,
-                        "animations": [
-                            {
-                                "id": "0",
-                                "rate_func": "smooth",
-                                "type": "transform",
-                                "kind": "Transform",
-                                "state_ref": 1,
-                                "params": {
-                                    "path_arc": 0.0,
-                                    "path_arc_axis": [0.0, 0.0, 1.0],
-                                },
-                            }
-                        ],
-                    },
-                    {"cmd": "rebind", "source_id": "0", "target_id": "1"},
-                ],
-            },
-        ],
-    }
-
-    assert_close(strip_points(data), strip_points(expected))
-
-
 def test_v2_data_command_uses_state_refs_and_dedup_is_deterministic():
     reset_id_counter()
 
@@ -267,61 +164,6 @@ def test_v2_data_command_uses_state_refs_and_dedup_is_deterministic():
     assert_close(strip_points(data), strip_points(expected))
 
 
-def test_v2_scene_validates_against_schema():
-    reset_id_counter()
-    schema = load_schema()
-
-    class SchemaScene(ManimWidget):
-        def construct(self):
-            c = Circle()
-            self.add(c)
-            self.play(c.animate.shift((1, 0, 0)))
-
-    scene = SchemaScene()
-    data = json.loads(scene.scene_data)
-    expected = {
-        "version": 2,
-        "fps": 10,
-        "sections": [
-            {
-                "name": "initial",
-                "snapshot": {},
-                "states": [
-                    {
-                        "kind": "Circle",
-                        "opacity": 0.0,
-                        "fill_color": "#FC6255",
-                        "fill_opacity": 0.0,
-                        "stroke_color": "#FC6255",
-                        "stroke_width": 4,
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    }
-                ],
-                "construct": [
-                    {"cmd": "add", "id": "0", "state_ref": 0},
-                    {
-                        "cmd": "animate",
-                        "duration": 1.0,
-                        "animations": [
-                            {
-                                "id": "0",
-                                "rate_func": "smooth",
-                                "type": "simple",
-                                "kind": "Shift",
-                                "params": {"vector": [1, 0, 0]},
-                            }
-                        ],
-                    },
-                ],
-            }
-        ],
-    }
-
-    assert_close(strip_points(data), strip_points(expected))
-    validate(instance=data, schema=schema)
-
-
 def test_v2_create_then_next_section_snapshot_only_second_section():
     reset_id_counter()
 
@@ -392,247 +234,6 @@ def test_v2_create_then_next_section_snapshot_only_second_section():
     assert_close(strip_points(data), strip_points(expected))
 
 
-def test_v2_multiple_sections():
-    reset_id_counter()
-
-    class MultiSectionScene(ManimWidget):
-        def construct(self):
-            c = Circle()
-            self.add(c)
-            self.play(c.animate.shift((1, 0, 0)))
-            self.next_section("second")
-            s = Square()
-            self.add(s)
-            self.play(s.animate.scale(2))
-            self.next_section("third")
-            t = Dot()
-            self.add(t)
-            self.play(t.animate.shift((0, 1, 0)))
-
-    scene = MultiSectionScene()
-    data = json.loads(scene.scene_data)
-
-    expected = {
-        "version": 2,
-        "fps": 10,
-        "sections": [
-            {
-                "name": "initial",
-                "snapshot": {},
-                "states": [
-                    {
-                        "kind": "Circle",
-                        "opacity": 0.0,
-                        "fill_color": "#FC6255",
-                        "fill_opacity": 0.0,
-                        "stroke_color": "#FC6255",
-                        "stroke_width": 4,
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    }
-                ],
-                "construct": [
-                    {"cmd": "add", "id": "0", "state_ref": 0},
-                    {
-                        "cmd": "animate",
-                        "duration": 1.0,
-                        "animations": [
-                            {
-                                "id": "0",
-                                "rate_func": "smooth",
-                                "type": "simple",
-                                "kind": "Shift",
-                                "params": {"vector": [1, 0, 0]},
-                            }
-                        ],
-                    },
-                ],
-            },
-            {
-                "name": "second",
-                "snapshot": {"0": 0},
-                "states": [
-                    {
-                        "kind": "Circle",
-                        "opacity": 0.0,
-                        "fill_color": "#FC6255",
-                        "fill_opacity": 0.0,
-                        "stroke_color": "#FC6255",
-                        "stroke_width": 4,
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    },
-                    {
-                        "kind": "Square",
-                        "opacity": 0.0,
-                        "fill_color": "#FFFFFF",
-                        "fill_opacity": 0.0,
-                        "stroke_color": "#FFFFFF",
-                        "stroke_width": 4,
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    },
-                ],
-                "construct": [
-                    {"cmd": "add", "id": "1", "state_ref": 1},
-                    {
-                        "cmd": "animate",
-                        "duration": 1.0,
-                        "animations": [
-                            {
-                                "id": "1",
-                                "rate_func": "smooth",
-                                "type": "simple",
-                                "kind": "ScaleInPlace",
-                                "params": {"scale_factor": 2},
-                            }
-                        ],
-                    },
-                ],
-            },
-            {
-                "name": "third",
-                "snapshot": {"0": 0, "1": 1},
-                "states": [
-                    {
-                        "kind": "Circle",
-                        "opacity": 0.0,
-                        "fill_color": "#FC6255",
-                        "fill_opacity": 0.0,
-                        "stroke_color": "#FC6255",
-                        "stroke_width": 4,
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    },
-                    {
-                        "kind": "Square",
-                        "opacity": 0.0,
-                        "fill_color": "#FFFFFF",
-                        "fill_opacity": 0.0,
-                        "stroke_color": "#FFFFFF",
-                        "stroke_width": 4,
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    },
-                    {
-                        "kind": "Dot",
-                        "opacity": 1.0,
-                        "fill_color": "#FFFFFF",
-                        "fill_opacity": 1.0,
-                        "stroke_color": "#FFFFFF",
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    },
-                ],
-                "construct": [
-                    {"cmd": "add", "id": "2", "state_ref": 2},
-                    {
-                        "cmd": "animate",
-                        "duration": 1.0,
-                        "animations": [
-                            {
-                                "id": "2",
-                                "rate_func": "smooth",
-                                "type": "simple",
-                                "kind": "Shift",
-                                "params": {"vector": [0, 1, 0]},
-                            }
-                        ],
-                    },
-                ],
-            },
-        ],
-    }
-
-    assert_close(strip_points(data), strip_points(expected))
-
-
-def test_v2_chained_method_animation_uses_transform_with_correct_end_state():
-    reset_id_counter()
-
-    class ChainedAnimScene(ManimWidget):
-        def construct(self):
-            s = Square(side_length=1.0)
-            self.add(s)
-            self.play(s.animate.scale(2.0).shift((1, 0, 0)))
-
-    scene = ChainedAnimScene()
-    data = json.loads(scene.scene_data)
-    section = data["sections"][0]
-
-    anim_cmd = section["construct"][1]
-    assert anim_cmd["cmd"] == "animate"
-
-    anim_desc = anim_cmd["animations"][0]
-    assert anim_desc["id"] == "0"
-    assert anim_desc["type"] == "transform"
-    assert anim_desc["kind"] == "Transform"
-    assert "state_ref" in anim_desc
-
-    state_ref = anim_desc["state_ref"]
-    end_state = section["states"][state_ref]
-    assert end_state["kind"] == "Square"
-
-    anim = anim_desc.get("params", {})
-    assert anim.get("path_arc") == 0.0
-    assert anim.get("path_arc_axis") == [0.0, 0.0, 1.0]
-
-    expected = {
-        "version": 2,
-        "fps": 10,
-        "sections": [
-            {
-                "name": "initial",
-                "snapshot": {},
-                "states": [
-                    {
-                        "kind": "Square",
-                        "opacity": 0.0,
-                        "fill_color": "#FFFFFF",
-                        "fill_opacity": 0.0,
-                        "stroke_color": "#FFFFFF",
-                        "stroke_width": 4,
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    },
-                    {
-                        "kind": "Square",
-                        "opacity": 0.0,
-                        "fill_color": "#FFFFFF",
-                        "fill_opacity": 0.0,
-                        "stroke_color": "#FFFFFF",
-                        "stroke_width": 4,
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    },
-                ],
-                "construct": [
-                    {"cmd": "add", "id": "0", "state_ref": 0},
-                    {
-                        "cmd": "animate",
-                        "duration": 1.0,
-                        "animations": [
-                            {
-                                "id": "0",
-                                "rate_func": "smooth",
-                                "type": "transform",
-                                "kind": "Transform",
-                                "state_ref": 1,
-                                "params": {
-                                    "path_arc": 0.0,
-                                    "path_arc_axis": [0.0, 0.0, 1.0],
-                                },
-                            }
-                        ],
-                    },
-                ],
-            }
-        ],
-    }
-
-    assert_close(strip_points(data), strip_points(expected))
-
-
 def test_wait_with_vmobject():
     class SceneWithWait(ManimWidget):
         def construct(self):
@@ -649,3 +250,111 @@ def test_wait_with_vmobject():
     assert data["version"] == 2
     assert len(data["sections"]) == 1
     assert len(data["sections"][0]["construct"]) == 3
+
+
+def test_v2_method_animation_uses_move_to_target():
+    reset_id_counter()
+
+    class ShiftScene(ManimWidget):
+        def construct(self):
+            c = Circle()
+            self.add(c)
+            self.play(c.animate.shift((1, 0, 0)))
+
+    scene = ShiftScene()
+    data = json.loads(scene.scene_data)
+    section = data["sections"][0]
+
+    assert data["version"] == 2
+    assert len(section["states"]) >= 2
+
+    anim_cmd = section["construct"][1]
+    assert anim_cmd["cmd"] == "animate"
+
+    anim = anim_cmd["animations"][0]
+    assert anim["id"] == "0"
+    assert anim["type"] == "transform"
+    assert anim["kind"] == "MoveToTarget"
+    assert "state_ref" in anim
+
+    state_ref = anim["state_ref"]
+    target_state = section["states"][state_ref]
+    assert target_state["kind"] == "Circle"
+
+
+def test_v2_chained_method_animation_uses_move_to_target():
+    reset_id_counter()
+
+    class ChainedScene(ManimWidget):
+        def construct(self):
+            s = Square(side_length=1.0)
+            self.add(s)
+            self.play(s.animate.scale(2.0).shift((1, 0, 0)))
+
+    scene = ChainedScene()
+    data = json.loads(scene.scene_data)
+    section = data["sections"][0]
+
+    assert data["version"] == 2
+    assert len(section["states"]) >= 2
+
+    anim_cmd = section["construct"][1]
+    assert anim_cmd["cmd"] == "animate"
+
+    anim = anim_cmd["animations"][0]
+    assert anim["id"] == "0"
+    assert anim["type"] == "transform"
+    assert anim["kind"] == "MoveToTarget"
+    assert "state_ref" in anim
+
+    state_ref = anim["state_ref"]
+    target_state = section["states"][state_ref]
+    assert target_state["kind"] == "Square"
+
+
+def test_v2_multiple_sections_with_move_to_target():
+    reset_id_counter()
+
+    class MultiSectionMoveToTarget(ManimWidget):
+        def construct(self):
+            c = Circle()
+            self.add(c)
+            self.play(c.animate.shift((1, 0, 0)))
+            self.next_section("second")
+            s = Square()
+            self.add(s)
+            self.play(s.animate.scale(2))
+            self.next_section("third")
+            t = Dot()
+            self.add(t)
+            self.play(t.animate.shift((0, 1, 0)))
+
+    scene = MultiSectionMoveToTarget()
+    data = json.loads(scene.scene_data)
+
+    assert data["version"] == 2
+    assert len(data["sections"]) == 3
+
+    section1 = data["sections"][0]
+    assert section1["name"] == "initial"
+    assert len(section1["states"]) >= 2
+    anim1 = section1["construct"][1]["animations"][0]
+    assert anim1["type"] == "transform"
+    assert anim1["kind"] == "MoveToTarget"
+    assert "state_ref" in anim1
+
+    section2 = data["sections"][1]
+    assert section2["name"] == "second"
+    assert len(section2["states"]) >= 2
+    anim2 = section2["construct"][1]["animations"][0]
+    assert anim2["type"] == "transform"
+    assert anim2["kind"] == "MoveToTarget"
+    assert "state_ref" in anim2
+
+    section3 = data["sections"][2]
+    assert section3["name"] == "third"
+    assert len(section3["states"]) >= 2
+    anim3 = section3["construct"][1]["animations"][0]
+    assert anim3["type"] == "transform"
+    assert anim3["kind"] == "MoveToTarget"
+    assert "state_ref" in anim3

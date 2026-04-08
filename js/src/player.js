@@ -5,7 +5,6 @@ import {
   Rotate,
   ScaleInPlace,
   Scene,
-  Shift,
   Transform,
   VMobject,
   VGroup,
@@ -17,8 +16,16 @@ const SIMPLE_ANIM_BUILDERS = {
   FadeIn: (mob) => new FadeIn(mob),
   FadeOut: (mob) => new FadeOut(mob),
   Write: (mob) => new Write(mob),
-  Rotate: (mob, params) => new Rotate(mob, params?.angle, params?.axis),
-  ScaleInPlace: (mob, params) => new ScaleInPlace(mob, params?.scale_factor),
+  Rotate: (mob, params) =>
+    new Rotate(mob, {
+      angle: params?.angle ?? 0,
+      axis: params?.axis,
+      aboutPoint: params?.aboutPoint ?? params?.about_point,
+    }),
+  ScaleInPlace: (mob, params) =>
+    new ScaleInPlace(mob, {
+      scaleFactor: params?.scaleFactor ?? params?.scale_factor ?? 1,
+    }),
 };
 
 export class Player {
@@ -31,6 +38,7 @@ export class Player {
     this._currentSectionIndex = 0;
     this._onSectionChange = null;
     this._debug = options.debug || false;
+    this._lastAnimationDebug = null;
   }
 
   _log(...args) {
@@ -45,6 +53,74 @@ export class Player {
 
   _error(...args) {
     console.error("[Player]", ...args);
+  }
+
+  _describeMobForDebug(mob, depth = 0, maxDepth = 4) {
+    if (!mob) {
+      return { exists: false };
+    }
+    const summary = {
+      exists: true,
+      ctor: mob.constructor?.name || "Unknown",
+      hasGetThreeObject: typeof mob.getThreeObject === "function",
+      submobjects: Array.isArray(mob.submobjects) ? mob.submobjects.length : 0,
+    };
+
+    if (typeof mob.getThreeObject === "function") {
+      try {
+        const threeObject = mob.getThreeObject();
+        summary.hasThreeObject = Boolean(threeObject);
+        summary.threeCtor = threeObject?.constructor?.name || null;
+        summary.threeVisible = threeObject?.visible;
+        summary.threeChildren = Array.isArray(threeObject?.children) ? threeObject.children.length : null;
+      } catch (e) {
+        summary.getThreeObjectError = e?.message || String(e);
+      }
+    }
+
+    if (depth < maxDepth && Array.isArray(mob.submobjects) && mob.submobjects.length > 0) {
+      summary.children = mob.submobjects.map((child) => this._describeMobForDebug(child, depth + 1, maxDepth));
+    }
+    return summary;
+  }
+
+  _validateThreeTree(node, path = "root", seen = new Set()) {
+    if (!node) {
+      return { ok: false, reason: `null node at ${path}` };
+    }
+    if (seen.has(node)) {
+      return { ok: true };
+    }
+    seen.add(node);
+
+    if (!("visible" in node)) {
+      return { ok: false, reason: `missing visible property at ${path}` };
+    }
+
+    const children = Array.isArray(node.children) ? node.children : [];
+    for (let i = 0; i < children.length; i += 1) {
+      const child = children[i];
+      if (!child) {
+        return { ok: false, reason: `null child at ${path}.children[${i}]` };
+      }
+      const childCheck = this._validateThreeTree(child, `${path}.children[${i}]`, seen);
+      if (!childCheck.ok) {
+        return childCheck;
+      }
+    }
+
+    return { ok: true };
+  }
+
+  _emitAnimationFailureDiagnostics(error, desc) {
+    const report = {
+      error: error?.message || String(error),
+      stack: error?.stack || null,
+      animation: desc || null,
+      debugContext: this._lastAnimationDebug,
+    };
+
+    this._error("Animation playback failed with diagnostics:", report);
   }
 
   setfps(fps) {
@@ -203,6 +279,25 @@ export class Player {
       
       parent.add(child);
       this._log(`_attachVGroupChildren: attached child ${i} (state_ref=${childRef})`);
+    }
+  }
+
+  _ensureThreeObjects(mob) {
+    if (!mob) {
+      throw new Error("_ensureThreeObjects: mob is null or undefined");
+    }
+    if (typeof mob.getThreeObject !== "function") {
+      throw new Error("_ensureThreeObjects: mob is missing getThreeObject()");
+    }
+
+    const threeObject = mob.getThreeObject();
+    if (!threeObject) {
+      throw new Error("_ensureThreeObjects: getThreeObject() returned null");
+    }
+
+    const submobjects = Array.isArray(mob.submobjects) ? mob.submobjects : [];
+    for (const child of submobjects) {
+      this._ensureThreeObjects(child);
     }
   }
 
@@ -394,7 +489,33 @@ export class Player {
     for (const desc of animations) {
       const built = this._buildAnimation(desc, section);
       if (built) {
-        await this._scene.play(built);
+        const tempTarget = built?._mwTempTarget || null;
+        let tempTargetThree = null;
+        let shouldCleanupTarget = false;
+        try {
+          if (tempTarget) {
+            this._scene.add(tempTarget);
+            shouldCleanupTarget = true;
+            if (typeof tempTarget.getThreeObject === "function") {
+              tempTargetThree = tempTarget.getThreeObject();
+              if (tempTargetThree && "visible" in tempTargetThree) {
+                tempTargetThree.visible = false;
+              }
+            }
+          }
+          await this._scene.play(built);
+        } catch (error) {
+          this._emitAnimationFailureDiagnostics(error, desc);
+          throw error;
+        } finally {
+          this._lastAnimationDebug = null;
+        }
+        if (shouldCleanupTarget && tempTarget) {
+          // Allow one scene tick before removing temporary target so manim-web
+          // post-play internals can finish reading target visibility safely.
+          await this._scene.wait(0);
+          this._scene.remove(tempTarget);
+        }
       }
     }
   }
@@ -422,10 +543,6 @@ export class Player {
       throw new Error(`mobject_not_found - Mobject not found: ${desc.id}`);
     }
 
-    if (desc.kind === "Shift") {
-      return this._buildShiftAnimation(mob, desc.params?.vector);
-    }
-
     const builder = SIMPLE_ANIM_BUILDERS[desc.kind];
     if (!builder) {
       console.warn(`Unsupported simple animation kind: ${desc.kind}`);
@@ -433,14 +550,6 @@ export class Player {
     }
 
     return builder(mob, desc.params || {});
-  }
-
-  _buildShiftAnimation(mob, vector) {
-    const source = String(Shift);
-    if (source.startsWith("class")) {
-      return new Shift(mob, { direction: vector });
-    }
-    return Shift(mob, vector);
   }
 
   _buildTransformAnimation(desc, section) {
@@ -452,12 +561,46 @@ export class Player {
     const targetState = this._stateFromRef(section, desc.state_ref);
     const target = this._createMobjectFromState(targetState);
     this._applyState(target, targetState);
+    if (targetState.kind === "VGroup" && Array.isArray(targetState.children)) {
+      this._attachVGroupChildren(target, targetState.children, section);
+    }
+
+    this._ensureThreeObjects(mob);
+    this._ensureThreeObjects(target);
+
+    const mobThree = mob.getThreeObject();
+    const targetThree = target.getThreeObject();
+    const sourceTreeCheck = this._validateThreeTree(mobThree, "sourceThree");
+    const targetTreeCheck = this._validateThreeTree(targetThree, "targetThree");
+
+    this._lastAnimationDebug = {
+      type: "transform",
+      id: desc.id,
+      state_ref: desc.state_ref,
+      source: this._describeMobForDebug(mob),
+      target: this._describeMobForDebug(target),
+      sourceTreeCheck,
+      targetTreeCheck,
+    };
+    globalThis.__MW_LAST_ANIM_DEBUG = this._lastAnimationDebug;
+
+    if (!sourceTreeCheck.ok || !targetTreeCheck.ok) {
+      throw new Error(
+        `three_tree_invalid - ${sourceTreeCheck.ok ? targetTreeCheck.reason : sourceTreeCheck.reason}`
+      );
+    }
 
     const transformSource = String(Transform);
+    let built;
     if (transformSource.startsWith("class")) {
-      return new Transform(mob, target);
+      built = new Transform(mob, target);
+    } else {
+      built = Transform(mob, target);
     }
-    return Transform(mob, target);
+    if (built && typeof built === "object") {
+      built._mwTempTarget = target;
+    }
+    return built;
   }
 
   async _playData(cmd, section) {

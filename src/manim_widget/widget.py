@@ -52,10 +52,27 @@ class ManimWidget(anywidget.AnyWidget, Scene):
         self._snapshots[name] = self._snapshot_from_registry()
 
     def _snapshot_from_registry(self) -> dict[str, int]:
-        """Build snapshot as mob_id -> state_ref mapping."""
+        """Build snapshot as mob_id -> state_ref mapping.
+
+        Only includes root mobjects. VGroup children are NOT included separately
+        since they are referenced via the VGroupState's children array.
+        """
         snapshot: dict[str, int] = {}
+
+        child_ids: set[int] = set()
         for mob_id, mob in self._renderer.registry.items():
             if mob_id not in self._renderer._active_ids:
+                continue
+            from manim import VGroup
+
+            if isinstance(mob, VGroup):
+                for child in mob.submobjects:
+                    child_ids.add(id(child))
+
+        for mob_id, mob in self._renderer.registry.items():
+            if mob_id not in self._renderer._active_ids:
+                continue
+            if mob_id in child_ids:
                 continue
             mob_sid = short_id(mob)
             if mob_sid not in snapshot:

@@ -9,7 +9,9 @@ from manim import (
     Create,
     FadeIn,
     FadeOut,
+    Rotate,
     ReplacementTransform,
+    ScaleInPlace,
     Text,
     Transform,
     ValueTracker,
@@ -324,78 +326,13 @@ class CaptureRenderer:
                 descriptor["rate_func"] = rate_func_name
 
         methods = getattr(anim, "methods", None)
-        is_method_animation = False
         if methods:
-            # For chained method animations, use Transform with target_mobject
-            if len(methods) > 1:
-                if target_mobject is None:
-                    msg = "Chained method animation missing target_mobject"
-                    raise RuntimeError(msg)
-                descriptor["type"] = "transform"
-                descriptor["kind"] = "Transform"
-                descriptor["state_ref"] = self.state_ref_for(target_mobject)
-                transform_params: dict[str, Any] = {}
-                path_arc = getattr(anim, "path_arc", None)
-                if path_arc is not None:
-                    transform_params["path_arc"] = float(path_arc)
-                path_arc_axis = getattr(anim, "path_arc_axis", None)
-                if path_arc_axis is not None:
-                    transform_params["path_arc_axis"] = list(path_arc_axis)
-                if transform_params:
-                    descriptor["params"] = transform_params
-                return descriptor
-
-            # Single method animation - decode method parameters
-            for mwa in methods:
-                method_name = mwa.method.__name__
-                method_args = mwa.args
-                is_method_animation = True
-                if method_name == "shift":
-                    anim_name = "Shift"
-                    params["vector"] = list(method_args[0])
-                elif method_name == "rotate":
-                    anim_name = "Rotate"
-                    params["angle"] = method_args[0]
-                    if len(method_args) > 1:
-                        params["axis"] = list(method_args[1])
-                elif method_name == "scale":
-                    anim_name = "ScaleInPlace"
-                    params["scale_factor"] = method_args[0]
-                elif method_name in (
-                    "scale_to_fit_width",
-                    "scale_to_fit_height",
-                    "set_width",
-                    "set_height",
-                ):
-                    anim_name = "ScaleInPlace"
-                    mob = anim.mobject
-                    if mob is not None:
-                        if method_name in ("scale_to_fit_width", "set_width"):
-                            target = method_args[0]
-                            current = mob.get_width()
-                        else:
-                            target = method_args[0]
-                            current = mob.get_height()
-                        if current > 0:
-                            params["scale_factor"] = target / current
-                elif method_name in (
-                    "move_to",
-                    "next_to",
-                    "to_corner",
-                    "to_edge",
-                    "align_to",
-                ):
-                    anim_name = "Shift"
-                    if target_mobject is not None and anim.mobject is not None:
-                        shift_vec = (
-                            target_mobject.get_center() - anim.mobject.get_center()
-                        )
-                        params["vector"] = list(shift_vec)
-
-        if is_method_animation:
-            descriptor["type"] = "simple"
-            descriptor["kind"] = anim_name
-            descriptor["params"] = params
+            if target_mobject is None:
+                msg = "Method animation missing target_mobject"
+                raise RuntimeError(msg)
+            descriptor["type"] = "transform"
+            descriptor["kind"] = "MoveToTarget"
+            descriptor["state_ref"] = self.state_ref_for(target_mobject)
             return descriptor
 
         if anim_name in ("Transform", "ReplacementTransform"):
@@ -416,6 +353,16 @@ class CaptureRenderer:
                 descriptor["params"] = transform_params
             return descriptor
 
+        if isinstance(anim, Rotate):
+            params["angle"] = float(getattr(anim, "angle", 0.0))
+            axis = getattr(anim, "axis", None)
+            if axis is not None:
+                params["axis"] = list(axis)
+            about_point = getattr(anim, "about_point", None)
+            if about_point is not None:
+                params["about_point"] = list(about_point)
+        elif isinstance(anim, ScaleInPlace):
+            params["scale_factor"] = float(getattr(anim, "scale_factor", 1.0))
         descriptor["type"] = "simple"
         descriptor["kind"] = anim_name
         if params:
@@ -481,6 +428,8 @@ class CaptureRenderer:
         )
 
     def _opacity_for(self, mob: Mobject) -> float:
+        if isinstance(mob, VGroup):
+            return 1.0
         if isinstance(mob, VMobject):
             return float(mob.get_fill_opacity())
         if hasattr(mob, "opacity"):

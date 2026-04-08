@@ -42,6 +42,89 @@ const operations = [];
 const mobjectTracking = new Map();
 let mobjectIdCounter = 0;
 
+function pushValidationError(error, description, details = {}) {
+  errors.push({ error, description, ...details });
+}
+
+function getThreeObjectOrError(mob, context) {
+  if (!mob) {
+    pushValidationError(
+      "null_mobject",
+      `Validation context '${context}' received null mobject`,
+    );
+    return null;
+  }
+  if (typeof mob.getThreeObject !== "function") {
+    pushValidationError(
+      "missing_get_three_object",
+      `Mobject in context '${context}' is missing getThreeObject()`,
+      { mobjectId: mob._id || "unknown" },
+    );
+    return null;
+  }
+
+  const threeObject = mob.getThreeObject();
+  if (!threeObject) {
+    pushValidationError(
+      "null_three_object",
+      `Mobject in context '${context}' returned null three object`,
+      { mobjectId: mob._id || "unknown" },
+    );
+    return null;
+  }
+
+  if (threeObject.visible === null || threeObject.visible === undefined) {
+    pushValidationError(
+      "invalid_visible",
+      `Three object in context '${context}' has invalid visible`,
+      { mobjectId: mob._id || "unknown" },
+    );
+    return null;
+  }
+
+  return threeObject;
+}
+
+function validateMobjectTree(mob, context, seen = new Set()) {
+  if (!mob || seen.has(mob)) {
+    return;
+  }
+  seen.add(mob);
+
+  const threeObject = getThreeObjectOrError(mob, context);
+  if (threeObject) {
+    // Access visible explicitly to catch "...visible of null"-class issues.
+    const visibleProbe = threeObject.visible;
+    if (typeof visibleProbe !== "boolean") {
+      pushValidationError(
+        "non_boolean_visible",
+        `Three object visible is not boolean in context '${context}'`,
+        { mobjectId: mob._id || "unknown", visibleType: typeof visibleProbe },
+      );
+    }
+  }
+
+  const submobjects = Array.isArray(mob.submobjects) ? mob.submobjects : [];
+  for (let i = 0; i < submobjects.length; i++) {
+    const child = submobjects[i];
+    if (!child) {
+      pushValidationError(
+        "null_submobject",
+        `Null submobject at index ${i} in context '${context}'`,
+        { mobjectId: mob._id || "unknown" },
+      );
+      continue;
+    }
+    validateMobjectTree(child, `${context}.submobjects[${i}]`, seen);
+  }
+}
+
+function validateSceneGraph(scene, context) {
+  for (const mob of scene.mobjects) {
+    validateMobjectTree(mob, `${context}.scene_mobject`);
+  }
+}
+
 class MockVMobject {
   constructor() {
     this._id = `vmobject_${mobjectIdCounter++}`;
@@ -342,6 +425,18 @@ class MockScene {
       // Track animation parameters for better testing
       params: anim?._params || {},
     });
+
+    if (anim?.mobject) {
+      validateMobjectTree(anim.mobject, "scene.play.source");
+    }
+    if (anim?._params?.target) {
+      validateMobjectTree(anim._params.target, "scene.play.target");
+    }
+    validateSceneGraph(this, "scene.play");
+
+    if (errors.length > 0) {
+      throw new Error(`Scene graph validation failed during play (${errors.length} errors)`);
+    }
   }
 
   async wait(duration) {
@@ -361,14 +456,19 @@ function createMockAnimation(name) {
       // Extract params from args based on animation type
       if (args.length > 0) {
         if (name === "Rotate" && args.length >= 1) {
-          this._params.angle = args[0];
-          if (args.length >= 2) this._params.axis = args[1];
+          const opts = args[0];
+          if (opts && typeof opts === "object" && !Array.isArray(opts)) {
+            this._params = { ...this._params, ...opts };
+          } else {
+            this._params.angle = opts;
+            if (args.length >= 2) this._params.axis = args[1];
+          }
         } else if (name === "ScaleInPlace" && args.length >= 1) {
-          this._params.scale_factor = args[0];
-        } else if (name === "Shift" && args.length >= 1) {
-          this._params.vector = args[0];
-          if (typeof args[0] === "object" && !Array.isArray(args[0])) {
-            this._params = { ...this._params, ...args[0] };
+          const opts = args[0];
+          if (opts && typeof opts === "object" && !Array.isArray(opts)) {
+            this._params = { ...this._params, ...opts };
+          } else {
+            this._params.scaleFactor = opts;
           }
         } else if (name === "Transform" && args.length >= 1) {
           this._params.target = args[0];
@@ -407,7 +507,6 @@ const MockFadeOut = createMockAnimation("FadeOut");
 const MockWrite = createMockAnimation("Write");
 const MockRotate = createMockAnimation("Rotate");
 const MockScaleInPlace = createMockAnimation("ScaleInPlace");
-const MockShift = createMockAnimation("Shift");
 const MockTransform = createMockAnimation("Transform");
 
 mock.module("manim-web", () => ({
@@ -418,7 +517,6 @@ mock.module("manim-web", () => ({
   Write: MockWrite,
   Rotate: MockRotate,
   ScaleInPlace: MockScaleInPlace,
-  Shift: MockShift,
   Transform: MockTransform,
   VMobject: MockVMobject,
   VGroup: MockVGroup,
@@ -451,6 +549,16 @@ for (let i = 0; i < spec.sections.length; i++) {
 
   try {
     await player.seekToSection(i);
+    validateSceneGraph(mockScene, `section:${section.name || i}`);
+
+    for (const [mobId, mob] of registry._registry.entries()) {
+      validateMobjectTree(mob, `registry:${mobId}`);
+    }
+
+    if (errors.length > 0) {
+      throw new Error(`Scene graph validation failed after section ${section.name || i}`);
+    }
+
     operations.push({ type: "section_end", index: i, name: section.name });
     
     // Capture mobject IDs at the end of this section

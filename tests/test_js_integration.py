@@ -182,6 +182,38 @@ class TestCLIIntegration:
         return scene.scene_data
 
     @pytest.fixture
+    def vgroup_scale_section_data(self) -> str:
+        class VGroupScaleSection(ManimWidget):
+            def construct(self):
+                self.camera.background_color = "#ece6e2"
+                logo_green = "#87c2a5"
+                logo_blue = "#525893"
+                logo_red = "#e07a5f"
+                logo_black = "#343434"
+                circle = Circle(color=logo_green, fill_opacity=1).shift(LEFT)
+                square = Square(color=logo_blue, fill_opacity=1).shift(UP)
+                triangle = Triangle(color=logo_red, fill_opacity=1).shift(RIGHT)
+                logo = VGroup(triangle, square, circle)
+                logo.move_to(ORIGIN + LEFT)
+                self.play(Create(logo))
+                self.next_section("scale")
+                self.play(logo.animate.scale(2))
+
+        scene = VGroupScaleSection()
+        return scene.scene_data
+
+    @pytest.fixture
+    def vgroup_shift_data(self) -> str:
+        class VGroupShiftScene(ManimWidget):
+            def construct(self):
+                group = VGroup(Circle(), Square().shift((1, 0, 0)))
+                self.add(group)
+                self.play(group.animate.shift((1, 0, 0)))
+
+        scene = VGroupShiftScene()
+        return scene.scene_data
+
+    @pytest.fixture
     def bool_operations_data(self) -> str:
         class BooleanOperations(ManimWidget):
             def construct(self):
@@ -268,6 +300,24 @@ class TestCLIIntegration:
         assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
         sections = parse_section_ids(stdout)
         assert len(sections) == 1
+        assert len(sections[0]["ids"]) == 1
+
+    def test_vgroup_scale_section(self, vgroup_scale_section_data):
+        returncode, stdout, stderr = run_cli(vgroup_scale_section_data, output_ids=True)
+        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
+        sections = parse_section_ids(stdout)
+        assert len(sections) == 2
+        assert sections[0]["name"] == "initial"
+        assert sections[1]["name"] == "scale"
+        assert len(sections[0]["ids"]) == 1
+        assert len(sections[1]["ids"]) == 1
+
+    def test_vgroup_shift(self, vgroup_shift_data):
+        returncode, stdout, stderr = run_cli(vgroup_shift_data, output_ids=True)
+        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
+        sections = parse_section_ids(stdout)
+        assert len(sections) == 1
+        assert sections[0]["name"] == "initial"
         assert len(sections[0]["ids"]) == 1
 
     def test_boolean_operations(self, boolean_operations_data):

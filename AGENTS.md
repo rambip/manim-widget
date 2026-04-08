@@ -44,7 +44,7 @@ When features are unsupported, surface predictable warnings/errors instead of si
 - **Scene**: full execution of `construct()`.
 - **Section**: named region delimited by `next_section()`.
 - **State bank**: section-local list of serialized mobject states (`states`) addressed by integer `state_ref`.
-- **Snapshot**: section-entry full map of `mob_id -> serialized state` used for direct section restore.
+- **Snapshot**: section-entry full map of `mob_id -> state_ref` used for direct section restore.
 - **Command stream**: section operations (`add`, `remove`, `animate`, `data`, `rebind`).
 - **Dry-run**: execute scene logic to capture structured playback data only (no video file output).
 
@@ -142,7 +142,7 @@ Key semantics:
 
 - `snapshot` is `{ mob_id: state_ref }` at section entry - integer indices into section's `states` array.
 - `states` is a deduplicated per-section bank referenced by commands/frames/snapshot.
-- VGroup uses single representation: `VGroupState` with `children: ["mob_id", ...]` for all contexts.
+- VGroup uses single representation: `VGroupState` with `children: [state_ref, ...]` for all contexts.
 - JS runtime resolves snapshot values (integers) through section's `states` before restoring.
 - No `hidden` semantics in V2.
 - `ReplacementTransform` is represented as transform animation + `rebind` command.
@@ -151,9 +151,9 @@ Key semantics:
 
 ## Supported/Important Behavior
 
-- Supported descriptor families include simple animations (`Create`, `FadeIn`, `FadeOut`, `Write`) and transform (`Transform`, `ReplacementTransform` lowering to transform + `rebind`).
-- Method animations (`.animate.shift`, `.animate.rotate`, `.animate.scale`, etc.) map to `type: "simple"` with explicit params.
-- **Chained method animations** (`.animate.scale(0.5).next_to(...)`) are handled by emitting a Transform with the final `target_mobject` state. This correctly captures all method effects without needing to decode each method individually.
+- Supported descriptor families include simple animations (`Create`, `FadeIn`, `FadeOut`, `Write`, `Rotate`, `ScaleInPlace`) and transform (`Transform`, `ReplacementTransform` lowering to transform + `rebind`).
+- `.animate.*` method animations are emitted as transform-style descriptors (`kind: "MoveToTarget"`) using final `target_mobject` state.
+- **Chained method animations** (`.animate.scale(0.5).next_to(...)`) are also emitted as `MoveToTarget` and should not be decomposed per method.
 - Snapshot restoration at section boundaries remains core behavior.
 - Invalid point-array shape (not `3n+1`) should raise JS-side playback error.
 
@@ -161,7 +161,8 @@ Known integration nuance:
 
 - Some `manim-web` animation exports may appear class-like in one runtime path and factory-like in another.
 - Adapter logic in `player.js` should not assume one shape.
-- Chained `.animate` methods are emitted as Transform animations, which manim-web handles correctly.
+- `Rotate` / `ScaleInPlace` constructors in `manim-web` expect options objects, not positional args.
+- For transform playback, temporary target objects must remain valid through `scene.play(...)` and cleanup should be delayed one tick to avoid `threeObject.visible` null races.
 
 ---
 
@@ -206,6 +207,8 @@ Mitigation:
 
 - Run `bun run build` after JS source changes.
 - Keep animation adapter defensive for both constructor and factory APIs.
+- Keep CLI mocks contract-accurate with real `manim-web` signatures; otherwise browser-only regressions can slip through.
+- When browser stack traces are minified, add temporary structured diagnostics in source (`lastAnimationDebug`) and remove debug-only probes before finalizing.
 
 ---
 

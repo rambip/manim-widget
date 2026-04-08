@@ -56,7 +56,7 @@
 
     "Snapshot": {
       "type": "object",
-      "description": "Map of mob_id -> state_ref index into section.states",
+      "description": "Map of mob_id -> state_ref index into section.states. Contains only ROOT mobjects. VGroup children are NOT included separately - they are referenced via VGroupState.children array.",
       "additionalProperties": { "type": "integer", "minimum": 0 }
     },
 
@@ -187,7 +187,7 @@
         "children": {
           "type": "array",
           "items": { "type": "integer", "minimum": 0 },
-          "description": "Ordered list of child state_refs. Resolved through section.states to create child mobjects."
+          "description": "Ordered list of child state_refs. Resolved through section.states to create child mobjects. VGroup children are NOT in the snapshot - only the VGroup root is."
         },
         "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
         "z_index": { "type": "number" }
