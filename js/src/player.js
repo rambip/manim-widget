@@ -8,9 +8,12 @@ import {
   VMobject,
   VGroup,
   Write,
+  GrowFromCenter,
+  MoveAlongPath,
+  Rotating,
 } from "manim-web";
 
-function buildSimpleAnimation(mob, desc) {
+function buildSimpleAnimation(mob, desc, registry) {
   const params = desc.params || {};
   switch (desc.kind) {
     case "Create":
@@ -31,6 +34,23 @@ function buildSimpleAnimation(mob, desc) {
       return new ScaleInPlace(mob, {
         scaleFactor: params.scaleFactor ?? params.scale_factor ?? 1,
       });
+    case "GrowFromCenter":
+      return new GrowFromCenter(mob);
+    case "Rotating":
+      return new Rotating(mob, {
+        aboutPoint: params.aboutPoint ?? params.about_point,
+      });
+    case "MoveAlongPath":
+      if (!registry || !params.path_id) {
+        console.warn("MoveAlongPath missing path_id or registry");
+        return null;
+      }
+      const path = registry.get(params.path_id);
+      if (!path) {
+        console.warn(`MoveAlongPath path mobject not found: ${params.path_id}`);
+        return null;
+      }
+      return new MoveAlongPath(mob, { path });
     default:
       console.warn(`Unsupported simple animation kind: ${desc.kind}`);
       return null;
@@ -112,22 +132,30 @@ export class Player {
       if (typeof mob.setFillOpacity === "function") {
         mob.setFillOpacity(state.opacity);
       }
-      if (typeof mob.setOpacity === "function") {
-        mob.setOpacity(state.opacity);
+      if (typeof mob.setStrokeOpacity === "function") {
+        mob.setStrokeOpacity(state.opacity);
       }
     }
 
     if (typeof state.color === "string" && typeof mob.setColor === "function") {
       mob.setColor(state.color);
     }
-    if (typeof state.fill_color === "string" && "fillColor" in mob) {
-      mob.fillColor = state.fill_color;
-    }
     if (typeof state.fill_opacity === "number" && "fillOpacity" in mob) {
       mob.fillOpacity = state.fill_opacity;
     }
-    if (typeof state.stroke_color === "string" && "strokeColor" in mob) {
-      mob.strokeColor = state.stroke_color;
+    if (typeof state.stroke_opacity === "number" && typeof mob.setStyle === "function") {
+      mob.setStyle({ strokeOpacity: state.stroke_opacity });
+    }
+    if (typeof state.stroke_color === "string") {
+      if (typeof mob.setColor === "function") {
+        mob.setColor(state.stroke_color);
+      }
+      if ("strokeColor" in mob) {
+        mob.strokeColor = state.stroke_color;
+      }
+    }
+    if (typeof state.fill_color === "string" && "fillColor" in mob) {
+      mob.fillColor = state.fill_color;
     }
     if (typeof state.stroke_width === "number" && "strokeWidth" in mob) {
       mob.strokeWidth = state.stroke_width;
@@ -210,13 +238,18 @@ export class Player {
     if (!desc || typeof desc !== "object") {
       return null;
     }
+
+    if (desc.kind === "Wait") {
+      return null;
+    }
+
     const mob = this._registry.get(desc.id);
     if (!mob) {
       throw new Error(`Mobject not found: ${desc.id}`);
     }
 
     if (desc.type === "simple") {
-      return buildSimpleAnimation(mob, desc);
+      return buildSimpleAnimation(mob, desc, this._registry);
     }
 
     if (desc.type === "transform") {
@@ -231,6 +264,10 @@ export class Player {
   async _playAnimate(cmd, section) {
     const animations = Array.isArray(cmd.animations) ? cmd.animations : [];
     for (const desc of animations) {
+      if (desc.kind === "Wait") {
+        await this._scene.wait(cmd.duration);
+        continue;
+      }
       const animation = this._buildAnimation(desc, section);
       if (animation) {
         await this._scene.play(animation);

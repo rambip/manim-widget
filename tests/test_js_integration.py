@@ -19,16 +19,23 @@ from manim import (
     Circle,
     Create,
     Difference,
+    Dot,
     Ellipse,
     Exclusion,
     FadeIn,
+    GrowFromCenter,
     Intersection,
+    Line,
     MarkupText,
+    MoveAlongPath,
+    Rotating,
     Square,
     Text,
+    Transform,
     Triangle,
     VGroup,
     VMobject,
+    linear,
 )
 
 from manim_widget.widget import ManimWidget
@@ -36,7 +43,9 @@ from manim_widget.widget import ManimWidget
 CLI_PATH = Path(__file__).parent.parent / "js" / "src" / "test_cli.js"
 
 
-def run_cli(scene_data: str | dict, output_ids: bool = False) -> tuple[int, str, str]:
+def run_cli(
+    scene_data: str | dict, output_ids: bool = False, output_end_state: bool = False
+) -> tuple[int, str, str]:
     if isinstance(scene_data, dict):
         scene_json = json.dumps(scene_data)
     else:
@@ -45,6 +54,8 @@ def run_cli(scene_data: str | dict, output_ids: bool = False) -> tuple[int, str,
     args = ["bun", "run", str(CLI_PATH)]
     if output_ids:
         args.append("--output-ids")
+    if output_end_state:
+        args.append("--output-end-state")
 
     result = subprocess.run(
         args,
@@ -57,6 +68,16 @@ def run_cli(scene_data: str | dict, output_ids: bool = False) -> tuple[int, str,
 
 def parse_section_ids(stdout: str) -> list[dict]:
     marker = "=== Section Mobject IDs ==="
+    idx = stdout.find(marker)
+    if idx == -1:
+        return []
+    json_str = stdout[idx + len(marker) :].strip()
+    data = json.loads(json_str)
+    return data.get("sections", [])
+
+
+def parse_section_end_state(stdout: str) -> list[dict]:
+    marker = "=== Section End State ==="
     idx = stdout.find(marker)
     if idx == -1:
         return []
@@ -396,3 +417,62 @@ class TestCLIIntegration:
         sections = parse_section_ids(stdout)
         assert len(sections) == 1
         assert len(sections[0]["ids"]) >= 3
+
+    @pytest.fixture
+    def point_moving_on_shapes_data(self) -> str:
+        class PointMovingOnShapes(ManimWidget):
+            def construct(self):
+                circle = Circle(radius=1, color=BLUE)
+                dot = Dot()
+                dot2 = dot.copy().shift(RIGHT)
+                self.add(dot)
+
+                line = Line([3, 0, 0], [5, 0, 0])
+                self.add(line)
+
+                self.play(GrowFromCenter(circle))
+                self.play(Transform(dot, dot2))
+                self.play(MoveAlongPath(dot, circle), run_time=2, rate_func=linear)
+                self.play(Rotating(dot, about_point=[2, 0, 0]), run_time=1.5)
+                self.wait()
+
+        scene = PointMovingOnShapes()
+        return scene.scene_data
+
+    def test_point_moving_on_shapes(self, point_moving_on_shapes_data):
+        returncode, stdout, stderr = run_cli(
+            point_moving_on_shapes_data, output_ids=True
+        )
+        sections = parse_section_ids(stdout)
+        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
+        assert len(sections) == 1
+        assert sections[0]["name"] == "initial"
+
+    @pytest.fixture
+    def stroke_color_scene_data(self) -> str:
+        class StrokeColorScene(ManimWidget):
+            def construct(self):
+                c = Circle(stroke_color=BLUE, fill_opacity=0.0)
+                self.add(c)
+
+        scene = StrokeColorScene()
+        return scene.scene_data
+
+    def test_cli_outputs_end_state_with_stroke(self, stroke_color_scene_data):
+        returncode, stdout, stderr = run_cli(
+            stroke_color_scene_data, output_end_state=True
+        )
+        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
+
+        sections = parse_section_end_state(stdout)
+        assert len(sections) == 1
+
+        end_state = sections[0]["end_state"]
+        snapshot = end_state["snapshot"]
+        states = end_state["states"]
+
+        assert len(snapshot) == 1
+        circle_ref = next(iter(snapshot.values()))
+        circle_state = states[circle_ref]
+
+        assert circle_state["stroke_color"] == "#58C4DD"

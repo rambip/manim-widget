@@ -16,7 +16,150 @@ import { MobjectRegistry } from "./registry.js";
 const args = process.argv.slice(2);
 const verbose = args.includes("--verbose") || args.includes("-v");
 const outputIds = args.includes("--output-ids");
+const outputEndState = args.includes("--output-end-state");
 const filePathArg = args.find(arg => !arg.startsWith("-"));
+
+const VMOBJECT_KINDS = new Set([
+  "Circle",
+  "Square",
+  "Rectangle",
+  "RoundedRectangle",
+  "Triangle",
+  "Polygon",
+  "RegularPolygon",
+  "Hexagon",
+  "Pentagon",
+  "Polygram",
+  "ArcPolygon",
+  "Line",
+  "DashedLine",
+  "CubicBezier",
+  "Arrow",
+  "DoubleArrow",
+  "Vector",
+  "CurvedArrow",
+  "CurvedDoubleArrow",
+  "Arc",
+  "ArcBetweenPoints",
+  "Ellipse",
+  "Annulus",
+  "AnnularSector",
+  "Sector",
+  "TangentialArc",
+  "Dot",
+  "SmallDot",
+  "LargeDot",
+  "BackgroundRectangle",
+  "SurroundingRectangle",
+  "Underline",
+  "Cross",
+  "Angle",
+  "RightAngle",
+  "Star",
+  "Brace",
+  "BraceBetweenPoints",
+  "ArcBrace",
+  "SVGMobject",
+  "VMobjectFromSVGPath",
+  "VMobject",
+]);
+
+function normalizePoints(points) {
+  if (!Array.isArray(points)) {
+    return [];
+  }
+  return points
+    .filter((p) => Array.isArray(p) && p.length >= 3)
+    .map((p) => [Number(p[0]) || 0, Number(p[1]) || 0, Number(p[2]) || 0]);
+}
+
+function serializeRuntimeState(registry) {
+  const states = [];
+  const seen = new Map();
+
+  function serializeMobject(mob) {
+    if (!mob) {
+      return null;
+    }
+    if (seen.has(mob)) {
+      return seen.get(mob);
+    }
+
+    const ctorName = mob.constructor?.name;
+    const opacity = typeof mob.opacity === "number" ? mob.opacity : 1;
+    const zIndex = typeof mob.zIndex === "number" ? mob.zIndex : undefined;
+
+    let state;
+    if (ctorName === "VGroup") {
+      const children = Array.isArray(mob.submobjects)
+        ? mob.submobjects.map(serializeMobject).filter((ref) => ref !== null)
+        : [];
+      state = {
+        kind: "VGroup",
+        children,
+        opacity,
+      };
+      if (zIndex !== undefined) {
+        state.z_index = zIndex;
+      }
+    } else {
+      const kind = VMOBJECT_KINDS.has(ctorName) ? ctorName : "VMobject";
+      const points = typeof mob.getPoints === "function" ? normalizePoints(mob.getPoints()) : [];
+
+      state = {
+        kind,
+        points,
+        opacity,
+      };
+
+      if (typeof mob.color === "string") {
+        state.color = mob.color;
+      }
+      if (typeof mob.fillColor === "string") {
+        state.fill_color = mob.fillColor;
+      }
+      if (typeof mob.fillOpacity === "number") {
+        state.fill_opacity = mob.fillOpacity;
+      }
+
+      const strokeColor =
+        typeof mob.strokeColor === "string"
+          ? mob.strokeColor
+          : typeof mob.color === "string"
+            ? mob.color
+            : undefined;
+      if (typeof strokeColor === "string") {
+        state.stroke_color = strokeColor;
+      }
+      if (typeof mob.strokeWidth === "number") {
+        state.stroke_width = mob.strokeWidth;
+      }
+      if (typeof mob.opacity === "number") {
+        state.stroke_opacity = mob.opacity;
+      }
+      if (zIndex !== undefined) {
+        state.z_index = zIndex;
+      }
+    }
+
+    const ref = states.length;
+    seen.set(mob, ref);
+    states.push(state);
+    return ref;
+  }
+
+  const snapshot = {};
+  const sortedIds = Array.from(registry._registry.keys()).sort();
+  for (const id of sortedIds) {
+    const mob = registry._registry.get(id);
+    const ref = serializeMobject(mob);
+    if (ref !== null) {
+      snapshot[id] = ref;
+    }
+  }
+
+  return { snapshot, states };
+}
 
 async function readInput() {
   if (!filePathArg) {
@@ -134,6 +277,7 @@ player.setfps(spec.fps || 10);
 player.setSections(spec.sections || []);
 
 const sectionIds = [];
+const sectionEndStates = [];
 
 for (let i = 0; i < spec.sections.length; i++) {
   const section = spec.sections[i];
@@ -167,6 +311,13 @@ for (let i = 0; i < spec.sections.length; i++) {
       name: section.name,
       ids: ids.sort(),
     });
+
+    if (outputEndState) {
+      sectionEndStates.push({
+        name: section.name,
+        end_state: serializeRuntimeState(registry),
+      });
+    }
   } catch (e) {
     errors.push({
       section: i,
@@ -204,6 +355,12 @@ if (verbose) {
   for (const op of operations) {
     console.log(`  ${JSON.stringify(op)}`);
   }
+}
+
+if (outputEndState) {
+  console.log("\n=== Section End State ===");
+  const output = { sections: sectionEndStates };
+  console.log(JSON.stringify(output, null, 2));
 }
 
 if (outputIds) {
