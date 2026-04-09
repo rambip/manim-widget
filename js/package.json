@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "katex": "^0.16.22",
-    "manim-web": "^0.3.16",
+    "manim-web": "file:../manim-web",
     "three": "^0.180.0"
   },
   "devDependencies": {

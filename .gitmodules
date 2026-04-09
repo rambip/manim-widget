@@ -1,0 +1,3 @@
+[submodule "manim-web"]
+	path = manim-web
+	url = https://github.com/rambip/manim-web
