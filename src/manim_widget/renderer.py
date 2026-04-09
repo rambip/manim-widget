@@ -63,8 +63,8 @@ class CaptureRenderer:
         self.sections.append(self._current)
 
     def state_ref_for(self, mob: Mobject) -> int:
-        # For VGroups, ensure children are serialized first
-        if isinstance(mob, VGroup):
+        # For groups (VGroup, Group, etc.), ensure children are serialized first
+        if hasattr(mob, "submobjects") and mob.submobjects:
             for child in mob.submobjects:
                 self.state_ref_for(child)
         return self._intern_state(self.serialize_mobject(mob, for_snapshot=False))
@@ -125,7 +125,7 @@ class CaptureRenderer:
                             points_3n1.extend(chunk[1:].tolist())
                     state["points"] = points_3n1
 
-        if isinstance(mob, VGroup) or (isinstance(mob, VMobject) and mob.submobjects):
+        if hasattr(mob, "submobjects") and mob.submobjects:
             state["kind"] = "VGroup"
             state["children"] = [self.state_ref_for(child) for child in mob.submobjects]
 
@@ -254,7 +254,8 @@ class CaptureRenderer:
             if isinstance(mob, Mobject) and not isinstance(
                 mob, VMobject | ValueTracker
             ):
-                continue
+                if not (hasattr(mob, "submobjects") and mob.submobjects):
+                    continue
             if not self.is_active(mob):
                 self.register_mobject(mob)
                 pre_commands.append(
@@ -313,7 +314,7 @@ class CaptureRenderer:
         params: dict[str, Any] = {}
         descriptor: dict[str, Any] = {}
 
-        if hasattr(anim, "mobject"):
+        if hasattr(anim, "mobject") and anim_name != "Wait":
             descriptor["id"] = short_id(anim.mobject)
 
         target_mobject = getattr(anim, "target_mobject", None)
@@ -363,6 +364,13 @@ class CaptureRenderer:
                 params["about_point"] = list(about_point)
         elif isinstance(anim, ScaleInPlace):
             params["scale_factor"] = float(getattr(anim, "scale_factor", 1.0))
+        else:
+            path = getattr(anim, "path", None)
+            if path is not None:
+                params["path_id"] = short_id(path)
+            about_point = getattr(anim, "about_point", None)
+            if about_point is not None:
+                params["about_point"] = list(about_point)
         descriptor["type"] = "simple"
         descriptor["kind"] = anim_name
         if params:

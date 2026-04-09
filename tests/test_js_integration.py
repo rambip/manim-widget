@@ -10,6 +10,7 @@ import pytest
 from manim import (
     BLUE,
     GREEN,
+    Group,
     LEFT,
     ORIGIN,
     RED,
@@ -36,6 +37,7 @@ from manim import (
     VGroup,
     VMobject,
     linear,
+    FadeIn,
 )
 
 from manim_widget.widget import ManimWidget
@@ -476,3 +478,43 @@ class TestCLIIntegration:
         circle_state = states[circle_ref]
 
         assert circle_state["stroke_color"] == "#58C4DD"
+
+    @pytest.fixture
+    def group_two_objects_data(self) -> str:
+        class GroupTwoObjectsScene(ManimWidget):
+            def construct(self):
+                c1 = Circle()
+                c2 = Circle().shift(RIGHT)
+                group = Group(c1, c2)
+                self.play(FadeIn(group))
+
+        scene = GroupTwoObjectsScene()
+        return scene.scene_data
+
+    def test_group_two_objects(self, group_two_objects_data):
+        returncode, stdout, stderr = run_cli(group_two_objects_data, output_ids=True)
+        assert returncode == 0, f"CLI failed. stderr:\n{stderr}"
+        data = json.loads(group_two_objects_data)
+        states = data["sections"][0]["states"]
+        construct = data["sections"][0]["construct"]
+
+        assert len(states) == 3, (
+            f"Expected 3 states (2 children + Group), got {len(states)}"
+        )
+
+        add_cmd = next((c for c in construct if c["cmd"] == "add"), None)
+        assert add_cmd is not None, "Expected an add command"
+        group_ref = add_cmd["state_ref"]
+
+        group_state = states[group_ref]
+        assert group_state["kind"] == "VGroup", (
+            f"Expected VGroup, got {group_state['kind']}"
+        )
+        assert "children" in group_state, "Group should have children"
+        assert len(group_state["children"]) == 2, (
+            f"Expected 2 children, got {len(group_state.get('children', []))}"
+        )
+
+        child1_ref, child2_ref = group_state["children"]
+        assert states[child1_ref]["kind"] == "Circle"
+        assert states[child2_ref]["kind"] == "Circle"

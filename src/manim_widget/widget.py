@@ -65,7 +65,7 @@ class ManimWidget(anywidget.AnyWidget, Scene):
                 continue
             from manim import VGroup
 
-            if isinstance(mob, VGroup):
+            if hasattr(mob, "submobjects") and mob.submobjects:
                 for child in mob.submobjects:
                     child_ids.add(id(child))
 
