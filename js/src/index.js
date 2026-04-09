@@ -29,6 +29,30 @@ function buildUi(el) {
 }
 
 async function render({ model, el }) {
+  if (!globalThis.__MW_ERROR_HOOKS_INSTALLED) {
+    globalThis.__MW_ERROR_HOOKS_INSTALLED = true;
+    globalThis.addEventListener("error", (event) => {
+      try {
+        console.error("[ManimWidget] window.error", {
+          args: [event?.message, event?.filename, event?.lineno, event?.colno, event?.error],
+          lastAnimationDebug: globalThis.__MW_LAST_ANIM_DEBUG || null,
+        });
+      } catch {
+        // best-effort diagnostics only
+      }
+    });
+    globalThis.addEventListener("unhandledrejection", (event) => {
+      try {
+        console.error("[ManimWidget] unhandledrejection", {
+          reason: event?.reason,
+          lastAnimationDebug: globalThis.__MW_LAST_ANIM_DEBUG || null,
+        });
+      } catch {
+        // best-effort diagnostics only
+      }
+    });
+  }
+
   const ui = buildUi(el);
 
   let player = null;

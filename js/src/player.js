@@ -169,10 +169,17 @@ export class Player {
     const state = this._stateFromRef(section, stateRef);
     const mob = this._createMobjectFromState(state);
     this._applyState(mob, state);
-    if (state.kind === "VGroup" && Array.isArray(state.children) && state.children.length > 0) {
-      for (const childRef of state.children) {
-        const child = this._instantiateFromRef(section, childRef);
-        mob.add(child);
+    if (state.kind === "VGroup") {
+      if (Array.isArray(state.points) && state.points.length > 0) {
+        const bodyMob = new VMobject();
+        this._applyState(bodyMob, state);
+        mob.add(bodyMob);
+      }
+      if (Array.isArray(state.children) && state.children.length > 0) {
+        for (const childRef of state.children) {
+          const child = this._instantiateFromRef(section, childRef);
+          mob.add(child);
+        }
       }
     }
     return mob;

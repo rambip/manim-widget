@@ -315,10 +315,23 @@
     "AnimationDescriptor": {
       "oneOf": [
         { "$ref": "#/definitions/SimpleAnimation" },
+        { "$ref": "#/definitions/WaitAnimation" },
         { "$ref": "#/definitions/PairAnimation" },
         { "$ref": "#/definitions/GroupAnimation" },
         { "$ref": "#/definitions/TransformAnimation" }
       ]
+    },
+
+    "WaitAnimation": {
+      "type": "object",
+      "description": "Wait animation - pauses without operating on any mobject.",
+      "required": ["type", "kind"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "const": "simple" },
+        "kind": { "type": "string", "const": "Wait" },
+        "rate_func": { "$ref": "#/definitions/RateFunc" }
+      }
     },
 
     "SimpleAnimation": {
@@ -361,8 +374,7 @@
             "ChangingDecimal",
             "ChangeDecimalToValue",
             "Rotating",
-            "Broadcast",
-            "Wait"
+            "Broadcast"
           ]
         },
         "id": {
