@@ -494,7 +494,7 @@ class TestCLIIntegration:
     def test_group_two_objects(self, group_two_objects_data):
         returncode, stdout, stderr = run_cli(group_two_objects_data, output_ids=True)
         assert returncode == 0, f"CLI failed. stderr:\n{stderr}"
-        data = json.loads(group_two_objects_data)
+        data = group_two_objects_data
         states = data["sections"][0]["states"]
         construct = data["sections"][0]["construct"]
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +17,7 @@ _JS_BUNDLE = _ESM.read_text()
 
 class ManimWidget(anywidget.AnyWidget, Scene):
     _esm = _JS_BUNDLE
-    scene_data = traitlets.Unicode("").tag(sync=True)
+    scene_data = traitlets.Any({}).tag(sync=True)
     playback_error = traitlets.Unicode("").tag(sync=True)
 
     def __init__(self, fps: int = 10, **kwargs: Any) -> None:
@@ -39,7 +38,7 @@ class ManimWidget(anywidget.AnyWidget, Scene):
             sections=self._renderer.sections,
             snapshots=self._snapshots,
         )
-        self.scene_data = json.dumps(data)
+        self.scene_data = data
 
     def next_section(
         self,

@@ -71,7 +71,7 @@ def test_v2_data_command_uses_state_refs_and_dedup_is_deterministic():
             self.play(vt.animate.set_value(3), run_time=0.5)
 
     scene = DataScene(fps=10)
-    data = json.loads(scene.scene_data)
+    data = scene.scene_data
 
     expected = {
         "version": 2,
@@ -174,7 +174,7 @@ def test_v2_create_then_next_section_snapshot_only_second_section():
             self.next_section("a")
 
     scene = Move()
-    data = json.loads(scene.scene_data)
+    data = scene.scene_data
 
     expected = {
         "version": 2,
@@ -243,7 +243,7 @@ def test_wait_with_vmobject():
             self.wait()
 
     widget = SceneWithWait()
-    data = json.loads(widget.scene_data)
+    data = widget.scene_data
     schema = load_schema()
     validate(data, schema)
 
@@ -262,7 +262,7 @@ def test_v2_method_animation_uses_move_to_target():
             self.play(c.animate.shift((1, 0, 0)))
 
     scene = ShiftScene()
-    data = json.loads(scene.scene_data)
+    data = scene.scene_data
     section = data["sections"][0]
 
     assert data["version"] == 2
@@ -292,7 +292,7 @@ def test_v2_chained_method_animation_uses_move_to_target():
             self.play(s.animate.scale(2.0).shift((1, 0, 0)))
 
     scene = ChainedScene()
-    data = json.loads(scene.scene_data)
+    data = scene.scene_data
     section = data["sections"][0]
 
     assert data["version"] == 2
@@ -330,7 +330,7 @@ def test_v2_multiple_sections_with_move_to_target():
             self.play(t.animate.shift((0, 1, 0)))
 
     scene = MultiSectionMoveToTarget()
-    data = json.loads(scene.scene_data)
+    data = scene.scene_data
 
     assert data["version"] == 2
     assert len(data["sections"]) == 3

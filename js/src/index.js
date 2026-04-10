@@ -140,24 +140,16 @@ async function render({ model, el }) {
   });
 
   model.on("change:scene_data", async () => {
-    const jsonStr = model.get("scene_data");
-    if (!jsonStr) {
+    const data = model.get("scene_data");
+    if (!data) {
       return;
     }
-    try {
-      await loadScene(JSON.parse(jsonStr));
-    } catch (error) {
-      console.error("Failed to parse scene_data", error);
-    }
+    await loadScene(data);
   });
 
   const initialData = model.get("scene_data");
   if (initialData) {
-    try {
-      await loadScene(JSON.parse(initialData));
-    } catch (error) {
-      console.error("Failed to parse initial scene_data", error);
-    }
+    await loadScene(initialData);
   }
 }
 
