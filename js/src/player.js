@@ -13,6 +13,34 @@ import {
   Rotating,
 } from "manim-web";
 
+function computeAffineTransform(corners) {
+  const [ulX, ulY, ulZ, urX, urY, urZ, drX, drY, drZ, dlX, dlY, dlZ] = corners;
+  
+  const srcW = 1;
+  const srcH = 1;
+  
+  const scaleX = Math.sqrt((urX - ulX) ** 2 + (urY - ulY) ** 2) / srcW;
+  const scaleY = Math.sqrt((dlX - ulX) ** 2 + (dlY - ulY) ** 2) / srcH;
+  
+  const angle = Math.atan2(urY - ulY, urX - ulX);
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  
+  const cx = (ulX + urX + drX + dlX) / 4;
+  const cy = (ulY + urY + drY + dlY) / 4;
+  
+  return {
+    matrix: [
+      cos * scaleX, -sin * scaleX, 0,
+      sin * scaleY, cos * scaleY, 0,
+      cx, cy, 1
+    ],
+    position: [cx, cy, (ulZ + urZ + drZ + dlZ) / 4],
+    scale: [scaleX, scaleY, 1],
+    rotation: angle
+  };
+}
+
 function buildSimpleAnimation(mob, desc, registry) {
   const params = desc.params || {};
   switch (desc.kind) {
@@ -232,8 +260,8 @@ export class Player {
         await this._playAnimate(cmd, section);
         return;
       }
-      case "data": {
-        await this._playData(cmd, section);
+      case "updater": {
+        await this._playUpdater(cmd, section);
         return;
       }
       default:
@@ -250,22 +278,30 @@ export class Player {
       return null;
     }
 
-    const mob = this._registry.get(desc.id);
-    if (!mob) {
-      throw new Error(`Mobject not found: ${desc.id}`);
-    }
-
-    if (desc.type === "simple") {
-      return buildSimpleAnimation(mob, desc, this._registry);
-    }
-
-    if (desc.type === "transform") {
+    if ("state_ref" in desc) {
+      const mob = this._registry.get(desc.id);
+      if (!mob) {
+        throw new Error(`Mobject not found: ${desc.id}`);
+      }
       const target = this._instantiateFromRef(section, desc.state_ref);
       return new Transform(mob, target);
     }
 
-    console.warn(`Unsupported animation descriptor type: ${desc.type}`);
-    return null;
+    if ("ids" in desc) {
+      console.warn(`Group animations not yet supported: ${desc.kind}`);
+      return null;
+    }
+
+    if ("source_id" in desc && "target_id" in desc) {
+      console.warn(`Pair animations not yet supported: ${desc.kind}`);
+      return null;
+    }
+
+    const mob = this._registry.get(desc.id);
+    if (!mob) {
+      throw new Error(`Mobject not found: ${desc.id}`);
+    }
+    return buildSimpleAnimation(mob, desc, this._registry);
   }
 
   async _playAnimate(cmd, section) {
@@ -282,7 +318,7 @@ export class Player {
     }
   }
 
-  async _playData(cmd, section) {
+  async _playUpdater(cmd, section) {
     const frames = Array.isArray(cmd.frames) ? cmd.frames : [];
     if (frames.length === 0) {
       return;

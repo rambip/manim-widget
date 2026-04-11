@@ -59,7 +59,7 @@ def strip_points(obj: dict) -> dict:
     return result
 
 
-def test_v2_data_command_uses_state_refs_and_dedup_is_deterministic():
+def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
     reset_id_counter()
 
     class DataScene(ManimWidget):
@@ -81,9 +81,9 @@ def test_v2_data_command_uses_state_refs_and_dedup_is_deterministic():
                 "name": "initial",
                 "snapshot": {},
                 "states": [
-                    {"kind": "ValueTracker", "value": 0.0},
+                    {"value": 0.0},
                     {
-                        "kind": "Dot",
+                        "kind": "VMobject",
                         "opacity": 1.0,
                         "fill_color": "#FFFFFF",
                         "fill_opacity": 1.0,
@@ -91,9 +91,9 @@ def test_v2_data_command_uses_state_refs_and_dedup_is_deterministic():
                         "stroke_opacity": 1.0,
                         "z_index": 0,
                     },
-                    {"kind": "ValueTracker", "value": 0.12385697935738824},
+                    {"value": 0.12385697935738824},
                     {
-                        "kind": "Dot",
+                        "kind": "VMobject",
                         "opacity": 1.0,
                         "fill_color": "#FFFFFF",
                         "fill_opacity": 1.0,
@@ -101,9 +101,9 @@ def test_v2_data_command_uses_state_refs_and_dedup_is_deterministic():
                         "stroke_opacity": 1.0,
                         "z_index": 0,
                     },
-                    {"kind": "ValueTracker", "value": 0.7974197341465827},
+                    {"value": 0.7974197341465827},
                     {
-                        "kind": "Dot",
+                        "kind": "VMobject",
                         "opacity": 1.0,
                         "fill_color": "#FFFFFF",
                         "fill_opacity": 1.0,
@@ -111,9 +111,9 @@ def test_v2_data_command_uses_state_refs_and_dedup_is_deterministic():
                         "stroke_opacity": 1.0,
                         "z_index": 0,
                     },
-                    {"kind": "ValueTracker", "value": 2.2025802658534173},
+                    {"value": 2.2025802658534173},
                     {
-                        "kind": "Dot",
+                        "kind": "VMobject",
                         "opacity": 1.0,
                         "fill_color": "#FFFFFF",
                         "fill_opacity": 1.0,
@@ -121,9 +121,9 @@ def test_v2_data_command_uses_state_refs_and_dedup_is_deterministic():
                         "stroke_opacity": 1.0,
                         "z_index": 0,
                     },
-                    {"kind": "ValueTracker", "value": 2.8761430206426124},
+                    {"value": 2.8761430206426124},
                     {
-                        "kind": "Dot",
+                        "kind": "VMobject",
                         "opacity": 1.0,
                         "fill_color": "#FFFFFF",
                         "fill_opacity": 1.0,
@@ -131,9 +131,9 @@ def test_v2_data_command_uses_state_refs_and_dedup_is_deterministic():
                         "stroke_opacity": 1.0,
                         "z_index": 0,
                     },
-                    {"kind": "ValueTracker", "value": 3.0},
+                    {"value": 3.0},
                     {
-                        "kind": "Dot",
+                        "kind": "VMobject",
                         "opacity": 1.0,
                         "fill_color": "#FFFFFF",
                         "fill_opacity": 1.0,
@@ -146,7 +146,7 @@ def test_v2_data_command_uses_state_refs_and_dedup_is_deterministic():
                     {"cmd": "add", "id": "0", "state_ref": 0},
                     {"cmd": "add", "id": "1", "state_ref": 1},
                     {
-                        "cmd": "data",
+                        "cmd": "updater",
                         "duration": 0.5,
                         "frames": [
                             {"0": {"state_ref": 2}, "1": {"state_ref": 3}},
@@ -185,7 +185,7 @@ def test_v2_create_then_next_section_snapshot_only_second_section():
                 "snapshot": {},
                 "states": [
                     {
-                        "kind": "Circle",
+                        "kind": "VMobject",
                         "opacity": 1.0,
                         "fill_color": "#83C167",
                         "fill_opacity": 1.0,
@@ -204,7 +204,6 @@ def test_v2_create_then_next_section_snapshot_only_second_section():
                             {
                                 "id": "0",
                                 "rate_func": "smooth",
-                                "type": "simple",
                                 "kind": "Create",
                             }
                         ],
@@ -216,7 +215,7 @@ def test_v2_create_then_next_section_snapshot_only_second_section():
                 "snapshot": {"0": 0},
                 "states": [
                     {
-                        "kind": "Circle",
+                        "kind": "VMobject",
                         "opacity": 1.0,
                         "fill_color": "#83C167",
                         "fill_opacity": 1.0,
@@ -273,13 +272,12 @@ def test_v2_method_animation_uses_move_to_target():
 
     anim = anim_cmd["animations"][0]
     assert anim["id"] == "0"
-    assert anim["type"] == "transform"
-    assert anim["kind"] == "MoveToTarget"
     assert "state_ref" in anim
+    assert anim["kind"] == "MoveToTarget"
 
     state_ref = anim["state_ref"]
     target_state = section["states"][state_ref]
-    assert target_state["kind"] == "Circle"
+    assert target_state["kind"] == "VMobject"
 
 
 def test_v2_chained_method_animation_uses_move_to_target():
@@ -303,13 +301,12 @@ def test_v2_chained_method_animation_uses_move_to_target():
 
     anim = anim_cmd["animations"][0]
     assert anim["id"] == "0"
-    assert anim["type"] == "transform"
-    assert anim["kind"] == "MoveToTarget"
     assert "state_ref" in anim
+    assert anim["kind"] == "MoveToTarget"
 
     state_ref = anim["state_ref"]
     target_state = section["states"][state_ref]
-    assert target_state["kind"] == "Square"
+    assert target_state["kind"] == "VMobject"
 
 
 def test_v2_multiple_sections_with_move_to_target():
@@ -339,22 +336,19 @@ def test_v2_multiple_sections_with_move_to_target():
     assert section1["name"] == "initial"
     assert len(section1["states"]) >= 2
     anim1 = section1["construct"][1]["animations"][0]
-    assert anim1["type"] == "transform"
-    assert anim1["kind"] == "MoveToTarget"
     assert "state_ref" in anim1
+    assert anim1["kind"] == "MoveToTarget"
 
     section2 = data["sections"][1]
     assert section2["name"] == "second"
     assert len(section2["states"]) >= 2
     anim2 = section2["construct"][1]["animations"][0]
-    assert anim2["type"] == "transform"
-    assert anim2["kind"] == "MoveToTarget"
     assert "state_ref" in anim2
+    assert anim2["kind"] == "MoveToTarget"
 
     section3 = data["sections"][2]
     assert section3["name"] == "third"
     assert len(section3["states"]) >= 2
     anim3 = section3["construct"][1]["animations"][0]
-    assert anim3["type"] == "transform"
-    assert anim3["kind"] == "MoveToTarget"
     assert "state_ref" in anim3
+    assert anim3["kind"] == "MoveToTarget"

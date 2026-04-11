@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import manim
 import numpy as np
 import pytest
 from manim import (
@@ -516,5 +517,5 @@ class TestCLIIntegration:
         )
 
         child1_ref, child2_ref = group_state["children"]
-        assert states[child1_ref]["kind"] == "Circle"
-        assert states[child2_ref]["kind"] == "Circle"
+        assert states[child1_ref]["kind"] == "VMobject"
+        assert states[child2_ref]["kind"] == "VMobject"

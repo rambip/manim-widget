@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://manim-widget/schema/v1",
+  "$id": "https://manim-widget/schema/v2",
   "title": "ManimWidgetScene",
   "description": "Complete serialized Manim scene for client-side playback.",
   "type": "object",
@@ -64,8 +64,6 @@
       "description": "State variants valid inside section.states. This state bank is referenced by integer state_ref indices.",
       "oneOf": [
         { "$ref": "#/definitions/VMobjectState" },
-        { "$ref": "#/definitions/TextState" },
-        { "$ref": "#/definitions/MathTexState" },
         { "$ref": "#/definitions/VGroupState" },
         { "$ref": "#/definitions/ValueTrackerState" }
       ]
@@ -78,50 +76,8 @@
       "properties": {
         "kind": {
           "type": "string",
-          "enum": [
-            "Circle",
-            "Square",
-            "Rectangle",
-            "RoundedRectangle",
-            "Triangle",
-            "Polygon",
-            "RegularPolygon",
-            "Hexagon",
-            "Pentagon",
-            "Polygram",
-            "ArcPolygon",
-            "Line",
-            "DashedLine",
-            "CubicBezier",
-            "Arrow",
-            "DoubleArrow",
-            "Vector",
-            "CurvedArrow",
-            "CurvedDoubleArrow",
-            "Arc",
-            "ArcBetweenPoints",
-            "Ellipse",
-            "Annulus",
-            "AnnularSector",
-            "Sector",
-            "TangentialArc",
-            "Dot",
-            "SmallDot",
-            "LargeDot",
-            "BackgroundRectangle",
-            "SurroundingRectangle",
-            "Underline",
-            "Cross",
-            "Angle",
-            "RightAngle",
-            "Star",
-            "Brace",
-            "BraceBetweenPoints",
-            "ArcBrace",
-            "SVGMobject",
-            "VMobjectFromSVGPath",
-            "VMobject"
-          ]
+          "const": "VMobject",
+          "description": "Generic VMobject state with bezier points."
         },
         "points": {
           "type": "array",
@@ -140,41 +96,9 @@
         "stroke_color": { "$ref": "#/definitions/Color" },
         "stroke_width": { "type": "number", "minimum": 0 },
         "stroke_opacity": { "type": "number", "minimum": 0, "maximum": 1 },
-        "z_index": { "type": "number" }
-      }
-    },
-
-    "TextState": {
-      "type": "object",
-      "required": ["kind", "text", "opacity"],
-      "additionalProperties": false,
-      "properties": {
-        "kind": {
-          "type": "string",
-          "enum": ["Text", "Paragraph", "MarkupText"]
-        },
-        "text": { "type": "string" },
-        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
-        "color": { "$ref": "#/definitions/Color" },
-        "font_size": { "type": "number" },
-        "z_index": { "type": "number" }
-      }
-    },
-
-    "MathTexState": {
-      "type": "object",
-      "required": ["kind", "latex", "opacity"],
-      "additionalProperties": false,
-      "properties": {
-        "kind": { "type": "string", "enum": ["MathTex", "Tex"] },
-        "latex": {
-          "type": "string",
-          "description": "Raw LaTeX string. Rendered in JS via KaTeX."
-        },
-        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
-        "color": { "$ref": "#/definitions/Color" },
-        "font_size": { "type": "number" },
-        "z_index": { "type": "number" }
+        "z_index": { "type": "number" },
+        "text": { "type": "string", "description": "Text content for Text/MarkupText mobjects." },
+        "font_size": { "type": "number", "description": "Font size for Text/MarkupText mobjects." }
       }
     },
 
@@ -183,7 +107,11 @@
       "required": ["kind", "children", "opacity"],
       "additionalProperties": false,
       "properties": {
-        "kind": { "type": "string", "const": "VGroup" },
+        "kind": {
+          "type": "string",
+          "const": "VGroup",
+          "description": "Group of child mobjects."
+        },
         "children": {
           "type": "array",
           "items": { "type": "integer", "minimum": 0 },
@@ -196,10 +124,9 @@
 
     "ValueTrackerState": {
       "type": "object",
-      "required": ["kind", "value"],
+      "required": ["value"],
       "additionalProperties": false,
       "properties": {
-        "kind": { "type": "string", "const": "ValueTracker" },
         "value": {
           "type": "number",
           "description": "Current tracked value. Not rendered; used by updater-driven animations."
@@ -213,7 +140,7 @@
         { "$ref": "#/definitions/RemoveCommand" },
         { "$ref": "#/definitions/RebindCommand" },
         { "$ref": "#/definitions/AnimateCommand" },
-        { "$ref": "#/definitions/DataCommand" }
+        { "$ref": "#/definitions/UpdaterCommand" }
       ]
     },
 
@@ -278,13 +205,13 @@
       }
     },
 
-    "DataCommand": {
+    "UpdaterCommand": {
       "type": "object",
       "description": "One scene.play() call that involves updaters. Frames reference section.states entries.",
       "required": ["cmd", "duration", "frames"],
       "additionalProperties": false,
       "properties": {
-        "cmd": { "type": "string", "const": "data" },
+        "cmd": { "type": "string", "const": "updater" },
         "duration": { "type": "number", "minimum": 0 },
         "frames": {
           "type": "array",
@@ -325,10 +252,9 @@
     "WaitAnimation": {
       "type": "object",
       "description": "Wait animation - pauses without operating on any mobject.",
-      "required": ["type", "kind"],
+      "required": ["kind"],
       "additionalProperties": false,
       "properties": {
-        "type": { "type": "string", "const": "simple" },
         "kind": { "type": "string", "const": "Wait" },
         "rate_func": { "$ref": "#/definitions/RateFunc" }
       }
@@ -336,10 +262,9 @@
 
     "SimpleAnimation": {
       "type": "object",
-      "required": ["type", "kind", "id"],
+      "required": ["kind", "id"],
       "additionalProperties": false,
       "properties": {
-        "type": { "type": "string", "const": "simple" },
         "kind": {
           "type": "string",
           "enum": [
@@ -349,14 +274,11 @@
             "Unwrite",
             "FadeIn",
             "FadeOut",
-            "Shift",
             "Rotate",
             "ScaleInPlace",
             "ShrinkToCenter",
-            "FadeToColor",
             "GrowFromCenter",
             "GrowFromEdge",
-            "GrowFromPoint",
             "GrowArrow",
             "SpinInFromNothing",
             "MoveAlongPath",
@@ -371,8 +293,6 @@
             "ShowCreationThenDestruction",
             "WiggleOutThenIn",
             "Blink",
-            "ChangingDecimal",
-            "ChangeDecimalToValue",
             "Rotating",
             "Broadcast"
           ]
@@ -388,15 +308,12 @@
 
     "PairAnimation": {
       "type": "object",
-      "required": ["type", "kind", "source_id", "target_id"],
+      "required": ["kind", "source_id", "target_id"],
       "additionalProperties": false,
       "properties": {
-        "type": { "type": "string", "const": "pair" },
         "kind": {
           "type": "string",
-          "enum": [
-            "Swap"
-          ]
+          "enum": ["Swap"]
         },
         "source_id": {
           "type": "string",
@@ -417,15 +334,12 @@
 
     "GroupAnimation": {
       "type": "object",
-      "required": ["type", "kind", "ids"],
+      "required": ["kind", "ids"],
       "additionalProperties": false,
       "properties": {
-        "type": { "type": "string", "const": "group" },
         "kind": {
           "type": "string",
-          "enum": [
-            "CyclicReplace"
-          ]
+          "enum": ["CyclicReplace"]
         },
         "ids": {
           "type": "array",
@@ -444,15 +358,12 @@
 
     "TransformAnimation": {
       "type": "object",
-      "required": ["type", "kind", "id", "state_ref"],
+      "required": ["kind", "id", "state_ref"],
       "additionalProperties": false,
       "properties": {
-        "type": { "type": "string", "const": "transform" },
         "kind": {
           "type": "string",
-          "enum": [
-            "Transform"
-          ]
+          "enum": ["Transform", "MoveToTarget"]
         },
         "id": {
           "type": "string",
@@ -473,10 +384,6 @@
       "description": "Animation-specific parameters for simple animations.",
       "additionalProperties": false,
       "properties": {
-        "vector": {
-          "$ref": "#/definitions/Vec3",
-          "description": "Shift: displacement vector."
-        },
         "angle": {
           "type": "number",
           "description": "Rotate: angle in radians."
@@ -489,21 +396,13 @@
           "type": "number",
           "description": "ScaleInPlace."
         },
-        "color": {
-          "$ref": "#/definitions/Color",
-          "description": "FadeToColor: target color."
-        },
-        "point": {
+        "about_point": {
           "$ref": "#/definitions/Vec3",
-          "description": "GrowFromPoint: origin point."
+          "description": "Rotation/scale center point."
         },
         "path_id": {
           "type": "string",
           "description": "MoveAlongPath: mob_id of the path VMobject."
-        },
-        "value": {
-          "type": "number",
-          "description": "ChangeDecimalToValue: target value."
         }
       }
     },

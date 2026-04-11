@@ -18,6 +18,9 @@ from manim import (
     VGroup,
     Write,
 )
+from manim.mobject.mobject import Mobject
+
+from .snapshot import short_id
 from manim.animation.animation import Animation
 from manim.mobject.types.vectorized_mobject import VMobject
 from manim.mobject.mobject import Mobject
@@ -74,12 +77,10 @@ class CaptureRenderer:
     ) -> dict[str, object]:
         if isinstance(mob, ValueTracker):
             return {
-                "kind": "ValueTracker",
                 "value": float(mob.get_value()),
             }
 
         state: dict[str, object] = {
-            "kind": type(mob).__name__,
             "opacity": self._opacity_for(mob),
         }
 
@@ -128,6 +129,8 @@ class CaptureRenderer:
         if hasattr(mob, "submobjects") and mob.submobjects:
             state["kind"] = "VGroup"
             state["children"] = [self.state_ref_for(child) for child in mob.submobjects]
+        else:
+            state["kind"] = "VMobject"
 
         return state
 
@@ -146,7 +149,7 @@ class CaptureRenderer:
                 else:
                     points_3n1.extend(chunk[1:].tolist())
             child_state: dict[str, object] = {
-                "kind": type(mob).__name__,
+                "kind": "VMobject",
                 "points": points_3n1,
                 "opacity": self._opacity_for(mob),
             }
@@ -331,7 +334,6 @@ class CaptureRenderer:
             if target_mobject is None:
                 msg = "Method animation missing target_mobject"
                 raise RuntimeError(msg)
-            descriptor["type"] = "transform"
             descriptor["kind"] = "MoveToTarget"
             descriptor["state_ref"] = self.state_ref_for(target_mobject)
             return descriptor
@@ -340,7 +342,6 @@ class CaptureRenderer:
             if target_mobject is None:
                 msg = "Transform animation missing target_mobject"
                 raise RuntimeError(msg)
-            descriptor["type"] = "transform"
             descriptor["kind"] = "Transform"
             descriptor["state_ref"] = self.state_ref_for(target_mobject)
             transform_params: dict[str, Any] = {}
@@ -371,7 +372,6 @@ class CaptureRenderer:
             about_point = getattr(anim, "about_point", None)
             if about_point is not None:
                 params["about_point"] = list(about_point)
-        descriptor["type"] = "simple"
         descriptor["kind"] = anim_name
         if params:
             descriptor["params"] = params
@@ -429,7 +429,7 @@ class CaptureRenderer:
 
         current.commands.append(
             {
-                "cmd": "data",
+                "cmd": "updater",
                 "duration": run_time,
                 "frames": frames,
             }
