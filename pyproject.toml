@@ -6,10 +6,11 @@ readme = "README.md"
 authors = [
     { name = "Antonin P", email = "antonin.peronnet@telecom-paris.fr" }
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.9"
 dependencies = [
     "anywidget>=0.9.21",
     "manim>=0.20.1",
+    "marimo>=0.23.0",
 ]
 
 [build-system]
