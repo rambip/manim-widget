@@ -4,17 +4,22 @@
   "title": "ManimWidgetScene",
   "description": "Complete serialized Manim scene for client-side playback.",
   "type": "object",
-  "required": ["version", "fps", "sections"],
+  "required": ["version", "sections"],
   "additionalProperties": false,
   "properties": {
+    "fps": {
+      "type": "integer",
+      "minimum": 0
+    },
     "version": {
       "type": "integer",
       "const": 2
     },
-    "fps": {
-      "type": "integer",
-      "minimum": 1,
-      "description": "Dry-run frame rate used for 'data' commands."
+    "frame_width": {
+      "type": "integer"
+    },
+    "frame_heighheight": {
+      "type": "integer"
     },
     "sections": {
       "type": "array",
@@ -29,6 +34,9 @@
       "additionalProperties": false,
       "properties": {
         "name": { "type": "string" },
+        "background_color": {
+          "$ref": "#/definitions/Color"
+        },
         "unsupported": {
           "type": "boolean",
           "description": "If true, this section cannot be played back. JS must show a warning."
@@ -43,7 +51,7 @@
         },
         "states": {
           "type": "array",
-          "description": "Section-local state bank. Single source of truth for all mobject state. Integer refs (state_ref) index into this array.",
+          "description": "List of all serialized Geometrical data that will be used in this section (excluding updaters). Other commands and animations acces it using integer indices.",
           "items": { "$ref": "#/definitions/MobjectState" }
         },
         "construct": {
@@ -56,15 +64,16 @@
 
     "Snapshot": {
       "type": "object",
-      "description": "Map of mob_id -> state_ref index into section.states. Contains only ROOT mobjects. VGroup children are NOT included separately - they are referenced via VGroupState.children array.",
+      "description": "Scene state at the start of this section. It is a map of object_id -> index in section.states. Note that for groups, VGroup children are NOT included - the player must restore the children from VGroupState.children.",
       "additionalProperties": { "type": "integer", "minimum": 0 }
     },
 
     "MobjectState": {
-      "description": "State variants valid inside section.states. This state bank is referenced by integer state_ref indices.",
+      "description": "State variant holding geometrical or textual data. Nature of data is determined by the 'kind' field: either 'VMobject', 'VGroup', 'MathTexSource'",
       "oneOf": [
         { "$ref": "#/definitions/VMobjectState" },
         { "$ref": "#/definitions/VGroupState" },
+        { "$ref": "#/definitions/MathTexSourceState" },
         { "$ref": "#/definitions/ValueTrackerState" }
       ]
     },
@@ -97,8 +106,14 @@
         "stroke_width": { "type": "number", "minimum": 0 },
         "stroke_opacity": { "type": "number", "minimum": 0, "maximum": 1 },
         "z_index": { "type": "number" },
-        "text": { "type": "string", "description": "Text content for Text/MarkupText mobjects." },
-        "font_size": { "type": "number", "description": "Font size for Text/MarkupText mobjects." }
+        "text": {
+          "type": "string",
+          "description": "Text content for Text/MarkupText mobjects."
+        },
+        "font_size": {
+          "type": "number",
+          "description": "Font size for Text/MarkupText mobjects."
+        }
       }
     },
 
@@ -122,11 +137,48 @@
       }
     },
 
-    "ValueTrackerState": {
+    "MathTexSourceState": {
       "type": "object",
-      "required": ["value"],
+      "required": ["kind", "latex", "points", "opacity"],
       "additionalProperties": false,
       "properties": {
+        "kind": {
+          "type": "string",
+          "const": "MathTexSource",
+          "description": "LaTeX math expression rendered client-side."
+        },
+        "latex": {
+          "type": "string",
+          "description": "Raw LaTeX string. Rendered client-side."
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "number" },
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "minItems": 3,
+          "maxItems": 3,
+          "description": "Local coordinate system [origin, right_point, up_point] for transform support. Equal to [ORIGIN, RIGHT, UP] before transformation."
+        },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "color": { "$ref": "#/definitions/Color" },
+        "font_size": { "type": "number" },
+        "z_index": { "type": "number" }
+      }
+    },
+
+    "ValueTrackerState": {
+      "type": "object",
+      "required": ["value", "kind"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "ValueTracker"
+        },
         "value": {
           "type": "number",
           "description": "Current tracked value. Not rendered; used by updater-driven animations."
@@ -139,8 +191,7 @@
         { "$ref": "#/definitions/AddCommand" },
         { "$ref": "#/definitions/RemoveCommand" },
         { "$ref": "#/definitions/RebindCommand" },
-        { "$ref": "#/definitions/AnimateCommand" },
-        { "$ref": "#/definitions/UpdaterCommand" }
+        { "$ref": "#/definitions/AnimateCommand" }
       ]
     },
 
@@ -191,7 +242,7 @@
 
     "AnimateCommand": {
       "type": "object",
-      "description": "One scene.play() call. All animations run in parallel unless composition types dictate otherwise.",
+      "description": "One scene.play() call. All animations run in parallel by default",
       "required": ["cmd", "duration", "animations"],
       "additionalProperties": false,
       "properties": {
@@ -201,40 +252,88 @@
           "type": "array",
           "minItems": 1,
           "items": { "$ref": "#/definitions/AnimationDescriptor" }
-        }
-      }
-    },
-
-    "UpdaterCommand": {
-      "type": "object",
-      "description": "One scene.play() call that involves updaters. Frames reference section.states entries.",
-      "required": ["cmd", "duration", "frames"],
-      "additionalProperties": false,
-      "properties": {
-        "cmd": { "type": "string", "const": "updater" },
-        "duration": { "type": "number", "minimum": 0 },
-        "frames": {
-          "type": "array",
-          "description": "Length = ceil(duration * fps). Each entry maps mob_id to frame state references.",
-          "items": {
-            "type": "object",
-            "description": "Map of mob_id -> frame state entry.",
-            "additionalProperties": { "$ref": "#/definitions/FrameState" }
+        },
+        "updaters": {
+          "type": "object",
+          "description": "Add 'updaters' (animations running between each frame) for objects from their ids.",
+          "additionalProperties": {
+            "$ref": "#/definitions/UpdaterDescriptor"
           }
         }
       }
     },
 
-    "FrameState": {
+    "UpdaterDescriptor": {
       "type": "object",
-      "description": "Per-frame update by reference into section.states.",
-      "required": ["state_ref"],
+      "description": "For objects using updaters, snapshots of the object properties at every frame.",
+      "required": ["cmd", "duration", "updates"],
       "additionalProperties": false,
       "properties": {
-        "state_ref": {
+        "cmd": { "type": "string", "const": "updater" },
+        "updates": {
+          "description": "Data to update object properties (points, color, opacity ...) at each frame. Data for all properties must contain the same number of values (one per frame)",
+          "additionalProperties": {
+            "description": "The data for each frame. Use the 'scheme' field to specify how it is encoded.",
+            "oneOf": [
+              { "$ref": "#/definitions/RawUpdaterData" },
+              { "$ref": "#/definitions/ZLibUpdaterData" },
+              { "$ref": "#/definitions/DeltaPointUpdaterData" }
+            ]
+          }
+        }
+      }
+    },
+
+    "RawUpdaterData": {
+      "description": "Properties passed as a json array (uncompressed)",
+      "required": ["scheme", "value"],
+      "properties": {
+        "scheme": {
+          "type": "string",
+          "const": "raw"
+        },
+        "value": {
+          "type": "array"
+        }
+      }
+    },
+    "ZLibUpdaterData": {
+      "description": "String properties encoded as a new-line separated string, encoded with zlib",
+      "required": ["scheme", "value"],
+      "properties": {
+        "scheme": {
+          "type": "string",
+          "const": "zlib"
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "DeltaPointUpdaterData": {
+      "description": "Encoding scheme for point arrays that vary across frames. Points are stored as three separate zlib-compressed base64 buffers, one per axis (x, y, z). Each buffer is a row-major float32 matrix of shape [F, W], where F is the number of frames and W is the length of the longest point array across all frames (the 'width' field). Each row corresponds to one frame; slots beyond the actual point count are set to NaN. Values are delta-encoded between frames: the stored value is the difference from the previous frame, or the absolute value if the previous frame was NaN.",
+      "required": ["width", "scheme", "x", "y", "z"],
+      "additionalProperties": false,
+      "properties": {
+        "scheme": {
+          "type": "string",
+          "const": "delta"
+        },
+        "width": {
           "type": "integer",
-          "minimum": 0,
-          "description": "Index into section.states for this frame's full state."
+          "description": "Length of the longest point array across all frames."
+        },
+        "x": {
+          "type": "string",
+          "description": "base64(zlib(float32[F, W])) for the x axis."
+        },
+        "y": {
+          "type": "string",
+          "description": "base64(zlib(float32[F, W])) for the y axis."
+        },
+        "z": {
+          "type": "string",
+          "description": "base64(zlib(float32[F, W])) for the z axis."
         }
       }
     },
@@ -266,37 +365,42 @@
       "additionalProperties": false,
       "properties": {
         "kind": {
-          "type": "string",
-          "enum": [
-            "Create",
-            "Uncreate",
-            "Write",
-            "Unwrite",
-            "FadeIn",
-            "FadeOut",
-            "Rotate",
-            "ScaleInPlace",
-            "ShrinkToCenter",
-            "GrowFromCenter",
-            "GrowFromEdge",
-            "GrowArrow",
-            "SpinInFromNothing",
-            "MoveAlongPath",
-            "Indicate",
-            "Flash",
-            "Circumscribe",
-            "Wiggle",
-            "ShowPassingFlash",
-            "ApplyWave",
-            "FocusOn",
-            "Pulse",
-            "ShowCreationThenDestruction",
-            "WiggleOutThenIn",
-            "Blink",
-            "Rotating",
-            "Broadcast"
+          "anyOf": [
+            { "type": "string" },
+            {
+              "enum": [
+                "Create",
+                "Uncreate",
+                "Write",
+                "Unwrite",
+                "FadeIn",
+                "FadeOut",
+                "Rotate",
+                "ScaleInPlace",
+                "ShrinkToCenter",
+                "GrowFromCenter",
+                "GrowFromEdge",
+                "GrowArrow",
+                "SpinInFromNothing",
+                "MoveAlongPath",
+                "Indicate",
+                "Flash",
+                "Circumscribe",
+                "Wiggle",
+                "ShowPassingFlash",
+                "ApplyWave",
+                "FocusOn",
+                "Pulse",
+                "ShowCreationThenDestruction",
+                "WiggleOutThenIn",
+                "Blink",
+                "Rotating",
+                "Broadcast"
+              ]
+            }
           ]
         },
+
         "id": {
           "type": "string",
           "description": "mob_id of the target mobject."
@@ -475,9 +579,35 @@
     },
 
     "Color": {
-      "type": "string",
-      "pattern": "^#[0-9a-fA-F]{6}$",
-      "description": "Hex color string, e.g. '#ff0000'."
+      "oneOf": [
+        {
+          "description": "Transparent / no color.",
+          "type": "null"
+        },
+        {
+          "description": "Solid, alpha=1.",
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        {
+          "description": "Per-point gradient. Each entry is a hex string (alpha=1) or [hex, alpha] tuple.",
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "oneOf": [
+              { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+              {
+                "type": "array",
+                "items": false,
+                "prefixItems": [
+                  { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+                  { "type": "number", "minimum": 0, "maximum": 1 }
+                ]
+              }
+            ]
+          }
+        }
+      ]
     }
   }
 }
