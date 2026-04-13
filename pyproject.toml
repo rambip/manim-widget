@@ -1,7 +1,7 @@
 [project]
 name = "manim-widget"
 version = "0.1.0"
-description = "Add your description here"
+description = "Manim widget"
 readme = "README.md"
 authors = [
     { name = "Antonin P", email = "antonin.peronnet@telecom-paris.fr" }
