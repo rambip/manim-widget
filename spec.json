@@ -80,7 +80,7 @@
 
     "VMobjectState": {
       "type": "object",
-      "required": ["kind", "points", "opacity"],
+      "required": ["kind", "points"],
       "additionalProperties": false,
       "properties": {
         "kind": {
@@ -98,8 +98,6 @@
           },
           "description": "Bezier control points. Format: [p0, h0_a, h0_b, p1, h1_a, h1_b, p2, ...] where pi is a point and hi_a, hi_b are handles. Must have 3n+1 points (starting point + n cubic Bezier segments). Mobjects with multiple disconnected subpaths are serialized as VGroup with each subpath as a child."
         },
-        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
-        "color": { "$ref": "#/definitions/Color" },
         "fill_color": { "$ref": "#/definitions/Color" },
         "fill_opacity": { "type": "number", "minimum": 0, "maximum": 1 },
         "stroke_color": { "$ref": "#/definitions/Color" },
@@ -119,7 +117,7 @@
 
     "VGroupState": {
       "type": "object",
-      "required": ["kind", "children", "opacity"],
+      "required": ["kind", "children"],
       "additionalProperties": false,
       "properties": {
         "kind": {
@@ -132,14 +130,13 @@
           "items": { "type": "integer", "minimum": 0 },
           "description": "Ordered list of child state_refs. Resolved through section.states to create child mobjects. VGroup children are NOT in the snapshot - only the VGroup root is."
         },
-        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
         "z_index": { "type": "number" }
       }
     },
 
     "MathTexSourceState": {
       "type": "object",
-      "required": ["kind", "latex", "points", "opacity"],
+      "required": ["kind", "latex", "points"],
       "additionalProperties": false,
       "properties": {
         "kind": {
@@ -159,11 +156,11 @@
             "minItems": 3,
             "maxItems": 3
           },
-          "minItems": 3,
-          "maxItems": 3,
-          "description": "Local coordinate system [origin, right_point, up_point] for transform support. Equal to [ORIGIN, RIGHT, UP] before transformation."
+          "minItems": 4,
+          "maxItems": 4,
+          "description": "Local coordinate system [origin, right_point, up_point, top_right] for transform support. Initially [ORIGIN, RIGHT, UP, RIGHT+UP], no matter the font_size. JS uses first 3 points to derive 2x2 matrix and applies via applyMatrix with aboutPoint=origin."
         },
-        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "stroke_opacity": { "type": "number", "minimum": 0, "maximum": 1 },
         "color": { "$ref": "#/definitions/Color" },
         "font_size": { "type": "number" },
         "z_index": { "type": "number" }

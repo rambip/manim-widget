@@ -22,7 +22,7 @@
 - **Section**: named region delimited by `next_section()`.
 - **State bank**: section-local deduplicated list of serialized mobject states (`states`), addressed by integer `state_ref`.
 - **Snapshot**: section-entry map of `mob_id → state_ref`. Enables O(1) section jumps without replaying prior sections.
-- **Command stream** (`construct`): ordered section operations — `add`, `remove`, `animate`, `updater`, `rebind`.
+- **Command stream** (`construct`): ordered section operations — `add`, `remove`, `rebind` and the more complex `animate`.
 - **Dry-run**: execute scene logic to capture playback data only; no video output.
 
 ---
@@ -87,12 +87,7 @@ Built from `js/src/*` via Bun. This is what packaged widget users execute. Rebui
 | `add` | bind `id → state_ref` in scene graph |
 | `remove` | free `id` from registry (emitted after `FadeOut`, `ReplacementTransform`) |
 | `rebind` | remap `source_id → target_id` (emitted after `ReplacementTransform`) |
-| `animate` | one `scene.play()` without active updaters; parallel animations |
-| `updater` | one `scene.play()` with active updaters; per-frame `mob_id → {state_ref}` map |
-
-### Updater frames
-
-fps is **not** stored. It is derived: `fps = len(frames) / duration`. Each frame is a map of `mob_id → { "state_ref": <int> }`.
+| `animate` | one `scene.play()`; contains both parralel animations and updaters for specific objects|
 
 ### Animation descriptors
 
@@ -107,7 +102,7 @@ Families: `SimpleAnimation`, `TransformAnimation` (`Transform`, `MoveToTarget`),
 |---|---|
 | `VMobject` | bezier points as 3n+1 array; multi-subpath serialized as `VGroup` of children |
 | `VGroup` | `children: [state_ref, ...]` — uniform representation everywhere |
-| `StaticMathTex` | latex string + 4 corner points for transform support |
+| `MathTexSource` | latex string + 4 corner points for transform support |
 | `ValueTracker` | scalar `value` only; not rendered |
 
 ---
