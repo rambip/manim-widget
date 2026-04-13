@@ -400,7 +400,6 @@ class TestCLIIntegration:
                                 [7, 1, 1],
                                 [8, 0, 0],
                             ],
-                            "opacity": 1,
                         }
                     ],
                     "construct": [{"cmd": "add", "id": "circle1", "state_ref": 0}],
@@ -519,3 +518,63 @@ class TestCLIIntegration:
         child1_ref, child2_ref = group_state["children"]
         assert states[child1_ref]["kind"] == "VMobject"
         assert states[child2_ref]["kind"] == "VMobject"
+
+
+def test_js_static_mathtex_creates_and_transforms():
+    scene_data = {
+        "version": 2,
+        "fps": 10,
+        "sections": [
+            {
+                "name": "test_tex",
+                "snapshot": {},
+                "states": [
+                    {
+                        "kind": "StaticMathTex",
+                        "latex": "x^2",
+                        "points": [[-2, 1, 0], [2, 1, 0], [2, -1, 0], [-2, -1, 0]],
+                        "stroke_opacity": 1.0,
+                        "color": "#83C167",
+                        "font_size": 48,
+                    }
+                ],
+                "construct": [{"cmd": "add", "id": "tex1", "state_ref": 0}],
+            }
+        ],
+    }
+
+    returncode, stdout, stderr = run_cli(scene_data, output_ids=True)
+    assert returncode == 0, f"CLI failed: {stderr}"
+    assert "error" not in stderr.lower(), f"Errors in stderr: {stderr}"
+
+    sections = parse_section_ids(stdout)
+    assert len(sections) == 1
+    assert "tex1" in sections[0]["ids"]
+
+
+def test_js_static_mathtex_with_scaled_transform():
+    scene_data = {
+        "version": 2,
+        "fps": 10,
+        "sections": [
+            {
+                "name": "scaled_tex",
+                "snapshot": {},
+                "states": [
+                    {
+                        "kind": "StaticMathTex",
+                        "latex": "\\frac{a}{b}",
+                        "points": [[-4, 2, 0], [4, 2, 0], [4, -2, 0], [-4, -2, 0]],
+                        "stroke_opacity": 1.0,
+                        "font_size": 96,
+                    }
+                ],
+                "construct": [{"cmd": "add", "id": "frac", "state_ref": 0}],
+            }
+        ],
+    }
+
+    returncode, stdout, stderr = run_cli(scene_data, output_ids=True)
+    assert returncode == 0, f"CLI failed: {stderr}"
+    sections = parse_section_ids(stdout)
+    assert len(sections) == 1

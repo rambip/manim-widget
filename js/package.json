@@ -9,6 +9,7 @@
   "dependencies": {
     "katex": "^0.16.22",
     "manim-web": "file:../manim-web",
+    "mathjax-full": "^3.2.2",
     "three": "^0.180.0"
   },
   "devDependencies": {

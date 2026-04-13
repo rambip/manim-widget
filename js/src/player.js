@@ -11,35 +11,8 @@ import {
   GrowFromCenter,
   MoveAlongPath,
   Rotating,
+  MathTex,
 } from "manim-web";
-
-function computeAffineTransform(corners) {
-  const [ulX, ulY, ulZ, urX, urY, urZ, drX, drY, drZ, dlX, dlY, dlZ] = corners;
-  
-  const srcW = 1;
-  const srcH = 1;
-  
-  const scaleX = Math.sqrt((urX - ulX) ** 2 + (urY - ulY) ** 2) / srcW;
-  const scaleY = Math.sqrt((dlX - ulX) ** 2 + (dlY - ulY) ** 2) / srcH;
-  
-  const angle = Math.atan2(urY - ulY, urX - ulX);
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
-  
-  const cx = (ulX + urX + drX + dlX) / 4;
-  const cy = (ulY + urY + drY + dlY) / 4;
-  
-  return {
-    matrix: [
-      cos * scaleX, -sin * scaleX, 0,
-      sin * scaleY, cos * scaleY, 0,
-      cx, cy, 1
-    ],
-    position: [cx, cy, (ulZ + urZ + drZ + dlZ) / 4],
-    scale: [scaleX, scaleY, 1],
-    rotation: angle
-  };
-}
 
 function buildSimpleAnimation(mob, desc, registry) {
   const params = desc.params || {};
@@ -127,13 +100,30 @@ export class Player {
     if (!Array.isArray(states)) {
       throw new Error("Section is missing states array");
     }
-    if (!Number.isInteger(stateRef) || stateRef < 0 || stateRef >= states.length) {
+    if (
+      !Number.isInteger(stateRef) ||
+      stateRef < 0 ||
+      stateRef >= states.length
+    ) {
       throw new Error(`Invalid state_ref: ${stateRef}`);
     }
     return states[stateRef];
   }
 
   _createMobjectFromState(state) {
+    if (state.kind === "MathTexSource") {
+      const opts = { latex: state.latex };
+      if (state.color) opts.color = state.color;
+      if (state.font_size) opts.fontSize = state.font_size;
+      if (state.stroke_opacity !== undefined)
+        opts.strokeOpacity = state.stroke_opacity;
+      const mob = new MathTex(opts);
+      if (Array.isArray(state.points) && state.points.length >= 3) {
+        mob._pendingTransform = state.points.slice(0, 3);
+      }
+      return mob;
+    }
+
     if (state.kind === "VGroup") {
       return new VGroup();
     }
@@ -141,7 +131,9 @@ export class Player {
     const mob = new VMobject();
     if (Array.isArray(state.points) && state.points.length > 0) {
       if ((state.points.length - 1) % 3 !== 0) {
-        throw new Error(`Invalid points array length: ${state.points.length}. Expected 3n+1.`);
+        throw new Error(
+          `Invalid points array length: ${state.points.length}. Expected 3n+1.`,
+        );
       }
       mob.setPoints3D(state.points);
     }
@@ -149,20 +141,17 @@ export class Player {
   }
 
   _applyState(mob, state) {
-    if (Array.isArray(state.points) && state.points.length > 0 && typeof mob.setPoints3D === "function") {
+    if (
+      Array.isArray(state.points) &&
+      state.points.length > 0 &&
+      typeof mob.setPoints3D === "function"
+    ) {
       if ((state.points.length - 1) % 3 !== 0) {
-        throw new Error(`Invalid points array length: ${state.points.length}. Expected 3n+1.`);
+        throw new Error(
+          `Invalid points array length: ${state.points.length}. Expected 3n+1.`,
+        );
       }
       mob.setPoints3D(state.points);
-    }
-
-    if (typeof state.opacity === "number") {
-      if (typeof mob.setFillOpacity === "function") {
-        mob.setFillOpacity(state.opacity);
-      }
-      if (typeof mob.setStrokeOpacity === "function") {
-        mob.setStrokeOpacity(state.opacity);
-      }
     }
 
     if (typeof state.color === "string" && typeof mob.setColor === "function") {
@@ -171,7 +160,10 @@ export class Player {
     if (typeof state.fill_opacity === "number" && "fillOpacity" in mob) {
       mob.fillOpacity = state.fill_opacity;
     }
-    if (typeof state.stroke_opacity === "number" && typeof mob.setStyle === "function") {
+    if (
+      typeof state.stroke_opacity === "number" &&
+      typeof mob.setStyle === "function"
+    ) {
       mob.setStyle({ strokeOpacity: state.stroke_opacity });
     }
     if (typeof state.stroke_color === "string") {
@@ -191,6 +183,23 @@ export class Player {
     if (typeof state.z_index === "number" && "zIndex" in mob) {
       mob.zIndex = state.z_index;
     }
+  }
+
+  _applyTexTransform(mob, points) {
+    if (!points || points.length !== 3) return;
+    const [origin, right, up] = points;
+    const rx = right[0] - origin[0];
+    const ry = right[1] - origin[1];
+    const ux = up[0] - origin[0];
+    const uy = up[1] - origin[1];
+    console.log(`apply matrix transform at origin (${origin})`);
+    mob.applyMatrix(
+      [
+        [rx, ux],
+        [ry, uy],
+      ],
+      { aboutPoint: origin },
+    );
   }
 
   _instantiateFromRef(section, stateRef) {
@@ -213,11 +222,27 @@ export class Player {
     return mob;
   }
 
-  _restoreSnapshot(snapshot, section) {
+  async _finalizeMobject(mob, state) {
+    if (!mob) return;
+    if (typeof mob.waitForRender === "function") {
+      await mob.waitForRender();
+      if (state) {
+        this._applyState(mob, state);
+      }
+    }
+    if (mob._pendingTransform) {
+      this._applyTexTransform(mob, mob._pendingTransform);
+      delete mob._pendingTransform;
+    }
+  }
+
+  async _restoreSnapshot(snapshot, section) {
     for (const [id, stateRef] of Object.entries(snapshot)) {
+      const state = this._stateFromRef(section, stateRef);
       const mob = this._instantiateFromRef(section, stateRef);
       this._registry.set(id, mob);
       this._scene.add(mob);
+      await this._finalizeMobject(mob, state);
     }
   }
 
@@ -228,7 +253,7 @@ export class Player {
 
     this._scene.clear();
     this._registry.clear();
-    this._restoreSnapshot(section.snapshot || {}, section);
+    await this._restoreSnapshot(section.snapshot || {}, section);
 
     const commands = Array.isArray(section.construct) ? section.construct : [];
     for (const cmd of commands) {
@@ -239,9 +264,11 @@ export class Player {
   async _executeCommand(cmd, section) {
     switch (cmd?.cmd) {
       case "add": {
+        const state = this._stateFromRef(section, cmd.state_ref);
         const mob = this._instantiateFromRef(section, cmd.state_ref);
         this._registry.set(cmd.id, mob);
         this._scene.add(mob);
+        await this._finalizeMobject(mob, state);
         return;
       }
       case "remove": {
@@ -269,7 +296,7 @@ export class Player {
     }
   }
 
-  _buildAnimation(desc, section) {
+  async _buildAnimation(desc, section) {
     if (!desc || typeof desc !== "object") {
       return null;
     }
@@ -283,7 +310,9 @@ export class Player {
       if (!mob) {
         throw new Error(`Mobject not found: ${desc.id}`);
       }
+      const targetState = this._stateFromRef(section, desc.state_ref);
       const target = this._instantiateFromRef(section, desc.state_ref);
+      await this._finalizeMobject(target, targetState);
       return new Transform(mob, target);
     }
 
@@ -311,7 +340,7 @@ export class Player {
         await this._scene.wait(cmd.duration);
         continue;
       }
-      const animation = this._buildAnimation(desc, section);
+      const animation = await this._buildAnimation(desc, section);
       if (animation) {
         await this._scene.play(animation);
       }

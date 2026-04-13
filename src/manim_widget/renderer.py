@@ -6,29 +6,21 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from manim import (
-    Create,
-    FadeIn,
     FadeOut,
-    Rotate,
     ReplacementTransform,
+    Rotate,
     ScaleInPlace,
+    Scene,
     Text,
-    Transform,
     ValueTracker,
     VGroup,
-    Write,
 )
-from manim.mobject.mobject import Mobject
-
-from .snapshot import short_id
 from manim.animation.animation import Animation
-from manim.mobject.types.vectorized_mobject import VMobject
 from manim.mobject.mobject import Mobject
-
-if TYPE_CHECKING:
-    from manim import Scene
+from manim.mobject.types.vectorized_mobject import VMobject
 
 from .snapshot import short_id
+from .tex_patch import PatchedMathTex
 
 
 @dataclass
@@ -80,13 +72,27 @@ class CaptureRenderer:
                 "value": float(mob.get_value()),
             }
 
-        state: dict[str, object] = {
-            "opacity": self._opacity_for(mob),
-        }
+        state: dict[str, object] = {}
 
         if isinstance(mob, Text):
             state["text"] = mob.text
             state["font_size"] = mob.font_size
+
+        if isinstance(mob, PatchedMathTex):
+            state["kind"] = "MathTexSource"
+            state["latex"] = mob.tex_string
+            state["points"] = (
+                mob.points.tolist()
+                if hasattr(mob.points, "tolist")
+                else list(mob.points)
+            )
+            if mob.color is not None:
+                state["color"] = self._color_to_hex(mob.color)
+            state["font_size"] = mob.font_size
+            stroke_opacity = mob.get_stroke_opacity()
+            if stroke_opacity is not None:
+                state["stroke_opacity"] = stroke_opacity
+            return state
 
         if isinstance(mob, VMobject) and not isinstance(mob, VGroup):
             fill_color = mob.get_fill_color()
@@ -151,7 +157,6 @@ class CaptureRenderer:
             child_state: dict[str, object] = {
                 "kind": "VMobject",
                 "points": points_3n1,
-                "opacity": self._opacity_for(mob),
             }
             if isinstance(mob, VMobject):
                 fill_color = mob.get_fill_color()
@@ -176,7 +181,6 @@ class CaptureRenderer:
 
         return {
             "kind": "VGroup",
-            "opacity": self._opacity_for(mob),
             "children": child_refs,
         }
 
@@ -434,15 +438,6 @@ class CaptureRenderer:
                 "frames": frames,
             }
         )
-
-    def _opacity_for(self, mob: Mobject) -> float:
-        if isinstance(mob, VGroup):
-            return 1.0
-        if isinstance(mob, VMobject):
-            return float(mob.get_fill_opacity())
-        if hasattr(mob, "opacity"):
-            return float(getattr(mob, "opacity"))
-        return 1.0
 
     def _color_to_hex(self, color: object) -> str:
         if hasattr(color, "to_hex"):

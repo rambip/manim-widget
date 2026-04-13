@@ -10,6 +10,7 @@ from manim import (
     Create,
     Dot,
     ReplacementTransform,
+    RIGHT,
     Square,
     VGroup,
     ValueTracker,
@@ -84,7 +85,6 @@ def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
                     {"value": 0.0},
                     {
                         "kind": "VMobject",
-                        "opacity": 1.0,
                         "fill_color": "#FFFFFF",
                         "fill_opacity": 1.0,
                         "stroke_color": "#FFFFFF",
@@ -94,7 +94,6 @@ def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
                     {"value": 0.12385697935738824},
                     {
                         "kind": "VMobject",
-                        "opacity": 1.0,
                         "fill_color": "#FFFFFF",
                         "fill_opacity": 1.0,
                         "stroke_color": "#FFFFFF",
@@ -104,7 +103,6 @@ def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
                     {"value": 0.7974197341465827},
                     {
                         "kind": "VMobject",
-                        "opacity": 1.0,
                         "fill_color": "#FFFFFF",
                         "fill_opacity": 1.0,
                         "stroke_color": "#FFFFFF",
@@ -114,7 +112,6 @@ def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
                     {"value": 2.2025802658534173},
                     {
                         "kind": "VMobject",
-                        "opacity": 1.0,
                         "fill_color": "#FFFFFF",
                         "fill_opacity": 1.0,
                         "stroke_color": "#FFFFFF",
@@ -124,7 +121,6 @@ def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
                     {"value": 2.8761430206426124},
                     {
                         "kind": "VMobject",
-                        "opacity": 1.0,
                         "fill_color": "#FFFFFF",
                         "fill_opacity": 1.0,
                         "stroke_color": "#FFFFFF",
@@ -134,7 +130,6 @@ def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
                     {"value": 3.0},
                     {
                         "kind": "VMobject",
-                        "opacity": 1.0,
                         "fill_color": "#FFFFFF",
                         "fill_opacity": 1.0,
                         "stroke_color": "#FFFFFF",
@@ -186,7 +181,6 @@ def test_v2_create_then_next_section_snapshot_only_second_section():
                 "states": [
                     {
                         "kind": "VMobject",
-                        "opacity": 1.0,
                         "fill_color": "#83C167",
                         "fill_opacity": 1.0,
                         "stroke_color": "#83C167",
@@ -216,7 +210,6 @@ def test_v2_create_then_next_section_snapshot_only_second_section():
                 "states": [
                     {
                         "kind": "VMobject",
-                        "opacity": 1.0,
                         "fill_color": "#83C167",
                         "fill_opacity": 1.0,
                         "stroke_color": "#83C167",
@@ -352,3 +345,80 @@ def test_v2_multiple_sections_with_move_to_target():
     anim3 = section3["construct"][1]["animations"][0]
     assert "state_ref" in anim3
     assert anim3["kind"] == "MoveToTarget"
+
+
+def test_static_mathtex_serialization():
+    reset_id_counter()
+    from manim_widget.tex_patch import PatchedMathTex
+
+    class TexScene(ManimWidget):
+        def construct(self):
+            tex = PatchedMathTex("x^2", font_size=72, color=GREEN)
+            self.add(tex)
+
+    scene = TexScene(fps=10)
+    data = scene.scene_data
+    schema = load_schema()
+    validate(data, schema)
+
+    section = data["sections"][0]
+    state = section["states"][0]
+
+    assert state["kind"] == "StaticMathTex"
+    assert state["latex"] == "x^2"
+    assert state["font_size"] == 72
+    assert state["color"] == "#83C167"
+    assert "points" in state
+    assert len(state["points"]) == 4
+    for pt in state["points"]:
+        assert len(pt) == 3
+
+
+def test_static_mathtex_transform_updates_points():
+    reset_id_counter()
+    from manim_widget.tex_patch import PatchedMathTex
+
+    class TexTransformScene(ManimWidget):
+        def construct(self):
+            tex = PatchedMathTex("x^2")
+            self.add(tex)
+            self.play(tex.animate.scale(2).shift(RIGHT))
+
+    scene = TexTransformScene(fps=10)
+    data = scene.scene_data
+    schema = load_schema()
+    validate(data, schema)
+
+    section = data["sections"][0]
+
+    initial_state = section["states"][0]
+    assert initial_state["kind"] == "StaticMathTex"
+    initial_points = initial_state["points"]
+
+    anim = section["construct"][1]["animations"][0]
+    assert anim["kind"] == "MoveToTarget"
+
+    final_state = section["states"][anim["state_ref"]]
+    assert final_state["kind"] == "StaticMathTex"
+    final_points = final_state["points"]
+
+    assert initial_points != final_points
+
+
+def test_patch_tex_replaces_manim_classes():
+    from manim_widget import patch_tex
+    import manim
+
+    original_math_tex = manim.MathTex
+    original_tex = manim.Tex
+
+    patch_tex()
+
+    assert manim.MathTex is not original_math_tex
+    assert manim.Tex is not original_tex
+
+    tex = manim.Tex("test")
+    assert tex.tex_string == "test"
+
+    manim.MathTex = original_math_tex
+    manim.Tex = original_tex

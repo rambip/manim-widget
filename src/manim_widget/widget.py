@@ -7,12 +7,31 @@ import anywidget
 import traitlets
 from manim import Mobject, Scene
 
-from .renderer import CaptureRenderer
-from .serializer import serialize_scene
+from .renderer import CaptureRenderer, SectionRecord
 from .snapshot import short_id
 
 _ESM = Path(__file__).parent / "static" / "index.js"
 _JS_BUNDLE = _ESM.read_text()
+
+
+def serialize_scene(
+    fps: int,
+    sections: list[SectionRecord],
+    snapshots: dict[str, dict[str, object]],
+) -> dict[str, object]:
+    return {
+        "version": 2,
+        "fps": fps,
+        "sections": [
+            {
+                "name": s.name,
+                "snapshot": snapshots.get(s.name, {}),
+                "states": s.states,
+                "construct": s.commands,
+            }
+            for s in sections
+        ],
+    }
 
 
 class ManimWidget(anywidget.AnyWidget, Scene):
