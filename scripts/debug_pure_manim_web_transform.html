@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>manim-web pure transform repro</title>
+        <style>
+            :root {
+                color-scheme: light;
+                font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            }
+
+            body {
+                margin: 0;
+                background: #f4f4f1;
+                color: #1c1c1a;
+            }
+
+            .layout {
+                max-width: 1100px;
+                margin: 16px auto;
+                padding: 0 12px 16px;
+            }
+
+            .panel {
+                background: #fff;
+                border: 1px solid #d8d5cc;
+                border-radius: 10px;
+            }
+
+            .toolbar {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                padding: 10px;
+            }
+
+            button {
+                font: inherit;
+                border: 1px solid #c4c1b8;
+                border-radius: 8px;
+                padding: 6px 10px;
+                background: #fff;
+                cursor: pointer;
+            }
+
+            #viewer {
+                height: 560px;
+                border-top: 1px solid #e7e3d8;
+            }
+
+            #status {
+                padding: 8px 10px;
+                color: #666359;
+            }
+
+            #error {
+                margin: 0;
+                padding: 10px;
+                border-top: 1px solid #edd3d3;
+                background: #fff8f8;
+                color: #8b1f1f;
+                min-height: 1.2em;
+                white-space: pre-wrap;
+            }
+        </style>
+        <script type="importmap">
+            {
+                "imports": {
+                    "manim-web": "http://127.0.0.1:5173/src/index.ts"
+                }
+            }
+        </script>
+    </head>
+    <body>
+        <main class="layout">
+            <section class="panel">
+                <div class="toolbar">
+                    <button id="runGroupTransform">Run VGroup Transform</button>
+                    <button id="runChildTransform">Run Child Transform</button>
+                    <button id="runGroupRotate">Run VGroup Rotate</button>
+                    <button id="clear">Clear</button>
+                </div>
+                <div id="viewer"></div>
+                <div id="status">idle</div>
+                <pre id="error"></pre>
+            </section>
+        </main>
+
+        <script type="module">
+            import {
+                Circle,
+                Square,
+                Scene,
+                Transform,
+                VGroup,
+                Rotate,
+            } from "manim-web";
+
+            const dom = {
+                viewer: document.querySelector("#viewer"),
+                status: document.querySelector("#status"),
+                error: document.querySelector("#error"),
+                runGroupTransform: document.querySelector("#runGroupTransform"),
+                runChildTransform: document.querySelector("#runChildTransform"),
+                runGroupRotate: document.querySelector("#runGroupRotate"),
+                clear: document.querySelector("#clear"),
+            };
+
+            let scene = null;
+
+            function setStatus(value) {
+                dom.status.textContent = value;
+            }
+
+            function setError(value) {
+                dom.error.textContent = value || "";
+            }
+
+            function inspectMob(mob, name) {
+                const lines = [];
+                const stack = [{ mob, path: name }];
+                while (stack.length > 0) {
+                    const { mob: current, path } = stack.pop();
+                    const threeObject = current?.threeObject;
+                    const material = threeObject?.material;
+                    const materialInfo = Array.isArray(material)
+                        ? `array(${material.length}) nulls=${material.filter((x) => x == null).length}`
+                        : String(material === null ? "null" : typeof material);
+                    lines.push(
+                        `${path}: threeObject=${Boolean(threeObject)} material=${materialInfo}`,
+                    );
+                    const children = Array.isArray(current?.submobjects)
+                        ? current.submobjects
+                        : [];
+                    for (let i = children.length - 1; i >= 0; i -= 1) {
+                        stack.push({ mob: children[i], path: `${path}.${i}` });
+                    }
+                }
+                return lines.join("\n");
+            }
+
+            function createScene() {
+                dom.viewer.innerHTML = "";
+                scene = new Scene(dom.viewer, { width: 960, height: 540 });
+            }
+
+            async function run(action, label) {
+                setError("");
+                setStatus(`running: ${label}`);
+                createScene();
+                try {
+                    await action();
+                    setStatus(`done: ${label}`);
+                } catch (error) {
+                    console.error(error);
+                    setError((error && error.stack) || String(error));
+                    setStatus(`failed: ${label}`);
+                }
+            }
+
+            dom.runGroupTransform.addEventListener("click", async () => {
+                await run(async () => {
+                    const circle = new Circle();
+                    const group = new VGroup();
+                    group.add(circle);
+                    scene.add(group);
+                    await scene.play(new Rotate(group, { angle: 2 }));
+
+                    const target = group.copy();
+                    target.scale(2);
+                    target.shift([2, 0, 0]);
+
+                    console.log(
+                        "source before Transform:\n" +
+                            inspectMob(group, "group"),
+                    );
+                    console.log(
+                        "target before Transform:\n" +
+                            inspectMob(target, "target"),
+                    );
+
+                    await scene.play(new Transform(group, target));
+                }, "VGroup Transform");
+            });
+
+            dom.runChildTransform.addEventListener("click", async () => {
+                await run(async () => {
+                    const circle = new Circle();
+                    const group = new VGroup();
+                    group.add(circle);
+                    scene.add(group);
+                    await scene.play(new Rotate(group, { angle: 2 }));
+
+                    const target = circle.copy();
+                    target.scale(2);
+                    target.shift([2, 0, 0]);
+
+                    console.log(
+                        "source before child Transform:\n" +
+                            inspectMob(circle, "circle"),
+                    );
+                    console.log(
+                        "target before child Transform:\n" +
+                            inspectMob(target, "target"),
+                    );
+
+                    await scene.play(new Transform(circle, target));
+                }, "Child Transform");
+            });
+
+            dom.runGroupRotate.addEventListener("click", async () => {
+                await run(async () => {
+                    const circle = new Square();
+                    const group = new VGroup();
+                    group.add(circle);
+                    scene.add(group);
+                    await scene.play(new Rotate(group, { angle: 2 }));
+                }, "VGroup Rotate");
+            });
+
+            dom.clear.addEventListener("click", () => {
+                setError("");
+                setStatus("cleared");
+                if (scene) {
+                    scene.clear();
+                }
+            });
+
+            globalThis.addEventListener("error", (event) => {
+                const stack =
+                    event?.error?.stack || event?.message || "window.error";
+                setError(stack);
+            });
+
+            globalThis.addEventListener("unhandledrejection", (event) => {
+                const reason = event?.reason;
+                const stack = reason?.stack || String(reason);
+                setError(stack);
+            });
+        </script>
+    </body>
+</html>

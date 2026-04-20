@@ -1,0 +1,55 @@
+{
+  "version": 2,
+  "fps": 10,
+  "sections": [
+    {
+      "name": "create",
+      "snapshot": {},
+      "states": [
+        {
+          "kind": "MathTexSource",
+          "latex": "x=1",
+          "points": [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0]],
+          "stroke_opacity": 1,
+          "color": "#ffffff"
+        }
+      ],
+      "construct": [
+        {
+          "cmd": "add",
+          "id": "tex_0",
+          "state_ref": 0
+        },
+        {
+          "cmd": "animate",
+          "duration": 1.0,
+          "animations": [
+            { "kind": "Create", "id": "tex_0" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "shift",
+      "snapshot": { "tex_0": 0 },
+      "states": [
+        {
+          "kind": "MathTexSource",
+          "latex": "x=1",
+          "points": [[1, 0, 0], [2, 0, 0], [1, 1, 0], [2, 1, 0]],
+          "stroke_opacity": 1,
+          "color": "#ffffff"
+        }
+      ],
+      "construct": [
+        {
+          "cmd": "animate",
+          "duration": 1.0,
+          "animations": [
+            { "kind": "Transform", "id": "tex_0", "state_ref": 0 }
+          ]
+        }
+      ]
+    }
+  ]
+}

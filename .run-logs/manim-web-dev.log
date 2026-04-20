@@ -1,0 +1,8 @@
+
+> manim-web@0.3.17 dev
+> vite --host 127.0.0.1 --port 5173 --cors
+
+
+  VITE v7.3.1  ready in 7719 ms
+
+  ➜  Local:   http://127.0.0.1:5173/
