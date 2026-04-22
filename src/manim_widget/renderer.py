@@ -6,14 +6,20 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from manim import (
+    Create,
+    CyclicReplace,
+    FadeIn,
     FadeOut,
+    GrowFromCenter,
     ReplacementTransform,
     Rotate,
     ScaleInPlace,
     Scene,
+    Swap,
     Text,
     ValueTracker,
     VGroup,
+    Write,
 )
 from manim.animation.animation import Animation
 from manim.mobject.mobject import Mobject
@@ -258,20 +264,28 @@ class CaptureRenderer:
             animate_descriptors.append(desc)
 
             mob = anim.mobject
+            # Skip registration for group animation internal Groups
+            if isinstance(anim, Swap | CyclicReplace):
+                continue
             if isinstance(mob, Mobject) and not isinstance(
                 mob, VMobject | ValueTracker
             ):
                 if not (hasattr(mob, "submobjects") and mob.submobjects):
                     continue
+            
+            # Intro animations (Create, FadeIn, etc.) need the mobject staged but hidden
+            is_intro_animation = isinstance(anim, Create | FadeIn | Write | GrowFromCenter)
+            
             if not self.is_active(mob):
                 self.register_mobject(mob)
-                pre_commands.append(
-                    {
-                        "cmd": "add",
-                        "id": short_id(mob),
-                        "state_ref": self.state_ref_for(mob),
-                    }
-                )
+                add_cmd = {
+                    "cmd": "add",
+                    "id": short_id(mob),
+                    "state_ref": self.state_ref_for(mob),
+                }
+                if is_intro_animation:
+                    add_cmd["hidden"] = True
+                pre_commands.append(add_cmd)
 
             if isinstance(anim, ReplacementTransform):
                 target = anim.target_mobject
@@ -357,6 +371,60 @@ class CaptureRenderer:
                 transform_params["path_arc_axis"] = list(path_arc_axis)
             if transform_params:
                 descriptor["params"] = transform_params
+            return descriptor
+
+        if isinstance(anim, Swap):
+            group = getattr(anim, "group", None)
+            if group is None or not hasattr(group, "submobjects"):
+                msg = "Swap animation missing group or submobjects"
+                raise RuntimeError(msg)
+            submobjects = group.submobjects
+            if len(submobjects) < 2:
+                msg = "Swap animation requires at least 2 mobjects"
+                raise RuntimeError(msg)
+            descriptor = {
+                "kind": "Swap",
+                "ids": [short_id(m) for m in submobjects[:2]],
+            }
+            swap_params: dict[str, Any] = {}
+            path_arc = getattr(anim, "path_arc", None)
+            if path_arc is not None:
+                swap_params["path_arc"] = float(path_arc)
+            if swap_params:
+                descriptor["params"] = swap_params
+            if hasattr(anim, "rate_func"):
+                rate_func_name = getattr(anim.rate_func, "__name__", "smooth")
+                if "smooth" in rate_func_name.lower():
+                    descriptor["rate_func"] = "smooth"
+                else:
+                    descriptor["rate_func"] = rate_func_name
+            return descriptor
+
+        if isinstance(anim, CyclicReplace) and not isinstance(anim, Swap):
+            group = getattr(anim, "group", None)
+            if group is None or not hasattr(group, "submobjects"):
+                msg = "CyclicReplace animation missing group or submobjects"
+                raise RuntimeError(msg)
+            submobjects = group.submobjects
+            if len(submobjects) < 2:
+                msg = "CyclicReplace animation requires at least 2 mobjects"
+                raise RuntimeError(msg)
+            descriptor = {
+                "kind": "CyclicReplace",
+                "ids": [short_id(m) for m in submobjects],
+            }
+            cyclic_params: dict[str, Any] = {}
+            path_arc = getattr(anim, "path_arc", None)
+            if path_arc is not None:
+                cyclic_params["path_arc"] = float(path_arc)
+            if cyclic_params:
+                descriptor["params"] = cyclic_params
+            if hasattr(anim, "rate_func"):
+                rate_func_name = getattr(anim.rate_func, "__name__", "smooth")
+                if "smooth" in rate_func_name.lower():
+                    descriptor["rate_func"] = "smooth"
+                else:
+                    descriptor["rate_func"] = rate_func_name
             return descriptor
 
         if isinstance(anim, Rotate):

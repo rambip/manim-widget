@@ -9,6 +9,7 @@ from manim import (
     Circle,
     Create,
     Dot,
+    LEFT,
     ReplacementTransform,
     RIGHT,
     Square,
@@ -190,7 +191,7 @@ def test_v2_create_then_next_section_snapshot_only_second_section():
                     }
                 ],
                 "construct": [
-                    {"cmd": "add", "id": "0", "state_ref": 0},
+                    {"cmd": "add", "id": "0", "state_ref": 0, "hidden": True},
                     {
                         "cmd": "animate",
                         "duration": 1.0,
@@ -422,3 +423,72 @@ def test_patch_tex_replaces_manim_classes():
 
     manim.MathTex = original_math_tex
     manim.Tex = original_tex
+
+
+def test_swap_animation_emits_group_animation():
+    reset_id_counter()
+
+    class SwapScene(ManimWidget):
+        def construct(self):
+            from manim import Swap
+
+            s1 = Square().shift(LEFT)
+            s2 = Circle().shift(RIGHT)
+            self.add(s1, s2)
+            self.play(Swap(s1, s2))
+
+    scene = SwapScene()
+    data = scene.scene_data
+    section = data["sections"][0]
+
+    assert data["version"] == 2
+
+    # Find the animate command (should be after add commands)
+    animate_cmd = None
+    for cmd in section["construct"]:
+        if cmd["cmd"] == "animate":
+            animate_cmd = cmd
+            break
+    assert animate_cmd is not None
+
+    anim = animate_cmd["animations"][0]
+    assert anim["kind"] == "Swap"
+    assert "ids" in anim
+    assert anim["ids"] == ["0", "1"]
+
+    # path_arc should be present (default is PI/2)
+    if "params" in anim:
+        assert "path_arc" in anim["params"]
+
+
+def test_cyclic_replace_animation_emits_group_animation():
+    reset_id_counter()
+
+    class CyclicReplaceScene(ManimWidget):
+        def construct(self):
+            from manim import CyclicReplace, Triangle, UP
+
+            s1 = Square().shift(LEFT)
+            s2 = Circle().shift(RIGHT)
+            s3 = Triangle().shift(UP)
+            self.add(s1, s2, s3)
+            self.play(CyclicReplace(s1, s2, s3))
+
+    scene = CyclicReplaceScene()
+    data = scene.scene_data
+    section = data["sections"][0]
+
+    assert data["version"] == 2
+
+    # Find the animate command
+    animate_cmd = None
+    for cmd in section["construct"]:
+        if cmd["cmd"] == "animate":
+            animate_cmd = cmd
+            break
+    assert animate_cmd is not None
+
+    anim = animate_cmd["animations"][0]
+    assert anim["kind"] == "CyclicReplace"
+    assert "ids" in anim
+    assert len(anim["ids"]) == 3

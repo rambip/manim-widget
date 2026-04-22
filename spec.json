@@ -204,6 +204,10 @@
           "type": "integer",
           "minimum": 0,
           "description": "Index into section.states."
+        },
+        "hidden": {
+          "type": "boolean",
+          "description": "If true, mobject is staged but not added to scene. Intro animations (Create, FadeIn, etc.) pull from staging bucket and add to scene when they begin."
         }
       }
     },
@@ -339,7 +343,6 @@
       "oneOf": [
         { "$ref": "#/definitions/SimpleAnimation" },
         { "$ref": "#/definitions/WaitAnimation" },
-        { "$ref": "#/definitions/PairAnimation" },
         { "$ref": "#/definitions/GroupAnimation" },
         { "$ref": "#/definitions/TransformAnimation" }
       ]
@@ -407,32 +410,6 @@
       }
     },
 
-    "PairAnimation": {
-      "type": "object",
-      "required": ["kind", "source_id", "target_id"],
-      "additionalProperties": false,
-      "properties": {
-        "kind": {
-          "type": "string",
-          "enum": ["Swap"]
-        },
-        "source_id": {
-          "type": "string",
-          "description": "mob_id of the source mobject."
-        },
-        "target_id": {
-          "type": "string",
-          "description": "mob_id of the target mobject."
-        },
-        "rate_func": { "$ref": "#/definitions/RateFunc" },
-        "params": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {}
-        }
-      }
-    },
-
     "GroupAnimation": {
       "type": "object",
       "required": ["kind", "ids"],
@@ -440,19 +417,24 @@
       "properties": {
         "kind": {
           "type": "string",
-          "enum": ["CyclicReplace"]
+          "enum": ["Swap", "CyclicReplace"]
         },
         "ids": {
           "type": "array",
           "minItems": 2,
           "items": { "type": "string" },
-          "description": "Ordered mob_ids participating in the group animation."
+          "description": "Ordered mob_ids participating in the group animation. For Swap, must be exactly 2. For CyclicReplace, each mobject moves to the next position in order."
         },
         "rate_func": { "$ref": "#/definitions/RateFunc" },
         "params": {
           "type": "object",
           "additionalProperties": false,
-          "properties": {}
+          "properties": {
+            "path_arc": {
+              "type": "number",
+              "description": "Arc angle for the movement path in radians. Default is PI/2."
+            }
+          }
         }
       }
     },

@@ -5,6 +5,8 @@ import {
   Rotate,
   ScaleInPlace,
   Transform,
+  Swap,
+  CyclicReplace,
   VMobject,
   VGroup,
   Write,
@@ -62,6 +64,7 @@ export class Player {
   constructor(scene, registry) {
     this._scene = scene;
     this._registry = registry;
+    this._stagedMobjects = new Map(); // id -> {mob, state}
     this._sections = [];
     this._fps = 10;
     this._isPlaying = false;
@@ -253,12 +256,16 @@ export class Player {
 
     this._scene.clear();
     this._registry.clear();
+    this._stagedMobjects.clear();
     await this._restoreSnapshot(section.snapshot || {}, section);
 
     const commands = Array.isArray(section.construct) ? section.construct : [];
     for (const cmd of commands) {
       await this._executeCommand(cmd, section);
     }
+    
+    // Discard any remaining staged mobjects (not used by intro animations)
+    this._stagedMobjects.clear();
   }
 
   async _executeCommand(cmd, section) {
@@ -267,8 +274,14 @@ export class Player {
         const state = this._stateFromRef(section, cmd.state_ref);
         const mob = this._instantiateFromRef(section, cmd.state_ref);
         this._registry.set(cmd.id, mob);
-        this._scene.add(mob);
-        await this._finalizeMobject(mob, state);
+        
+        // If hidden, stage for later; intro animations will add to scene
+        if (cmd.hidden === true) {
+          this._stagedMobjects.set(cmd.id, { mob, state });
+        } else {
+          this._scene.add(mob);
+          await this._finalizeMobject(mob, state);
+        }
         return;
       }
       case "remove": {
@@ -317,12 +330,26 @@ export class Player {
     }
 
     if ("ids" in desc) {
-      console.warn(`Group animations not yet supported: ${desc.kind}`);
-      return null;
-    }
-
-    if ("source_id" in desc && "target_id" in desc) {
-      console.warn(`Pair animations not yet supported: ${desc.kind}`);
+      const params = desc.params || {};
+      const mobjects = desc.ids.map((id) => this._registry.get(id)).filter(Boolean);
+      if (mobjects.length < 2) {
+        console.warn(`${desc.kind} requires at least 2 mobjects, found ${mobjects.length}`);
+        return null;
+      }
+      const options = {
+        pathArc: params.path_arc,
+      };
+      if (desc.kind === "Swap") {
+        if (mobjects.length !== 2) {
+          console.warn(`Swap requires exactly 2 mobjects, found ${mobjects.length}`);
+          return null;
+        }
+        return new Swap(mobjects[0], mobjects[1], options);
+      }
+      if (desc.kind === "CyclicReplace") {
+        return new CyclicReplace(mobjects, options);
+      }
+      console.warn(`Unsupported group animation: ${desc.kind}`);
       return null;
     }
 
@@ -330,20 +357,45 @@ export class Player {
     if (!mob) {
       throw new Error(`Mobject not found: ${desc.id}`);
     }
+
+    // Intro animations: pull from staging bucket
+    // Don't add to scene - manim-web's play() will handle that after begin()
+    const introKinds = ["Create", "FadeIn", "Write", "GrowFromCenter"];
+    if (introKinds.includes(desc.kind)) {
+      const staged = this._stagedMobjects.get(desc.id);
+      if (staged) {
+        // Apply state but let manim-web handle scene addition
+        await this._finalizeMobject(mob, staged.state);
+        this._stagedMobjects.delete(desc.id);
+      }
+    }
+
     return buildSimpleAnimation(mob, desc, this._registry);
   }
 
   async _playAnimate(cmd, section) {
-    const animations = Array.isArray(cmd.animations) ? cmd.animations : [];
-    for (const desc of animations) {
+    const descriptors = Array.isArray(cmd.animations) ? cmd.animations : [];
+    const animations = [];
+    
+    for (const desc of descriptors) {
       if (desc.kind === "Wait") {
+        // Wait needs to be handled separately - play accumulated animations first
+        if (animations.length > 0) {
+          await this._scene.play(...animations);
+          animations.length = 0;
+        }
         await this._scene.wait(cmd.duration);
         continue;
       }
       const animation = await this._buildAnimation(desc, section);
       if (animation) {
-        await this._scene.play(animation);
+        animations.push(animation);
       }
+    }
+    
+    // Play all accumulated animations together
+    if (animations.length > 0) {
+      await this._scene.play(...animations);
     }
   }
 

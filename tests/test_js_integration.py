@@ -519,6 +519,51 @@ class TestCLIIntegration:
         assert states[child1_ref]["kind"] == "VMobject"
         assert states[child2_ref]["kind"] == "VMobject"
 
+    @pytest.fixture
+    def swap_animation_data(self) -> str:
+        from manim import Swap
+
+        class SwapScene(ManimWidget):
+            def construct(self):
+                s1 = Square().shift(LEFT)
+                s2 = Circle().shift(RIGHT)
+                self.play(Create(s1), Create(s2))
+                self.play(Swap(s1, s2))
+
+        scene = SwapScene()
+        return scene.scene_data
+
+    def test_swap_animation(self, swap_animation_data):
+        returncode, stdout, stderr = run_cli(swap_animation_data, output_ids=True)
+        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
+        sections = parse_section_ids(stdout)
+        assert len(sections) == 1
+        # After swap, both original objects should be in the scene
+        assert len(sections[0]["ids"]) == 2
+
+    @pytest.fixture
+    def cyclic_replace_animation_data(self) -> str:
+        from manim import CyclicReplace, Triangle, UP
+
+        class CyclicReplaceScene(ManimWidget):
+            def construct(self):
+                s1 = Square().shift(LEFT)
+                s2 = Circle().shift(RIGHT)
+                s3 = Triangle().shift(UP)
+                self.play(Create(s1), Create(s2), Create(s3))
+                self.play(CyclicReplace(s1, s2, s3))
+
+        scene = CyclicReplaceScene()
+        return scene.scene_data
+
+    def test_cyclic_replace_animation(self, cyclic_replace_animation_data):
+        returncode, stdout, stderr = run_cli(cyclic_replace_animation_data, output_ids=True)
+        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
+        sections = parse_section_ids(stdout)
+        assert len(sections) == 1
+        # After cyclic replace, all three objects should still be in the scene
+        assert len(sections[0]["ids"]) == 3
+
 
 def test_js_static_mathtex_creates_and_transforms():
     scene_data = {
