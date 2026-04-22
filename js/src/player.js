@@ -190,16 +190,16 @@ export class Player {
     const [origin, right, up] = points;
     const rx = right[0] - origin[0];
     const ry = right[1] - origin[1];
+    const rz = right[2] - origin[2];
     const ux = up[0] - origin[0];
     const uy = up[1] - origin[1];
-    console.log(`apply matrix transform at origin (${origin})`);
-    mob.applyMatrix(
-      [
-        [rx, ux],
-        [ry, uy],
-      ],
-      { aboutPoint: origin },
-    );
+    const uz = up[2] - origin[2];
+    mob.applyMatrix([
+      [rx, ux, 0],
+      [ry, uy, 0],
+      [rz, uz, 1],
+    ]);
+    mob.shift(origin);
   }
 
   _instantiateFromRef(section, stateRef) {
