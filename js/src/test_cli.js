@@ -140,6 +140,10 @@ function serializeRuntimeState(registry) {
       if (zIndex !== undefined) {
         state.z_index = zIndex;
       }
+      // Include position to debug Swap issues
+      if (mob.position && typeof mob.position.x === "number") {
+        state.position = [mob.position.x, mob.position.y, mob.position.z];
+      }
     }
 
     const ref = states.length;

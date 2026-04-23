@@ -1,4 +1,4 @@
-import { Scene } from "manim-web";
+import { ThreeDScene } from "manim-web";
 import { MobjectRegistry } from "./registry.js";
 import { createPlayer } from "./player.js";
 
@@ -92,7 +92,7 @@ async function render({ model, el }) {
     sceneData = data;
     ui.container.innerHTML = "";
 
-    const scene = new Scene(ui.container, { width: 600, height: 400 });
+    const scene = new ThreeDScene(ui.container, { width: 600, height: 400, enableOrbitControls: true });
     const registry = new MobjectRegistry();
     player = createPlayer(scene, registry);
     player.setfps(data.fps || 10);
