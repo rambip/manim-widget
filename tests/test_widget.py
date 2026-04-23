@@ -82,6 +82,7 @@ def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
             {
                 "name": "initial",
                 "snapshot": {},
+                "camera": {"phi": 1.5707963267948966, "theta": -1.5707963267948966, "distance": 5.0},
                 "states": [
                     {"value": 0.0},
                     {
@@ -179,6 +180,7 @@ def test_v2_create_then_next_section_snapshot_only_second_section():
             {
                 "name": "initial",
                 "snapshot": {},
+                "camera": {"phi": 1.5707963267948966, "theta": -1.5707963267948966, "distance": 5.0},
                 "states": [
                     {
                         "kind": "VMobject",

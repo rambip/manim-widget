@@ -259,6 +259,12 @@ export class Player {
     this._stagedMobjects.clear();
     await this._restoreSnapshot(section.snapshot || {}, section);
 
+    // Set initial camera state for section (3D scenes only)
+    if (section.camera && typeof this._scene.setCameraOrientation === "function") {
+      const { phi, theta, distance } = section.camera;
+      this._scene.setCameraOrientation(phi, theta, distance);
+    }
+
     const commands = Array.isArray(section.construct) ? section.construct : [];
     for (const cmd of commands) {
       await this._executeCommand(cmd, section);
@@ -401,22 +407,38 @@ export class Player {
 
   async _playUpdater(cmd, section) {
     const frames = Array.isArray(cmd.frames) ? cmd.frames : [];
-    if (frames.length === 0) {
+    const cameraUpdates = Array.isArray(cmd.camera_updates) ? cmd.camera_updates : [];
+    const hasCameraUpdates = cameraUpdates.length > 0;
+    const numFrames = Math.max(frames.length, cameraUpdates.length);
+
+    if (numFrames === 0) {
       return;
     }
 
     const duration = typeof cmd.duration === "number" ? cmd.duration : 0;
-    const frameDuration = duration / frames.length;
+    const frameDuration = duration / numFrames;
 
-    for (const frame of frames) {
-      for (const [id, frameEntry] of Object.entries(frame)) {
-        const mob = this._registry.get(id);
-        if (!mob) {
-          continue;
+    for (let i = 0; i < numFrames; i++) {
+      // Apply mobject frame
+      if (i < frames.length) {
+        for (const [id, frameEntry] of Object.entries(frames[i])) {
+          const mob = this._registry.get(id);
+          if (!mob) {
+            continue;
+          }
+          const state = this._stateFromRef(section, frameEntry.state_ref);
+          this._applyState(mob, state);
         }
-        const state = this._stateFromRef(section, frameEntry.state_ref);
-        this._applyState(mob, state);
       }
+
+      // Apply camera frame
+      if (hasCameraUpdates && i < cameraUpdates.length) {
+        const cam = cameraUpdates[i];
+        if (typeof this._scene.setCameraOrientation === "function") {
+          this._scene.setCameraOrientation(cam.phi, cam.theta, cam.distance);
+        }
+      }
+
       await this._scene.wait(frameDuration);
     }
   }

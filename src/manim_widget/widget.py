@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any
 
 import anywidget
 import traitlets
-from manim import Mobject, Scene
+from manim import Mobject, ThreeDScene
 
 from .renderer import CaptureRenderer, SectionRecord
 from .snapshot import short_id
@@ -18,6 +19,7 @@ def serialize_scene(
     fps: int,
     sections: list[SectionRecord],
     snapshots: dict[str, dict[str, object]],
+    cameras: dict[str, dict[str, float]],
 ) -> dict[str, object]:
     return {
         "version": 2,
@@ -26,6 +28,7 @@ def serialize_scene(
             {
                 "name": s.name,
                 "snapshot": snapshots.get(s.name, {}),
+                **({"camera": cameras[s.name]} if s.name in cameras else {}),
                 "states": s.states,
                 "construct": s.commands,
             }
@@ -34,7 +37,7 @@ def serialize_scene(
     }
 
 
-class ManimWidget(anywidget.AnyWidget, Scene):
+class ManimWidget(anywidget.AnyWidget, ThreeDScene):
     _esm = _JS_BUNDLE
     scene_data = traitlets.Any({}).tag(sync=True)
     playback_error = traitlets.Unicode("").tag(sync=True)
@@ -43,21 +46,60 @@ class ManimWidget(anywidget.AnyWidget, Scene):
         self._fps = fps
         self._renderer = CaptureRenderer(fps=fps)
         self._snapshots: dict[str, dict[str, Any]] = {}
+        self._cameras: dict[str, dict[str, float]] = {}
+        self._last_camera_state: dict[str, float] | None = None
 
         anywidget.AnyWidget.__init__(self)
-        Scene.__init__(self, renderer=self._renderer, **kwargs)
+        ThreeDScene.__init__(self, renderer=self._renderer, **kwargs)
 
+        # Initialize renderer - this makes scene.camera available
         self._renderer.init_scene(self)
+
+        # Set default camera to 2D-like view: looking at XY plane from front
+        # HACK: phi=pi/2, theta=-pi/2 gives correct X=right, Y=up in manim-web
+        # This is needed because manim-web treats phi=0 as Y-up (THREE.js convention)
+        # while Python Manim treats phi=0 as Z-up. See issue #17
+        self.camera.set_phi(math.pi / 2)
+        self.camera.set_theta(-math.pi / 2)
+
         self._renderer.open_section("initial")
         self._snapshots["initial"] = self._snapshot_from_registry()
+        
+        # Capture initial camera state
+        cam_state = self._get_camera_state()
+        self._cameras["initial"] = cam_state
+        self._last_camera_state = cam_state
+        
         self.construct()
+        
+        # Capture final camera state if changed (for last section)
+        final_cam = self._get_camera_state()
+        last_section = self._renderer.sections[-1].name if self._renderer.sections else None
+        if last_section and self._camera_changed(final_cam):
+            self._cameras[last_section] = final_cam
 
         data = serialize_scene(
             fps=self._fps,
             sections=self._renderer.sections,
             snapshots=self._snapshots,
+            cameras=self._cameras,
         )
         self.scene_data = data
+
+    def _get_camera_state(self) -> dict[str, float]:
+        """Capture current 3D camera state (phi, theta, distance)."""
+        cam = self.camera
+        return {
+            "phi": float(getattr(cam, "get_phi", lambda: 0)()),
+            "theta": float(getattr(cam, "get_theta", lambda: 0)()),
+            "distance": float(getattr(cam, "default_distance", 5)),
+        }
+
+    def _camera_changed(self, state: dict[str, float]) -> bool:
+        """Check if camera state differs from previous section."""
+        if self._last_camera_state is None:
+            return True
+        return state != self._last_camera_state
 
     def next_section(
         self,
@@ -68,6 +110,12 @@ class ManimWidget(anywidget.AnyWidget, Scene):
         del section_type, skip_animations
         self._renderer.open_section(name)
         self._snapshots[name] = self._snapshot_from_registry()
+        
+        # Capture camera only if changed
+        cam_state = self._get_camera_state()
+        if self._camera_changed(cam_state):
+            self._cameras[name] = cam_state
+            self._last_camera_state = cam_state
 
     def _snapshot_from_registry(self) -> dict[str, int]:
         """Build snapshot as mob_id -> state_ref mapping.
@@ -111,7 +159,7 @@ class ManimWidget(anywidget.AnyWidget, Scene):
                             "state_ref": self._renderer.state_ref_for(mob),
                         }
                     )
-        Scene.add(self, *mobjects)
+        ThreeDScene.add(self, *mobjects)
 
     def remove(self, *mobjects: Mobject) -> None:  # type: ignore[override]
         current = self._renderer._current
@@ -126,4 +174,4 @@ class ManimWidget(anywidget.AnyWidget, Scene):
                             "id": short_id(mob),
                         }
                     )
-        Scene.remove(self, *mobjects)
+        ThreeDScene.remove(self, *mobjects)

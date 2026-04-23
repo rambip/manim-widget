@@ -17,6 +17,7 @@ from manim import (
     Scene,
     Swap,
     Text,
+    ThreeDCamera,  # NEW
     ValueTracker,
     VGroup,
     Write,
@@ -27,11 +28,6 @@ from manim.mobject.types.vectorized_mobject import VMobject
 
 from .snapshot import short_id
 from .tex_patch import PatchedMathTex
-
-
-@dataclass
-class _DummyCamera:
-    use_z_index: bool = False
 
 
 @dataclass
@@ -49,15 +45,34 @@ class CaptureRenderer:
         self.num_plays = 0
         self.skip_animations = False
         self.static_image = None
-        self.camera = _DummyCamera(use_z_index=False)
+        self._scene: Scene | None = None  # Set via init_scene
+        self._camera = None  # Will be set to scene's existing camera in init_scene
         self.registry: dict[int, Mobject] = {}
         self._active_ids: set[int] = set()
         self.sections: list[SectionRecord] = []
         self._current: SectionRecord | None = None
 
+    @property
+    def camera(self):
+        """Return our cached camera reference."""
+        return self._camera
+
+    @camera.setter
+    def camera(self, value):
+        """Allow setting the camera directly."""
+        self._camera = value
+
     def init_scene(self, scene: Scene) -> None:
+        self._scene = scene
         self.time = 0.0
         self.num_plays = 0
+
+        # Create camera if not already set on renderer
+        # This ensures scene.camera is available after init_scene
+        if self._camera is None:
+            from manim.camera.three_d_camera import ThreeDCamera
+            camera_class = getattr(scene, 'camera_class', None) or ThreeDCamera
+            self._camera = camera_class()
 
     def open_section(self, name: str) -> None:
         self._current = SectionRecord(name=name, commands=[])
@@ -321,6 +336,48 @@ class CaptureRenderer:
             anim._setup_scene(scene)
         for anim in animations:
             anim.begin()
+
+        # Track camera frames for 3D scenes during animation playback
+        n_frames = math.ceil(run_time * self.fps)
+        camera_frames: list[dict[str, float]] = []
+        is_3d = hasattr(scene, "camera") and hasattr(scene.camera, "get_phi")
+
+        # Capture initial camera state
+        initial_cam_state: dict[str, float] | None = None
+        if is_3d:
+            cam = scene.camera
+            initial_cam_state = {
+                "phi": float(cam.get_phi()),
+                "theta": float(cam.get_theta()),
+                "distance": float(getattr(cam, "default_distance", 5)),
+            }
+
+        # Set up scene for animation updates
+        scene.animations = animations
+        scene.last_t = 0.0
+        last_cam_state = initial_cam_state
+
+        for i in range(n_frames):
+            t = (i + 1) / self.fps
+            if t > run_time:
+                t = run_time
+            scene.update_to_time(t)
+
+            # Capture camera state for 3D scenes (skip duplicates, skip if unchanged from start)
+            if is_3d:
+                cam = scene.camera
+                cam_state = {
+                    "phi": float(cam.get_phi()),
+                    "theta": float(cam.get_theta()),
+                    "distance": float(getattr(cam, "default_distance", 5)),
+                }
+                # Only add frames that differ from initial state (actual camera movement)
+                if cam_state != initial_cam_state and cam_state != last_cam_state:
+                    camera_frames.append(cam_state)
+                    last_cam_state = cam_state
+
+        scene.animations = None  # Clean up
+
         for anim in animations:
             anim.finish()
         for anim in animations:
@@ -329,6 +386,10 @@ class CaptureRenderer:
         for anim in animations:
             anim.clean_up_from_scene(scene)
         scene.update_mobjects(0)
+
+        # Add camera updates to animate command if any
+        if camera_frames:
+            current.commands[-1]["camera_updates"] = camera_frames
 
     def _descriptor_from_animation(self, anim: Animation) -> dict[str, Any]:
         anim_name = type(anim).__name__
@@ -482,6 +543,20 @@ class CaptureRenderer:
 
         n_frames = math.ceil(run_time * self.fps)
         frames: list[dict[str, Any]] = []
+        camera_frames: list[dict[str, float]] = []
+        is_3d = hasattr(scene, "camera") and hasattr(scene.camera, "get_phi")
+
+        # Capture initial camera state
+        initial_cam_state: dict[str, float] | None = None
+        if is_3d:
+            cam = scene.camera
+            initial_cam_state = {
+                "phi": float(cam.get_phi()),
+                "theta": float(cam.get_theta()),
+                "distance": float(getattr(cam, "default_distance", 5)),
+            }
+        last_cam_state = initial_cam_state
+
         for i in range(n_frames):
             t = (i + 1) / self.fps
             if t > run_time:
@@ -493,19 +568,32 @@ class CaptureRenderer:
                 frame[mob_id] = {"state_ref": self.state_ref_for(mob)}
             frames.append(frame)
 
+            # Capture camera state for 3D scenes (only if changed from initial)
+            if is_3d:
+                cam = scene.camera
+                cam_state = {
+                    "phi": float(cam.get_phi()),
+                    "theta": float(cam.get_theta()),
+                    "distance": float(getattr(cam, "default_distance", 5)),
+                }
+                if cam_state != initial_cam_state and cam_state != last_cam_state:
+                    camera_frames.append(cam_state)
+                    last_cam_state = cam_state
+
         for anim in animations:
             anim.finish()
         for anim in animations:
             anim.clean_up_from_scene(scene)
         scene.update_mobjects(0)
 
-        current.commands.append(
-            {
-                "cmd": "updater",
-                "duration": run_time,
-                "frames": frames,
-            }
-        )
+        cmd: dict[str, Any] = {
+            "cmd": "updater",
+            "duration": run_time,
+            "frames": frames,
+        }
+        if camera_frames:
+            cmd["camera_updates"] = camera_frames
+        current.commands.append(cmd)
 
     def _color_to_hex(self, color: object) -> str:
         if hasattr(color, "to_hex"):
