@@ -58,6 +58,10 @@
           "type": "array",
           "items": { "$ref": "#/definitions/Command" },
           "description": "Ordered list of commands to execute. Empty when unsupported=true."
+        },
+        "camera": {
+          "$ref": "#/definitions/CameraState",
+          "description": "Camera state at section entry (phi, theta, distance, look_at). Used for section jumps without replay."
         }
       }
     },
@@ -260,6 +264,10 @@
           "additionalProperties": {
             "$ref": "#/definitions/UpdaterDescriptor"
           }
+        },
+        "camera_updates": {
+          "$ref": "#/definitions/CameraUpdaterData",
+          "description": "Per-frame camera state. Captured when camera moves via move_camera() or camera updaters."
         }
       }
     },
@@ -555,6 +563,49 @@
       "minItems": 3,
       "maxItems": 3,
       "description": "[x, y, z]"
+    },
+
+    "CameraState": {
+      "type": "object",
+      "description": "3D camera spherical coordinates at section entry.",
+      "required": ["phi", "theta", "distance"],
+      "properties": {
+        "phi": {
+          "type": "number",
+          "description": "Polar angle from Y axis (0 = top, PI = bottom)."
+        },
+        "theta": {
+          "type": "number",
+          "description": "Azimuthal angle in XZ plane."
+        },
+        "distance": {
+          "type": "number",
+          "description": "Distance from look-at point."
+        },
+        "look_at": {
+          "$ref": "#/definitions/Vec3",
+          "description": "Camera look-at target point. Defaults to [0, 0, 0]."
+        }
+      }
+    },
+
+    "CameraUpdaterData": {
+      "type": "array",
+      "description": "Per-frame camera state. Array of camera states, one per frame. Deduplicated - only includes frames where camera changed.",
+      "items": {
+        "$ref": "#/definitions/CameraFrame"
+      }
+    },
+
+    "CameraFrame": {
+      "type": "object",
+      "description": "Single frame of camera state.",
+      "properties": {
+        "phi": { "type": "number" },
+        "theta": { "type": "number" },
+        "distance": { "type": "number" },
+        "look_at": { "$ref": "#/definitions/Vec3" }
+      }
     },
 
     "Color": {
