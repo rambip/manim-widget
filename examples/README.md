@@ -12,6 +12,13 @@ uv run marimo examples/cyclic_replace_demo.py
 
 ## Examples
 
+### rotate_3d.py
+
+Demonstrates 3D rotation of flat objects (Line, Square, Circle) in 3D space:
+- Objects positioned at different depths (OUT axis)
+- 3D rotations around different axes (UP, RIGHT, OUT)
+- Camera movement with `move_camera()` to view from different angles
+
 ### swap_demo.py
 
 Demonstrates the `Swap` animation with three colored circles:
