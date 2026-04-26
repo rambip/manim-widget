@@ -82,7 +82,7 @@ def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
             {
                 "name": "initial",
                 "snapshot": {},
-                "camera": {"phi": 1.5707963267948966, "theta": -1.5707963267948966, "distance": 5.0},
+                "camera": {"phi": 0.0, "theta": -1.5707963267948966, "distance": 5.0},
                 "states": [
                     {"value": 0.0},
                     {
@@ -180,7 +180,7 @@ def test_v2_create_then_next_section_snapshot_only_second_section():
             {
                 "name": "initial",
                 "snapshot": {},
-                "camera": {"phi": 1.5707963267948966, "theta": -1.5707963267948966, "distance": 5.0},
+                "camera": {"phi": 0.0, "theta": -1.5707963267948966, "distance": 5.0},
                 "states": [
                     {
                         "kind": "VMobject",
@@ -367,7 +367,7 @@ def test_static_mathtex_serialization():
     section = data["sections"][0]
     state = section["states"][0]
 
-    assert state["kind"] == "StaticMathTex"
+    assert state["kind"] == "MathTexSource"
     assert state["latex"] == "x^2"
     assert state["font_size"] == 72
     assert state["color"] == "#83C167"
@@ -395,14 +395,14 @@ def test_static_mathtex_transform_updates_points():
     section = data["sections"][0]
 
     initial_state = section["states"][0]
-    assert initial_state["kind"] == "StaticMathTex"
+    assert initial_state["kind"] == "MathTexSource"
     initial_points = initial_state["points"]
 
     anim = section["construct"][1]["animations"][0]
     assert anim["kind"] == "MoveToTarget"
 
     final_state = section["states"][anim["state_ref"]]
-    assert final_state["kind"] == "StaticMathTex"
+    assert final_state["kind"] == "MathTexSource"
     final_points = final_state["points"]
 
     assert initial_points != final_points

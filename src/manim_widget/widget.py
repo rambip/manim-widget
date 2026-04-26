@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from pathlib import Path
 from typing import Any
 
@@ -54,13 +53,6 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
 
         # Initialize renderer - this makes scene.camera available
         self._renderer.init_scene(self)
-
-        # Set default camera to 2D-like view: looking at XY plane from front
-        # HACK: phi=pi/2, theta=-pi/2 gives correct X=right, Y=up in manim-web
-        # This is needed because manim-web treats phi=0 as Y-up (THREE.js convention)
-        # while Python Manim treats phi=0 as Z-up. See issue #17
-        self.camera.set_phi(math.pi / 2)
-        self.camera.set_theta(-math.pi / 2)
 
         self._renderer.open_section("initial")
         self._snapshots["initial"] = self._snapshot_from_registry()

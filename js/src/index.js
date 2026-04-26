@@ -92,7 +92,7 @@ async function render({ model, el }) {
     sceneData = data;
     ui.container.innerHTML = "";
 
-    const scene = new ThreeDScene(ui.container, { width: 600, height: 400, enableOrbitControls: true });
+    const scene = new ThreeDScene(ui.container, { width: 600, height: 400, enableOrbitControls: true, orbitControlsUp: 'z' });
     const registry = new MobjectRegistry();
     player = createPlayer(scene, registry);
     player.setfps(data.fps || 10);

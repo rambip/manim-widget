@@ -632,7 +632,10 @@ def test_swap_with_world_coordinate_points():
     assert returncode == 0, f"CLI failed: {stderr}"
     
     # Extract JSON from output (after the === Section End State === marker)
-    json_start = stdout.find('{"sections"')
+    # JSON is pretty-printed, so find the opening brace
+    json_start = stdout.find('{\n  "sections"')
+    if json_start < 0:
+        json_start = stdout.find('{"sections"')
     assert json_start >= 0, f"Could not find JSON in output: {stdout}"
     end_state = json.loads(stdout[json_start:])
     
