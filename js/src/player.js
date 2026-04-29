@@ -191,6 +191,13 @@ export class Player {
   _applyTexTransform(mob, points) {
     if (!points || points.length !== 3) return;
     const [origin, right, up] = points;
+
+    // Center the object first so rotation happens around its center
+    if (typeof mob.centerPointsAroundPosition === 'function') {
+      mob.centerPointsAroundPosition();
+    }
+
+    // Build rotation/scale matrix from corner vectors
     const rx = right[0] - origin[0];
     const ry = right[1] - origin[1];
     const rz = right[2] - origin[2];
@@ -202,6 +209,8 @@ export class Player {
       [ry, uy, 0],
       [rz, uz, 1],
     ]);
+
+    // Position center at origin
     mob.shift(origin);
   }
 

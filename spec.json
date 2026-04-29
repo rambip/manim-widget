@@ -162,7 +162,7 @@
           },
           "minItems": 4,
           "maxItems": 4,
-          "description": "Local coordinate system [origin, right_point, up_point, top_right] for transform support. Initially [ORIGIN, RIGHT, UP, RIGHT+UP], no matter the font_size. JS uses first 3 points to derive 2x2 matrix and applies via applyMatrix with aboutPoint=origin."
+          "description": "Local coordinate system [origin, right_point, up_point, top_right] for transform support. The unit square [ORIGIN, RIGHT, UP, RIGHT+UP] corresponds to a centered LaTeX glyph at unit scale. JS: 1) center the rendered glyph, 2) apply matrix derived from (right-origin, up-origin), 3) shift by origin. Result: object center at origin."
         },
         "stroke_opacity": { "type": "number", "minimum": 0, "maximum": 1 },
         "color": { "$ref": "#/definitions/Color" },
