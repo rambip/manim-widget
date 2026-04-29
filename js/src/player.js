@@ -270,8 +270,11 @@ export class Player {
 
     // Set initial camera state for section (3D scenes only)
     if (section.camera && typeof this._scene.setCameraOrientation === "function") {
-      const { phi, theta, distance } = section.camera;
+      const { phi, theta, distance, fov } = section.camera;
       this._scene.setCameraOrientation(phi, theta, distance);
+      if (fov !== undefined && this._scene.camera3D) {
+        this._scene.camera3D.setFov(fov);
+      }
     }
 
     const commands = Array.isArray(section.construct) ? section.construct : [];
@@ -445,6 +448,9 @@ export class Player {
         const cam = cameraUpdates[i];
         if (typeof this._scene.setCameraOrientation === "function") {
           this._scene.setCameraOrientation(cam.phi, cam.theta, cam.distance);
+          if (cam.fov !== undefined && this._scene.camera3D) {
+            this._scene.camera3D.setFov(cam.fov);
+          }
         }
       }
 

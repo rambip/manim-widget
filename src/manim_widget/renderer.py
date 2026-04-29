@@ -30,6 +30,19 @@ from .snapshot import short_id
 from .tex_patch import PatchedMathTex
 
 
+def _compute_camera_state(cam) -> dict[str, float]:
+    """Extract camera state including computed FOV from Manim camera."""
+    distance = float(getattr(cam, "default_distance", 5))
+    frame_height = float(getattr(cam, "frame_height", 8))
+    fov_deg = 2 * math.degrees(math.atan(frame_height / (2 * distance)))
+    return {
+        "phi": float(cam.get_phi()),
+        "theta": float(cam.get_theta()),
+        "distance": distance,
+        "fov": fov_deg,
+    }
+
+
 @dataclass
 class SectionRecord:
     name: str
@@ -345,12 +358,7 @@ class CaptureRenderer:
         # Capture initial camera state
         initial_cam_state: dict[str, float] | None = None
         if is_3d:
-            cam = scene.camera
-            initial_cam_state = {
-                "phi": float(cam.get_phi()),
-                "theta": float(cam.get_theta()),
-                "distance": float(getattr(cam, "default_distance", 5)),
-            }
+            initial_cam_state = _compute_camera_state(scene.camera)
 
         # Set up scene for animation updates
         scene.animations = animations
@@ -365,12 +373,7 @@ class CaptureRenderer:
 
             # Capture camera state for 3D scenes (skip duplicates, skip if unchanged from start)
             if is_3d:
-                cam = scene.camera
-                cam_state = {
-                    "phi": float(cam.get_phi()),
-                    "theta": float(cam.get_theta()),
-                    "distance": float(getattr(cam, "default_distance", 5)),
-                }
+                cam_state = _compute_camera_state(scene.camera)
                 # Only add frames that differ from initial state (actual camera movement)
                 if cam_state != initial_cam_state and cam_state != last_cam_state:
                     camera_frames.append(cam_state)
@@ -549,12 +552,7 @@ class CaptureRenderer:
         # Capture initial camera state
         initial_cam_state: dict[str, float] | None = None
         if is_3d:
-            cam = scene.camera
-            initial_cam_state = {
-                "phi": float(cam.get_phi()),
-                "theta": float(cam.get_theta()),
-                "distance": float(getattr(cam, "default_distance", 5)),
-            }
+            initial_cam_state = _compute_camera_state(scene.camera)
         last_cam_state = initial_cam_state
 
         for i in range(n_frames):
@@ -570,12 +568,7 @@ class CaptureRenderer:
 
             # Capture camera state for 3D scenes (only if changed from initial)
             if is_3d:
-                cam = scene.camera
-                cam_state = {
-                    "phi": float(cam.get_phi()),
-                    "theta": float(cam.get_theta()),
-                    "distance": float(getattr(cam, "default_distance", 5)),
-                }
+                cam_state = _compute_camera_state(scene.camera)
                 if cam_state != initial_cam_state and cam_state != last_cam_state:
                     camera_frames.append(cam_state)
                     last_cam_state = cam_state

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>FOV Demo</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    #container { border: 1px solid #ccc; margin: 20px 0; }
+    .controls { margin: 10px 0; }
+    label { display: inline-block; width: 100px; }
+    input[type="range"] { width: 200px; }
+    .value { display: inline-block; width: 60px; text-align: right; }
+  </style>
+</head>
+<body>
+  <h1>Field of View Demo</h1>
+  <p>Manim default: FOV = 77.32° (frame_height=8 at distance=5)</p>
+  
+  <div class="controls">
+    <label>FOV:</label>
+    <input type="range" id="fov" min="20" max="120" value="77.32" step="0.1">
+    <span class="value" id="fov-value">77.32°</span>
+  </div>
+  
+  <div class="controls">
+    <label>Distance:</label>
+    <input type="range" id="distance" min="1" max="20" value="5" step="0.1">
+    <span class="value" id="distance-value">5.0</span>
+  </div>
+  
+  <div id="container"></div>
+  
+  <script type="module">
+    import {
+      Scene,
+      NumberPlane,
+      Rectangle,
+      MathTex,
+      Create,
+    } from "https://cdn.jsdelivr.net/npm/manim-web@latest/dist/manim-web.browser.js";
+
+    let scene;
+    let plane;
+    let square;
+    let tex;
+    
+    async function setup() {
+      const options = { width: 800, height: 450 };
+      scene = new Scene(document.getElementById("container"), options);
+      
+      // Create a NumberPlane grid
+      plane = new NumberPlane({
+        xRange: [-7, 7, 1],
+        yRange: [-4, 4, 1],
+        width: 14,
+        height: 8,
+      });
+      
+      // Create a unit square at origin
+      square = new Rectangle({ width: 1, height: 1 });
+      square.stroke = "#ff0000";
+      square.strokeWidth = 4;
+      
+      // Create MathTex
+      tex = new MathTex("x^2");
+      tex.moveTo([2, 1, 0]);
+      
+      await scene.play(new Create(plane));
+      await scene.play(new Create(square));
+      await scene.play(new Create(tex));
+      
+      // Set initial FOV
+      updateCamera();
+    }
+    
+    function updateCamera() {
+      const fov = parseFloat(document.getElementById("fov").value);
+      const distance = parseFloat(document.getElementById("distance").value);
+      
+      document.getElementById("fov-value").textContent = fov.toFixed(1) + "°";
+      document.getElementById("distance-value").textContent = distance.toFixed(1);
+      
+      if (scene && scene.camera3D) {
+        scene.camera3D.setFov(fov);
+        scene.camera3D.orbit(0, -Math.PI / 2, distance); // theta=-90° = looking along Z
+        scene.render();
+      }
+    }
+    
+    document.getElementById("fov").addEventListener("input", updateCamera);
+    document.getElementById("distance").addEventListener("input", updateCamera);
+    
+    setup();
+  </script>
+</body>
+</html>

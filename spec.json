@@ -582,6 +582,10 @@
           "type": "number",
           "description": "Distance from look-at point."
         },
+        "fov": {
+          "type": "number",
+          "description": "Field of view in degrees. Defaults to 77.32 (matches Manim: frame_height=8 at distance=5)."
+        },
         "look_at": {
           "$ref": "#/definitions/Vec3",
           "description": "Camera look-at target point. Defaults to [0, 0, 0]."
@@ -604,6 +608,7 @@
         "phi": { "type": "number" },
         "theta": { "type": "number" },
         "distance": { "type": "number" },
+        "fov": { "type": "number" },
         "look_at": { "$ref": "#/definitions/Vec3" }
       }
     },

@@ -6,6 +6,7 @@ import os
 from jsonschema import validate
 from manim import (
     GREEN,
+    Scene,
     Circle,
     Create,
     Dot,
@@ -82,7 +83,7 @@ def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
             {
                 "name": "initial",
                 "snapshot": {},
-                "camera": {"phi": 0.0, "theta": -1.5707963267948966, "distance": 5.0},
+                "camera": {"phi": 0.0, "theta": -1.5707963267948966, "distance": 5.0, "fov": 77.31961650818019},
                 "states": [
                     {"value": 0.0},
                     {
@@ -180,7 +181,7 @@ def test_v2_create_then_next_section_snapshot_only_second_section():
             {
                 "name": "initial",
                 "snapshot": {},
-                "camera": {"phi": 0.0, "theta": -1.5707963267948966, "distance": 5.0},
+                "camera": {"phi": 0.0, "theta": -1.5707963267948966, "distance": 5.0, "fov": 77.31961650818019},
                 "states": [
                     {
                         "kind": "VMobject",
@@ -494,3 +495,26 @@ def test_cyclic_replace_animation_emits_group_animation():
     assert anim["kind"] == "CyclicReplace"
     assert "ids" in anim
     assert len(anim["ids"]) == 3
+
+
+def test_camera_fov_calculation():
+    """Test that FOV is correctly computed from Manim camera parameters."""
+    import math
+
+    class SimpleScene(Scene):
+        def construct(self):
+            s = Square()
+            self.play(Create(s))
+
+    widget = ManimWidget(SimpleScene)
+    data = widget.scene_data
+
+    # Check camera state includes fov
+    camera = data["sections"][0]["camera"]
+    assert "fov" in camera
+
+    # Verify FOV calculation: fov = 2 * atan(frame_height / (2 * distance))
+    # With defaults: frame_height=8, distance=5
+    expected_fov = 2 * math.degrees(math.atan(8 / (2 * 5)))
+    assert abs(camera["fov"] - expected_fov) < 0.001
+    assert abs(camera["fov"] - 77.32) < 0.01  # Approximate check

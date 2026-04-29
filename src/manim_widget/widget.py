@@ -79,12 +79,17 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
         self.scene_data = data
 
     def _get_camera_state(self) -> dict[str, float]:
-        """Capture current 3D camera state (phi, theta, distance)."""
+        """Capture current 3D camera state including computed FOV."""
+        import math
         cam = self.camera
+        distance = float(getattr(cam, "default_distance", 5))
+        frame_height = float(getattr(cam, "frame_height", 8))
+        fov_deg = 2 * math.degrees(math.atan(frame_height / (2 * distance)))
         return {
             "phi": float(getattr(cam, "get_phi", lambda: 0)()),
             "theta": float(getattr(cam, "get_theta", lambda: 0)()),
-            "distance": float(getattr(cam, "default_distance", 5)),
+            "distance": distance,
+            "fov": fov_deg,
         }
 
     def _camera_changed(self, state: dict[str, float]) -> bool:
