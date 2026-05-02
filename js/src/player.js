@@ -14,6 +14,7 @@ import {
   MoveAlongPath,
   Rotating,
   MathTex,
+  ImageMobject,
 } from "manim-web";
 
 function buildSimpleAnimation(mob, desc, registry) {
@@ -127,6 +128,16 @@ export class Player {
       return mob;
     }
 
+    if (state.kind === "ImageMobject") {
+      const opts = { source: state.source };
+      if (state.opacity !== undefined) opts.opacity = state.opacity;
+      const mob = new ImageMobject(opts);
+      if (Array.isArray(state.points) && state.points.length === 4) {
+        mob._pendingCorners = state.points;
+      }
+      return mob;
+    }
+
     if (state.kind === "VGroup") {
       return new VGroup();
     }
@@ -214,6 +225,82 @@ export class Player {
     mob.shift(origin);
   }
 
+  async _applyImageCorners(mob, corners) {
+    if (!corners || corners.length !== 4) return;
+
+    // Wait for image to load
+    if (typeof mob.waitForLoad === "function") {
+      await mob.waitForLoad();
+    }
+
+    // Derive transform from 4 corners [UL, UR, DL, DR]
+    const [ul, ur, dl] = corners;
+
+    const rightVec = [
+      ur[0] - ul[0],
+      ur[1] - ul[1],
+      ur[2] - ul[2],
+    ];
+    const upVec = [
+      ul[0] - dl[0],
+      ul[1] - dl[1],
+      ul[2] - dl[2],
+    ];
+
+    const center = [
+      dl[0] + rightVec[0] / 2 + upVec[0] / 2,
+      dl[1] + rightVec[1] / 2 + upVec[1] / 2,
+      dl[2] + rightVec[2] / 2 + upVec[2] / 2,
+    ];
+
+    const rightLen = Math.hypot(rightVec[0], rightVec[1]);
+    const upLen = Math.hypot(upVec[0], upVec[1]);
+    if (rightLen < 1e-9 || upLen < 1e-9) {
+      throw new Error("Image corners produce a degenerate basis (zero edge length)");
+    }
+
+    // TRS-only path: reject non-orthogonal image basis (shear/perspective-like quads)
+    const rx = rightVec[0] / rightLen;
+    const ry = rightVec[1] / rightLen;
+    const ux = upVec[0] / upLen;
+    const uy = upVec[1] / upLen;
+    const dot = rx * ux + ry * uy;
+    if (Math.abs(dot) > 1e-3) {
+      throw new Error(
+        `Unsupported ImageMobject corner basis (dot=${dot.toFixed(6)}). Expected near-orthogonal axes (dot≈0).`,
+      );
+    }
+
+    if (typeof mob.getBoundingBox === "function" && typeof mob.scaleVector?.set === "function") {
+      const box = mob.getBoundingBox();
+      const w = box?.width || 1;
+      const h = box?.height || 1;
+      mob.scaleVector.set(rightLen / (w || 1), upLen / (h || 1), 1);
+    }
+
+    if (mob.rotation) {
+      const angle = Math.atan2(rightVec[1], rightVec[0]);
+      if (typeof mob.rotation.set === "function") {
+        mob.rotation.set(mob.rotation.x ?? 0, mob.rotation.y ?? 0, angle);
+      } else if (typeof mob.rotation.z === "number") {
+        mob.rotation.z = angle;
+      }
+    }
+
+    if (typeof mob.getCenter === "function" && typeof mob.shift === "function") {
+      const currentCenter = mob.getCenter();
+      mob.shift([
+        center[0] - currentCenter[0],
+        center[1] - currentCenter[1],
+        center[2] - currentCenter[2],
+      ]);
+    }
+
+    if (typeof mob._markDirty === "function") {
+      mob._markDirty();
+    }
+  }
+
   _instantiateFromRef(section, stateRef) {
     const state = this._stateFromRef(section, stateRef);
     const mob = this._createMobjectFromState(state);
@@ -245,6 +332,10 @@ export class Player {
     if (mob._pendingTransform) {
       this._applyTexTransform(mob, mob._pendingTransform);
       delete mob._pendingTransform;
+    }
+    if (mob._pendingCorners) {
+      await this._applyImageCorners(mob, mob._pendingCorners);
+      delete mob._pendingCorners;
     }
   }
 
