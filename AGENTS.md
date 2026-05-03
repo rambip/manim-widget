@@ -113,6 +113,8 @@ Families: `SimpleAnimation`, `TransformAnimation` (`Transform`, `MoveToTarget`),
 - `Rotate` / `ScaleInPlace` constructors in `manim-web` expect options objects. Beware positional arg assumptions.
 - Transform cleanup timing: beware null races on `threeObject.visible` if target objects are freed too early.
 - Point arrays that are not `3n+1` will raise a JS-side playback error by design.
+- Headless JS tests (`happy-dom`) can hang if image loading promises never resolve. Keep image-finalization logic non-blocking (timeouts/fallbacks) in `player.js`.
+- Renderer command emission should prefer behavior/animation semantics over concrete class checks. Class-targeting can miss valid intro-animation mobjects (e.g., non-VMobject types).
 
 ---
 
@@ -128,7 +130,9 @@ Families: `SimpleAnimation`, `TransformAnimation` (`Transform`, `MoveToTarget`),
 
 Runs `js/src/test_cli.js` via `bun`. Uses `manim-web` headless mode — no WebGL/Three.js required.
 
-Coverage includes: simple scenes (Create, FadeIn), multi-section navigation, VGroup handling, error conditions (invalid point arrays, missing state refs).
+Coverage includes: simple scenes (Create, FadeIn), multi-section navigation, VGroup handling, error conditions (invalid point arrays, missing state refs), and ImageMobject intro animation playback.
+
+Runtime note: this suite is relatively slow (often around ~1 minute locally). Use reasonable command/test timeouts to avoid false hangs/failures.
 
 ---
 

@@ -146,7 +146,7 @@ class CaptureRenderer:
             )
             if len(points) == 4:
                 state["points"] = points
-            z_index = mob.get_z_index()
+            z_index = getattr(mob, "z_index", None)
             if z_index is not None:
                 state["z_index"] = z_index
             return state
@@ -167,7 +167,7 @@ class CaptureRenderer:
             stroke_opacity = mob.get_stroke_opacity()
             if stroke_opacity is not None:
                 state["stroke_opacity"] = stroke_opacity
-            z_index = mob.get_z_index()
+            z_index = getattr(mob, "z_index", None)
             if z_index is not None:
                 state["z_index"] = z_index
 
@@ -231,7 +231,7 @@ class CaptureRenderer:
                 stroke_opacity = mob.get_stroke_opacity()
                 if stroke_opacity is not None:
                     child_state["stroke_opacity"] = stroke_opacity
-                z_index = mob.get_z_index()
+                z_index = getattr(mob, "z_index", None)
                 if z_index is not None:
                     child_state["z_index"] = z_index
             child_refs.append(self._intern_state(child_state))
