@@ -13,7 +13,7 @@ import {
   GrowFromCenter,
   MoveAlongPath,
   Rotating,
-  MathTex,
+  MathTexImage,
   ImageMobject,
 } from "manim-web";
 import * as THREE from "three";
@@ -117,12 +117,12 @@ export class Player {
 
   _createMobjectFromState(state) {
     if (state.kind === "MathTexSource") {
-      const opts = { latex: state.latex };
+      const opts = { latex: state.latex, renderer: "auto" };
       if (state.color) opts.color = state.color;
       if (state.font_size) opts.fontSize = state.font_size;
-      if (state.stroke_opacity !== undefined)
-        opts.strokeOpacity = state.stroke_opacity;
-      const mob = new MathTex(opts);
+      // Prefer rasterized MathTexImage for robustness in widget runtimes,
+      // where global MathJax sync APIs may throw "MathJax retry".
+      const mob = new MathTexImage(opts);
       if (Array.isArray(state.points) && state.points.length >= 3) {
         mob._pendingTransform = state.points.slice(0, 3);
       }
