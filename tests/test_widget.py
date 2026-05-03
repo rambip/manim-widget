@@ -562,3 +562,37 @@ def test_camera_fov_calculation():
     expected_fov = 2 * math.degrees(math.atan(8 / (2 * 5)))
     assert abs(camera["fov"] - expected_fov) < 0.001
     assert abs(camera["fov"] - 77.32) < 0.01  # Approximate check
+
+
+def test_camera_theta_attr_assignment_is_serialized():
+    reset_id_counter()
+
+    class ZYImageCNN(ManimWidget):
+        def construct(self):
+            self.camera.theta = 0.2
+
+    scene = ZYImageCNN(fps=10)
+    data = scene.scene_data
+    schema = load_schema()
+    validate(data, schema)
+
+    camera = data["sections"][0]["camera"]
+    assert abs(camera["theta"] - 0.2) < 1e-12
+
+
+def test_camera_distance_and_fov_attr_assignment_is_serialized():
+    reset_id_counter()
+
+    class ZYImageCNN(ManimWidget):
+        def construct(self):
+            self.camera.distance = 7.5
+            self.camera.fov = 52.0
+
+    scene = ZYImageCNN(fps=10)
+    data = scene.scene_data
+    schema = load_schema()
+    validate(data, schema)
+
+    camera = data["sections"][0]["camera"]
+    assert abs(camera["distance"] - 7.5) < 1e-12
+    assert abs(camera["fov"] - 52.0) < 1e-12
