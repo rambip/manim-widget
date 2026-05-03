@@ -16,6 +16,7 @@ import {
   MathTex,
   ImageMobject,
 } from "manim-web";
+import * as THREE from "three";
 
 function buildSimpleAnimation(mob, desc, registry) {
   const params = desc.params || {};
@@ -199,30 +200,98 @@ export class Player {
     }
   }
 
+  _applyBasisTransform(mob, origin, rightVec, upVec, center = origin) {
+    const right = new THREE.Vector3(rightVec[0], rightVec[1], rightVec[2]);
+    const upRaw = new THREE.Vector3(upVec[0], upVec[1], upVec[2]);
+
+    const rightLen = right.length();
+    const upLen = upRaw.length();
+    if (rightLen < 1e-9 || upLen < 1e-9) {
+      throw new Error("Basis transform has a degenerate axis (zero edge length)");
+    }
+
+    const rightUnit = right.clone().normalize();
+    const upProjected = upRaw
+      .clone()
+      .sub(rightUnit.clone().multiplyScalar(upRaw.dot(rightUnit)));
+    const upProjectedLen = upProjected.length();
+    if (upProjectedLen < 1e-9) {
+      throw new Error("Basis transform axes are collinear; cannot orient object");
+    }
+    const upUnit = upProjected.multiplyScalar(1 / upProjectedLen);
+
+    const nonOrtho = Math.abs(rightUnit.dot(upRaw.clone().normalize()));
+    if (nonOrtho > 1e-3) {
+      throw new Error(
+        `Unsupported basis with shear (dot=${nonOrtho.toFixed(6)}). Expected near-orthogonal right/up axes.`,
+      );
+    }
+
+    if (
+      typeof mob.getBoundingBox === "function" &&
+      typeof mob.scaleVector?.set === "function"
+    ) {
+      const box = mob.getBoundingBox();
+      const w = box?.width || 1;
+      const h = box?.height || 1;
+      mob.scaleVector.set(rightLen / (w || 1), upLen / (h || 1), mob.scaleVector.z ?? 1);
+    }
+
+    if (mob.rotation && typeof mob.rotation.setFromQuaternion === "function") {
+      const xAxis = new THREE.Vector3(1, 0, 0);
+      const yAxis = new THREE.Vector3(0, 1, 0);
+
+      const q1 = new THREE.Quaternion().setFromUnitVectors(xAxis, rightUnit);
+      const yAfterQ1 = yAxis.clone().applyQuaternion(q1);
+
+      const cross = yAfterQ1.clone().cross(upUnit);
+      const sin = cross.dot(rightUnit);
+      const cos = yAfterQ1.dot(upUnit);
+      const angle = Math.atan2(sin, cos);
+      const q2 = new THREE.Quaternion().setFromAxisAngle(rightUnit, angle);
+
+      const q = q2.multiply(q1);
+      mob.rotation.setFromQuaternion(q);
+    } else if (mob.rotation && typeof mob.rotation.set === "function") {
+      const angle = Math.atan2(rightVec[1], rightVec[0]);
+      mob.rotation.set(mob.rotation.x ?? 0, mob.rotation.y ?? 0, angle);
+    }
+
+    if (typeof mob.getCenter === "function" && typeof mob.shift === "function") {
+      const currentCenter = mob.getCenter();
+      mob.shift([
+        center[0] - currentCenter[0],
+        center[1] - currentCenter[1],
+        center[2] - currentCenter[2],
+      ]);
+    }
+
+    if (typeof mob._markDirty === "function") {
+      mob._markDirty();
+    }
+  }
+
   _applyTexTransform(mob, points) {
-    if (!points || points.length !== 3) return;
+    if (!points || points.length < 3) return;
     const [origin, right, up] = points;
 
-    // Center the object first so rotation happens around its center
-    if (typeof mob.centerPointsAroundPosition === 'function') {
+    // Keep MathTex centered before applying shared basis transform.
+    if (typeof mob.centerPointsAroundPosition === "function") {
       mob.centerPointsAroundPosition();
     }
 
-    // Build rotation/scale matrix from corner vectors
-    const rx = right[0] - origin[0];
-    const ry = right[1] - origin[1];
-    const rz = right[2] - origin[2];
-    const ux = up[0] - origin[0];
-    const uy = up[1] - origin[1];
-    const uz = up[2] - origin[2];
-    mob.applyMatrix([
-      [rx, ux, 0],
-      [ry, uy, 0],
-      [rz, uz, 1],
-    ]);
+    const rightVec = [
+      right[0] - origin[0],
+      right[1] - origin[1],
+      right[2] - origin[2],
+    ];
+    const upVec = [
+      up[0] - origin[0],
+      up[1] - origin[1],
+      up[2] - origin[2],
+    ];
 
-    // Position center at origin
-    mob.shift(origin);
+    this._applyBasisTransform(mob, origin, rightVec, upVec, origin);
   }
 
   async _waitForImageLoad(mob, timeoutMs = 1000) {
@@ -249,7 +318,7 @@ export class Player {
     // Do not block playback forever.
     await this._waitForImageLoad(mob);
 
-    // Derive transform from 4 corners [UL, UR, DL, DR]
+    // Corners are [UL, UR, DL, DR]
     const [ul, ur, dl] = corners;
 
     const rightVec = [
@@ -269,52 +338,7 @@ export class Player {
       dl[2] + rightVec[2] / 2 + upVec[2] / 2,
     ];
 
-    const rightLen = Math.hypot(rightVec[0], rightVec[1]);
-    const upLen = Math.hypot(upVec[0], upVec[1]);
-    if (rightLen < 1e-9 || upLen < 1e-9) {
-      throw new Error("Image corners produce a degenerate basis (zero edge length)");
-    }
-
-    // TRS-only path: reject non-orthogonal image basis (shear/perspective-like quads)
-    const rx = rightVec[0] / rightLen;
-    const ry = rightVec[1] / rightLen;
-    const ux = upVec[0] / upLen;
-    const uy = upVec[1] / upLen;
-    const dot = rx * ux + ry * uy;
-    if (Math.abs(dot) > 1e-3) {
-      throw new Error(
-        `Unsupported ImageMobject corner basis (dot=${dot.toFixed(6)}). Expected near-orthogonal axes (dot≈0).`,
-      );
-    }
-
-    if (typeof mob.getBoundingBox === "function" && typeof mob.scaleVector?.set === "function") {
-      const box = mob.getBoundingBox();
-      const w = box?.width || 1;
-      const h = box?.height || 1;
-      mob.scaleVector.set(rightLen / (w || 1), upLen / (h || 1), 1);
-    }
-
-    if (mob.rotation) {
-      const angle = Math.atan2(rightVec[1], rightVec[0]);
-      if (typeof mob.rotation.set === "function") {
-        mob.rotation.set(mob.rotation.x ?? 0, mob.rotation.y ?? 0, angle);
-      } else if (typeof mob.rotation.z === "number") {
-        mob.rotation.z = angle;
-      }
-    }
-
-    if (typeof mob.getCenter === "function" && typeof mob.shift === "function") {
-      const currentCenter = mob.getCenter();
-      mob.shift([
-        center[0] - currentCenter[0],
-        center[1] - currentCenter[1],
-        center[2] - currentCenter[2],
-      ]);
-    }
-
-    if (typeof mob._markDirty === "function") {
-      mob._markDirty();
-    }
+    this._applyBasisTransform(mob, ul, rightVec, upVec, center);
   }
 
   _instantiateFromRef(section, stateRef) {
