@@ -200,7 +200,14 @@ export class Player {
     }
   }
 
-  _applyBasisTransform(mob, origin, rightVec, upVec, center = origin) {
+  _applyBasisTransform(
+    mob,
+    origin,
+    rightVec,
+    upVec,
+    center = origin,
+    { uniformScale = false } = {},
+  ) {
     const right = new THREE.Vector3(rightVec[0], rightVec[1], rightVec[2]);
     const upRaw = new THREE.Vector3(upVec[0], upVec[1], upVec[2]);
 
@@ -234,7 +241,14 @@ export class Player {
       const box = mob.getBoundingBox();
       const w = box?.width || 1;
       const h = box?.height || 1;
-      mob.scaleVector.set(rightLen / (w || 1), upLen / (h || 1), mob.scaleVector.z ?? 1);
+      const sx = rightLen / (w || 1);
+      const sy = upLen / (h || 1);
+      if (uniformScale) {
+        const s = Math.sqrt(Math.max(sx, 1e-12) * Math.max(sy, 1e-12));
+        mob.scaleVector.set(s, s, mob.scaleVector.z ?? 1);
+      } else {
+        mob.scaleVector.set(sx, sy, mob.scaleVector.z ?? 1);
+      }
     }
 
     if (mob.rotation && typeof mob.rotation.setFromQuaternion === "function") {
@@ -291,7 +305,9 @@ export class Player {
       up[2] - origin[2],
     ];
 
-    this._applyBasisTransform(mob, origin, rightVec, upVec, origin);
+    this._applyBasisTransform(mob, origin, rightVec, upVec, origin, {
+      uniformScale: true,
+    });
   }
 
   async _waitForImageLoad(mob, timeoutMs = 1000) {
