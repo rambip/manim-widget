@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import base64
+import io
 import json
 import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+
+import numpy as np
+from PIL import Image
 
 from manim import (
     Create,
@@ -24,6 +29,7 @@ from manim import (
 )
 from manim.animation.animation import Animation
 from manim.mobject.mobject import Mobject
+from manim.mobject.types.image_mobject import AbstractImageMobject
 from manim.mobject.types.vectorized_mobject import VMobject
 
 from .snapshot import short_id
@@ -126,6 +132,23 @@ class CaptureRenderer:
             stroke_opacity = mob.get_stroke_opacity()
             if stroke_opacity is not None:
                 state["stroke_opacity"] = stroke_opacity
+            return state
+
+        if isinstance(mob, AbstractImageMobject):
+            state["kind"] = "ImageMobject"
+            state["source"] = self._image_source_from_pixel_array(
+                mob.get_pixel_array()
+            )
+            points = (
+                mob.points.tolist()
+                if hasattr(mob.points, "tolist")
+                else list(mob.points)
+            )
+            if len(points) == 4:
+                state["points"] = points
+            z_index = mob.get_z_index()
+            if z_index is not None:
+                state["z_index"] = z_index
             return state
 
         if isinstance(mob, VMobject) and not isinstance(mob, VGroup):
@@ -296,7 +319,7 @@ class CaptureRenderer:
             if isinstance(anim, Swap | CyclicReplace):
                 continue
             if isinstance(mob, Mobject) and not isinstance(
-                mob, VMobject | ValueTracker
+                mob, VMobject | ValueTracker | AbstractImageMobject
             ):
                 if not (hasattr(mob, "submobjects") and mob.submobjects):
                     continue
@@ -587,6 +610,36 @@ class CaptureRenderer:
         if camera_frames:
             cmd["camera_updates"] = camera_frames
         current.commands.append(cmd)
+
+    def _image_source_from_pixel_array(self, pixel_array: object) -> str:
+        arr = np.asarray(pixel_array)
+        if arr.dtype != np.uint8:
+            arr = np.clip(arr, 0, 255).astype(np.uint8)
+
+        mode: str
+        if arr.ndim == 2:
+            mode = "L"
+        elif arr.ndim == 3:
+            channels = arr.shape[2]
+            if channels == 1:
+                arr = arr[:, :, 0]
+                mode = "L"
+            elif channels == 3:
+                mode = "RGB"
+            elif channels == 4:
+                mode = "RGBA"
+            else:
+                msg = f"Unsupported ImageMobject channel count: {channels}"
+                raise ValueError(msg)
+        else:
+            msg = f"Unsupported ImageMobject array shape: {arr.shape}"
+            raise ValueError(msg)
+
+        image = Image.fromarray(arr, mode=mode)
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+        return f"data:image/png;base64,{encoded}"
 
     def _color_to_hex(self, color: object) -> str:
         if hasattr(color, "to_hex"):

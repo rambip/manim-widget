@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import base64
+import io
 import json
 import os
+
+import numpy as np
+from PIL import Image
 
 from jsonschema import validate
 from manim import (
@@ -16,6 +21,7 @@ from manim import (
     Square,
     VGroup,
     ValueTracker,
+    ImageMobject,
 )
 
 from manim_widget.snapshot import reset_id_counter
@@ -349,6 +355,44 @@ def test_v2_multiple_sections_with_move_to_target():
     anim3 = section3["construct"][1]["animations"][0]
     assert "state_ref" in anim3
     assert anim3["kind"] == "MoveToTarget"
+
+
+def test_image_mobject_serializes_source_and_pixels():
+    reset_id_counter()
+
+    pixels = np.array(
+        [
+            [[255, 0, 0, 255], [0, 255, 0, 255], [0, 0, 255, 255]],
+            [[10, 20, 30, 255], [40, 50, 60, 200], [70, 80, 90, 128]],
+        ],
+        dtype=np.uint8,
+    )
+
+    class ImageScene(ManimWidget):
+        def construct(self):
+            img = ImageMobject(pixels)
+            img.height = 2
+            self.add(img)
+
+    scene = ImageScene(fps=10)
+    data = scene.scene_data
+    schema = load_schema()
+    validate(data, schema)
+
+    section = data["sections"][0]
+    assert section["construct"][0] == {"cmd": "add", "id": "0", "state_ref": 0}
+
+    state = section["states"][0]
+    assert state["kind"] == "ImageMobject"
+    assert state["source"].startswith("data:image/png;base64,")
+    assert "points" in state
+    assert len(state["points"]) == 4
+    assert all(len(pt) == 3 for pt in state["points"])
+
+    encoded = state["source"].split(",", 1)[1]
+    decoded = np.array(Image.open(io.BytesIO(base64.b64decode(encoded))))
+    assert decoded.shape == pixels.shape
+    assert np.array_equal(decoded, pixels)
 
 
 def test_static_mathtex_serialization():

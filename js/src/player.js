@@ -225,13 +225,29 @@ export class Player {
     mob.shift(origin);
   }
 
+  async _waitForImageLoad(mob, timeoutMs = 1000) {
+    if (typeof mob.waitForLoad !== "function") {
+      return true;
+    }
+
+    try {
+      await Promise.race([
+        mob.waitForLoad(),
+        new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+      ]);
+      return true;
+    } catch (error) {
+      console.warn("Image load failed, continuing without blocking", error);
+      return false;
+    }
+  }
+
   async _applyImageCorners(mob, corners) {
     if (!corners || corners.length !== 4) return;
 
-    // Wait for image to load
-    if (typeof mob.waitForLoad === "function") {
-      await mob.waitForLoad();
-    }
+    // In headless test environments (happy-dom), image loading may never resolve.
+    // Do not block playback forever.
+    await this._waitForImageLoad(mob);
 
     // Derive transform from 4 corners [UL, UR, DL, DR]
     const [ul, ur, dl] = corners;

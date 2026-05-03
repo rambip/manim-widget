@@ -78,6 +78,7 @@
         { "$ref": "#/definitions/VMobjectState" },
         { "$ref": "#/definitions/VGroupState" },
         { "$ref": "#/definitions/MathTexSourceState" },
+        { "$ref": "#/definitions/ImageMobjectState" },
         { "$ref": "#/definitions/ValueTrackerState" }
       ]
     },
@@ -167,6 +168,40 @@
         "stroke_opacity": { "type": "number", "minimum": 0, "maximum": 1 },
         "color": { "$ref": "#/definitions/Color" },
         "font_size": { "type": "number" },
+        "z_index": { "type": "number" }
+      }
+    },
+
+    "ImageMobjectState": {
+      "type": "object",
+      "required": ["kind", "source", "points"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "ImageMobject"
+        },
+        "source": {
+          "type": "string",
+          "description": "Image source URL. Typically a data URI (data:image/png;base64,...)."
+        },
+        "points": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "type": "array",
+            "items": { "type": "number" },
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "description": "Image corners in scene coordinates ordered as [UL, UR, DL, DR]."
+        },
+        "opacity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
         "z_index": { "type": "number" }
       }
     },

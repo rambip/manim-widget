@@ -27,6 +27,7 @@ from manim import (
     FadeIn,
     GrowFromCenter,
     Intersection,
+    ImageMobject,
     Line,
     MarkupText,
     MoveAlongPath,
@@ -98,6 +99,21 @@ class TestCLIIntegration:
                 self.play(Create(c))
 
         scene = SimpleScene()
+        return scene.scene_data
+
+    @pytest.fixture
+    def fadein_image_data(self) -> str:
+        class FadeInImageScene(ManimWidget):
+            def construct(self):
+                h, w = 24, 32
+                data = np.zeros((h, w, 4), dtype=np.uint8)
+                data[..., 0] = 255
+                data[..., 3] = 255
+                img = ImageMobject(data)
+                img.height = 2.0
+                self.play(FadeIn(img))
+
+        scene = FadeInImageScene()
         return scene.scene_data
 
     @pytest.fixture
@@ -293,6 +309,26 @@ class TestCLIIntegration:
         sections = parse_section_ids(stdout)
         assert len(sections) == 1
         assert sections[0]["name"] == "initial"
+        assert len(sections[0]["ids"]) == 1
+
+    def test_fadein_image(self, fadein_image_data):
+        section = fadein_image_data["sections"][0]
+        assert section["states"][0]["kind"] == "ImageMobject"
+
+        add_cmd = section["construct"][0]
+        animate_cmd = section["construct"][1]
+        assert add_cmd["cmd"] == "add"
+        assert add_cmd["state_ref"] == 0
+        assert add_cmd.get("hidden") is True
+
+        assert animate_cmd["cmd"] == "animate"
+        assert animate_cmd["animations"][0]["kind"] == "FadeIn"
+        assert animate_cmd["animations"][0]["id"] == add_cmd["id"]
+
+        returncode, stdout, stderr = run_cli(fadein_image_data, output_ids=True)
+        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
+        sections = parse_section_ids(stdout)
+        assert len(sections) == 1
         assert len(sections[0]["ids"]) == 1
 
     def test_animate_shift_left(self, animate_shift_left_data):
