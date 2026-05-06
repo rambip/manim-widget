@@ -478,6 +478,41 @@ def test_patch_tex_replaces_manim_classes():
     manim.Tex = original_tex
 
 
+def test_patch_tex_mathtex_add_serializes_as_mathtexsource():
+    reset_id_counter()
+    from manim_widget import patch_tex
+    import manim
+
+    original_math_tex = manim.MathTex
+    original_tex = manim.Tex
+
+    patch_tex()
+    try:
+        from manim import MathTex, WHITE
+
+        class MathTexScene(ManimWidget):
+            def construct(self):
+                tex = MathTex(r"{0}", fill_color=WHITE)
+                self.add(tex.scale(1))
+
+        scene = MathTexScene(fps=10)
+        data = scene.scene_data
+        schema = load_schema()
+        validate(data, schema)
+
+        section = data["sections"][0]
+        add_cmd = section["construct"][0]
+        state = section["states"][add_cmd["state_ref"]]
+
+        assert state["kind"] == "MathTexSource"
+        assert state["latex"] == r"{0}"
+        assert "points" in state
+        assert len(state["points"]) == 4
+    finally:
+        manim.MathTex = original_math_tex
+        manim.Tex = original_tex
+
+
 def test_swap_animation_emits_group_animation():
     reset_id_counter()
 
