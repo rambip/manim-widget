@@ -704,7 +704,6 @@ def test_js_static_mathtex_creates_and_transforms():
                         "points": [[-2, 1, 0], [2, 1, 0], [2, -1, 0], [-2, -1, 0]],
                         "stroke_opacity": 1.0,
                         "color": "#83C167",
-                        "font_size": 48,
                     }
                 ],
                 "construct": [{"cmd": "add", "id": "tex1", "state_ref": 0}],
@@ -733,9 +732,8 @@ def test_js_static_mathtex_with_scaled_transform():
                     {
                         "kind": "StaticMathTex",
                         "latex": "\\frac{a}{b}",
-                        "points": [[-4, 2, 0], [4, 2, 0], [4, -2, 0], [-4, -2, 0]],
+                        "points": [[-8, 4, 0], [8, 4, 0], [8, -4, 0], [-8, -4, 0]],
                         "stroke_opacity": 1.0,
-                        "font_size": 96,
                     }
                 ],
                 "construct": [{"cmd": "add", "id": "frac", "state_ref": 0}],

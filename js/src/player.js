@@ -119,7 +119,8 @@ export class Player {
     if (state.kind === "MathTexSource") {
       const opts = { latex: state.latex, renderer: "auto" };
       if (state.color) opts.color = state.color;
-      if (state.font_size) opts.fontSize = state.font_size;
+      // Do not use font size from state. MathTexSource.points already encode
+      // geometry scale (unit square convention at font_size=48).
       // Prefer rasterized MathTexImage for robustness in widget runtimes,
       // where global MathJax sync APIs may throw "MathJax retry".
       const mob = new MathTexImage(opts);
@@ -157,6 +158,7 @@ export class Player {
 
   _applyState(mob, state) {
     if (
+      state?.kind === "VMobject" &&
       Array.isArray(state.points) &&
       state.points.length > 0 &&
       typeof mob.setPoints3D === "function"
@@ -206,7 +208,7 @@ export class Player {
     rightVec,
     upVec,
     center = origin,
-    { uniformScale = false } = {},
+    { uniformScale = false, baseBox = null, normalizeToBase = true } = {},
   ) {
     const right = new THREE.Vector3(rightVec[0], rightVec[1], rightVec[2]);
     const upRaw = new THREE.Vector3(upVec[0], upVec[1], upVec[2]);
@@ -214,7 +216,9 @@ export class Player {
     const rightLen = right.length();
     const upLen = upRaw.length();
     if (rightLen < 1e-9 || upLen < 1e-9) {
-      throw new Error("Basis transform has a degenerate axis (zero edge length)");
+      throw new Error(
+        "Basis transform has a degenerate axis (zero edge length)",
+      );
     }
 
     const rightUnit = right.clone().normalize();
@@ -223,7 +227,9 @@ export class Player {
       .sub(rightUnit.clone().multiplyScalar(upRaw.dot(rightUnit)));
     const upProjectedLen = upProjected.length();
     if (upProjectedLen < 1e-9) {
-      throw new Error("Basis transform axes are collinear; cannot orient object");
+      throw new Error(
+        "Basis transform axes are collinear; cannot orient object",
+      );
     }
     const upUnit = upProjected.multiplyScalar(1 / upProjectedLen);
 
@@ -238,11 +244,21 @@ export class Player {
       typeof mob.getBoundingBox === "function" &&
       typeof mob.scaleVector?.set === "function"
     ) {
-      const box = mob.getBoundingBox();
-      const w = box?.width || 1;
-      const h = box?.height || 1;
-      const sx = rightLen / (w || 1);
-      const sy = upLen / (h || 1);
+      let sx;
+      let sy;
+      if (normalizeToBase) {
+        const resolvedBaseBox =
+          baseBox && typeof baseBox === "object"
+            ? baseBox
+            : mob.getBoundingBox();
+        const w = resolvedBaseBox?.width || 1;
+        const h = resolvedBaseBox?.height || 1;
+        sx = rightLen / (w || 1);
+        sy = upLen / (h || 1);
+      } else {
+        sx = rightLen;
+        sy = upLen;
+      }
       if (uniformScale) {
         const s = Math.sqrt(Math.max(sx, 1e-12) * Math.max(sy, 1e-12));
         mob.scaleVector.set(s, s, mob.scaleVector.z ?? 1);
@@ -271,7 +287,10 @@ export class Player {
       mob.rotation.set(mob.rotation.x ?? 0, mob.rotation.y ?? 0, angle);
     }
 
-    if (typeof mob.getCenter === "function" && typeof mob.shift === "function") {
+    if (
+      typeof mob.getCenter === "function" &&
+      typeof mob.shift === "function"
+    ) {
       const currentCenter = mob.getCenter();
       mob.shift([
         center[0] - currentCenter[0],
@@ -299,14 +318,12 @@ export class Player {
       right[1] - origin[1],
       right[2] - origin[2],
     ];
-    const upVec = [
-      up[0] - origin[0],
-      up[1] - origin[1],
-      up[2] - origin[2],
-    ];
+    const upVec = [up[0] - origin[0], up[1] - origin[1], up[2] - origin[2]];
 
     this._applyBasisTransform(mob, origin, rightVec, upVec, origin, {
       uniformScale: true,
+      baseBox: mob._baseTexBox || null,
+      normalizeToBase: false,
     });
   }
 
@@ -337,16 +354,8 @@ export class Player {
     // Corners are [UL, UR, DL, DR]
     const [ul, ur, dl] = corners;
 
-    const rightVec = [
-      ur[0] - ul[0],
-      ur[1] - ul[1],
-      ur[2] - ul[2],
-    ];
-    const upVec = [
-      ul[0] - dl[0],
-      ul[1] - dl[1],
-      ul[2] - dl[2],
-    ];
+    const rightVec = [ur[0] - ul[0], ur[1] - ul[1], ur[2] - ul[2]];
+    const upVec = [ul[0] - dl[0], ul[1] - dl[1], ul[2] - dl[2]];
 
     const center = [
       dl[0] + rightVec[0] / 2 + upVec[0] / 2,
@@ -384,6 +393,16 @@ export class Player {
       if (state) {
         this._applyState(mob, state);
       }
+      if (
+        state?.kind === "MathTexSource" &&
+        !mob._baseTexBox &&
+        typeof mob.getBoundingBox === "function"
+      ) {
+        const box = mob.getBoundingBox();
+        if (box?.width > 0 && box?.height > 0) {
+          mob._baseTexBox = { width: box.width, height: box.height };
+        }
+      }
     }
     if (mob._pendingTransform) {
       this._applyTexTransform(mob, mob._pendingTransform);
@@ -416,7 +435,10 @@ export class Player {
     await this._restoreSnapshot(section.snapshot || {}, section);
 
     // Set initial camera state for section (3D scenes only)
-    if (section.camera && typeof this._scene.setCameraOrientation === "function") {
+    if (
+      section.camera &&
+      typeof this._scene.setCameraOrientation === "function"
+    ) {
       const { phi, theta, distance, fov } = section.camera;
       this._scene.setCameraOrientation(phi, theta, distance);
       if (fov !== undefined && this._scene.camera3D) {
@@ -428,7 +450,7 @@ export class Player {
     for (const cmd of commands) {
       await this._executeCommand(cmd, section);
     }
-    
+
     // Discard any remaining staged mobjects (not used by intro animations)
     this._stagedMobjects.clear();
   }
@@ -439,7 +461,7 @@ export class Player {
         const state = this._stateFromRef(section, cmd.state_ref);
         const mob = this._instantiateFromRef(section, cmd.state_ref);
         this._registry.set(cmd.id, mob);
-        
+
         // If hidden, stage for later; intro animations will add to scene
         if (cmd.hidden === true) {
           this._stagedMobjects.set(cmd.id, { mob, state });
@@ -496,9 +518,13 @@ export class Player {
 
     if ("ids" in desc) {
       const params = desc.params || {};
-      const mobjects = desc.ids.map((id) => this._registry.get(id)).filter(Boolean);
+      const mobjects = desc.ids
+        .map((id) => this._registry.get(id))
+        .filter(Boolean);
       if (mobjects.length < 2) {
-        console.warn(`${desc.kind} requires at least 2 mobjects, found ${mobjects.length}`);
+        console.warn(
+          `${desc.kind} requires at least 2 mobjects, found ${mobjects.length}`,
+        );
         return null;
       }
       const options = {
@@ -506,7 +532,9 @@ export class Player {
       };
       if (desc.kind === "Swap") {
         if (mobjects.length !== 2) {
-          console.warn(`Swap requires exactly 2 mobjects, found ${mobjects.length}`);
+          console.warn(
+            `Swap requires exactly 2 mobjects, found ${mobjects.length}`,
+          );
           return null;
         }
         return new Swap(mobjects[0], mobjects[1], options);
@@ -541,7 +569,7 @@ export class Player {
   async _playAnimate(cmd, section) {
     const descriptors = Array.isArray(cmd.animations) ? cmd.animations : [];
     const animations = [];
-    
+
     for (const desc of descriptors) {
       if (desc.kind === "Wait") {
         // Wait needs to be handled separately - play accumulated animations first
@@ -557,7 +585,7 @@ export class Player {
         animations.push(animation);
       }
     }
-    
+
     // Play all accumulated animations together
     if (animations.length > 0) {
       await this._scene.play(...animations);
@@ -566,7 +594,9 @@ export class Player {
 
   async _playUpdater(cmd, section) {
     const frames = Array.isArray(cmd.frames) ? cmd.frames : [];
-    const cameraUpdates = Array.isArray(cmd.camera_updates) ? cmd.camera_updates : [];
+    const cameraUpdates = Array.isArray(cmd.camera_updates)
+      ? cmd.camera_updates
+      : [];
     const hasCameraUpdates = cameraUpdates.length > 0;
     const numFrames = Math.max(frames.length, cameraUpdates.length);
 

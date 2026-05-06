@@ -6,6 +6,7 @@ import json
 import os
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from jsonschema import validate
@@ -414,12 +415,17 @@ def test_static_mathtex_serialization():
 
     assert state["kind"] == "MathTexSource"
     assert state["latex"] == "x^2"
-    assert state["font_size"] == 72
+    # font_size is not serialized for MathTexSource; geometry is encoded in points.
     assert state["color"] == "#83C167"
     assert "points" in state
     assert len(state["points"]) == 4
     for pt in state["points"]:
         assert len(pt) == 3
+
+    # PatchedMathTex canonical square is scaled by font_size / 48.
+    # For font_size=72, right/up vectors should have length 1.5.
+    assert state["points"][1][0] == pytest.approx(1.5)
+    assert state["points"][2][1] == pytest.approx(1.5)
 
 
 def test_static_mathtex_transform_updates_points():

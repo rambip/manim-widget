@@ -121,14 +121,21 @@ class CaptureRenderer:
         if isinstance(mob, PatchedMathTex):
             state["kind"] = "MathTexSource"
             state["latex"] = mob.tex_string
-            state["points"] = (
+            points = (
                 mob.points.tolist()
                 if hasattr(mob.points, "tolist")
                 else list(mob.points)
             )
+            # PatchedMathTex stores a canonical unit square in local tex space.
+            # Encode font-size into geometry so points are self-sufficient.
+            # Convention: unit square corresponds to font_size=48.
+            scale = float(getattr(mob, "font_size", 48) or 48) / 48.0
+            state["points"] = [
+                [float(pt[0]) * scale, float(pt[1]) * scale, float(pt[2]) * scale]
+                for pt in points
+            ]
             if mob.color is not None:
                 state["color"] = self._color_to_hex(mob.color)
-            state["font_size"] = mob.font_size
             stroke_opacity = mob.get_stroke_opacity()
             if stroke_opacity is not None:
                 state["stroke_opacity"] = stroke_opacity
