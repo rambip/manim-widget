@@ -113,7 +113,9 @@ Families: `SimpleAnimation`, `TransformAnimation` (`Transform`, `MoveToTarget`),
 - `Rotate` / `ScaleInPlace` constructors in `manim-web` expect options objects. Beware positional arg assumptions.
 - Transform cleanup timing: beware null races on `threeObject.visible` if target objects are freed too early.
 - Point arrays that are not `3n+1` will raise a JS-side playback error by design.
+- `_applyState` must apply points based on capability (`setPoints3D`) rather than `state.kind === "VMobject"`. Arrow/VGroup restore creates a body VMobject from VGroup state points; kind-gating drops body points and renders only tips.
 - Headless JS tests (`happy-dom`) can hang if image loading promises never resolve. Keep image-finalization logic non-blocking (timeouts/fallbacks) in `player.js`.
+- Bun/minified bundles can mangle `constructor.name` (e.g., `VGroup`→`e`). CLI integration tests should run Bun with `--conditions source` to keep deterministic end-state kind detection in `js/src/test_cli.js`.
 - Renderer command emission should prefer behavior/animation semantics over concrete class checks. Class-targeting can miss valid intro-animation mobjects (e.g., non-VMobject types).
 
 ---

@@ -55,7 +55,7 @@ def run_cli(
     else:
         scene_json = scene_data
 
-    args = ["bun", "run", str(CLI_PATH)]
+    args = ["bun", "run", "--conditions", "source", str(CLI_PATH)]
     if output_ids:
         args.append("--output-ids")
     if output_end_state:
@@ -745,3 +745,35 @@ def test_js_static_mathtex_with_scaled_transform():
     assert returncode == 0, f"CLI failed: {stderr}"
     sections = parse_section_ids(stdout)
     assert len(sections) == 1
+
+
+
+def test_arrow_vgroup_body_points_applied_in_end_state():
+    """Regression: Arrow body points must be applied when state.kind is VGroup."""
+    from manim import Arrow, ORIGIN, RIGHT
+
+    class ArrowScene(ManimWidget):
+        def construct(self):
+            self.add(Arrow(ORIGIN, RIGHT))
+
+    scene = ArrowScene()
+    returncode, stdout, stderr = run_cli(scene.scene_data, output_end_state=True)
+    assert returncode == 0, f"CLI failed: {stderr}\n{stdout}"
+
+    json_start = stdout.find('{\n  "sections"')
+    if json_start < 0:
+        json_start = stdout.find('{"sections"')
+    end_state = json.loads(stdout[json_start:])
+
+    states = end_state["sections"][0]["end_state"]["states"]
+    snapshot = end_state["sections"][0]["end_state"]["snapshot"]
+    root_ref = next(iter(snapshot.values()))
+    root_state = states[root_ref]
+
+    assert root_state["kind"] == "VGroup"
+    assert "children" in root_state and len(root_state["children"]) == 2
+
+    body_ref = root_state["children"][0]
+    body_state = states[body_ref]
+    assert body_state["kind"] == "VMobject"
+    assert len(body_state.get("points", [])) >= 4

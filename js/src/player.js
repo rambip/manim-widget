@@ -158,7 +158,6 @@ export class Player {
 
   _applyState(mob, state) {
     if (
-      state?.kind === "VMobject" &&
       Array.isArray(state.points) &&
       state.points.length > 0 &&
       typeof mob.setPoints3D === "function"
