@@ -4,16 +4,21 @@ import { createPlayer } from "./player.js";
 
 function buildUi(el) {
   el.innerHTML = `
-    <div style="position:relative;width:100%;height:100%;">
-      <div id="mw-container" style="width:100%;height:100%;"></div>
-      <div id="mw-controls" style="position:absolute;bottom:0;left:0;right:0;padding:10px;background:rgba(0,0,0,0.55);display:flex;gap:10px;align-items:center;">
-        <button id="mw-play">Play</button>
-        <button id="mw-pause">Pause</button>
-        <input type="range" id="mw-scrubber" min="0" max="0" value="0" style="flex:1;cursor:pointer;">
-        <span id="mw-section-info" style="color:white;min-width:100px;"></span>
+    <div id="mw-wrapper" style="display:inline-flex;flex-direction:column;max-width:100%;">
+      <div id="mw-video-area" style="position:relative;">
+        <div id="mw-container" style="width:600px;height:400px;max-width:100%;"></div>
       </div>
-      <div id="mw-warning" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(200,0,0,0.9);color:white;padding:14px;border-radius:8px;font-weight:bold;">
+      <div id="mw-warning" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(200,0,0,0.9);color:white;padding:14px;border-radius:8px;font-weight:bold;z-index:10;pointer-events:none;">
         Unsupported section
+      </div>
+      <div id="mw-controls" style="width:100%;box-sizing:border-box;display:flex;gap:0;align-items:stretch;margin-top:4px;background:rgba(200,200,200,1);">
+        <div id="mw-play-area" style="padding:4px;">
+          <button id="mw-play" style="font-size:2em;background:transparent;border:none;cursor:pointer;margin:0 8px;">↻</button>
+        </div>
+        <div id="mw-sections" style="flex:1;display:flex;flex-direction:column;padding:0;background:transparent;">
+          <div style="padding:2px 8px;font-size:1em;color:black;text-align:center;font-style:italic;font-weight:bold;">Section:</div>
+          <div id="mw-section-buttons" style="display:flex;gap:2px;padding:0 8px 0 8px;justify-content:center;align-items:stretch;"></div>
+        </div>
       </div>
     </div>
   `;
@@ -21,9 +26,7 @@ function buildUi(el) {
   return {
     container: el.querySelector("#mw-container"),
     playBtn: el.querySelector("#mw-play"),
-    pauseBtn: el.querySelector("#mw-pause"),
-    scrubber: el.querySelector("#mw-scrubber"),
-    sectionInfo: el.querySelector("#mw-section-info"),
+    sectionsDiv: el.querySelector("#mw-section-buttons"),
     warning: el.querySelector("#mw-warning"),
   };
 }
@@ -58,6 +61,20 @@ async function render({ model, el }) {
   let player = null;
   let sceneData = null;
 
+  function updateSectionStyles() {
+    const labels = ui.sectionsDiv.querySelectorAll('.mw-section-label');
+    labels.forEach((label) => {
+      const radio = label.querySelector('input[type="radio"]');
+      if (radio.checked) {
+        label.style.background = 'rgba(120,120,120,1)';
+        label.style.border = '1px solid transparent';
+      } else {
+        label.style.background = 'transparent';
+        label.style.border = '1px solid rgba(0,0,0,0.3)';
+      }
+    });
+  }
+
   async function renderSection(index) {
     if (!player || !sceneData) {
       return;
@@ -68,8 +85,9 @@ async function render({ model, el }) {
       return;
     }
 
-    ui.sectionInfo.textContent = section.name || "";
-    ui.scrubber.value = String(index);
+    const radios = ui.sectionsDiv.querySelectorAll('input[type="radio"]');
+    radios.forEach((r, i) => { r.checked = (i === index); });
+    updateSectionStyles();
 
     if (section.unsupported) {
       ui.warning.style.display = "block";
@@ -98,8 +116,14 @@ async function render({ model, el }) {
     player.setfps(data.fps || 10);
     player.setSections(data.sections);
 
-    ui.scrubber.max = String(Math.max(0, data.sections.length - 1));
-    ui.scrubber.value = "0";
+    ui.sectionsDiv.innerHTML = data.sections
+      .map((s, i) => {
+        const name = s.name || `${i + 1}`;
+        return `<label class="mw-section-label" style="cursor:pointer;padding:2px 8px;border-radius:4px;border:1px solid rgba(0,0,0,0.3);background:transparent;transition:background 0.2s;min-width:10em;text-align:center;display:flex;align-items:center;justify-content:center;"><input type="radio" name="mw-section" value="${i}" ${i === 0 ? 'checked' : ''} style="display:none;"><span>${name}</span></label>`;
+      })
+      .join("");
+
+    updateSectionStyles();
 
     if (data.sections.length > 0) {
       await renderSection(0);
@@ -111,13 +135,11 @@ async function render({ model, el }) {
       return;
     }
 
+    await player.stop();
+    await renderSection(0);
     await player.play();
-    let start = Number.parseInt(ui.scrubber.value || "0", 10);
-    if (!Number.isFinite(start) || start < 0) {
-      start = 0;
-    }
 
-    for (let i = start; i < sceneData.sections.length; i += 1) {
+    for (let i = 0; i < sceneData.sections.length; i += 1) {
       if (!player.isPlaying) {
         break;
       }
@@ -125,17 +147,11 @@ async function render({ model, el }) {
     }
   });
 
-  ui.pauseBtn.addEventListener("click", async () => {
-    if (player) {
-      await player.pause();
-    }
-  });
-
-  ui.scrubber.addEventListener("input", async () => {
-    if (!sceneData) {
+  ui.sectionsDiv.addEventListener("change", async (e) => {
+    if (!sceneData || e.target.name !== "mw-section") {
       return;
     }
-    const index = Number.parseInt(ui.scrubber.value, 10);
+    const index = Number.parseInt(e.target.value, 10);
     await renderSection(index);
   });
 
