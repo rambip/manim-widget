@@ -117,15 +117,16 @@ export class Player {
 
   _createMobjectFromState(state) {
     if (state.kind === "MathTexSource") {
-      const opts = { latex: state.latex, renderer: "auto" };
+      // Temporary fix: use 'katex' renderer to work around MathTex async
+      // sizing issues with Create animation.
+      // Ref: https://github.com/maloyan/manim-web/issues/324
+      const opts = { latex: state.latex, renderer: "katex" };
       if (state.color) opts.color = state.color;
       // Do not use font size from state. MathTexSource.points already encode
       // geometry scale (unit square convention at font_size=48).
-      // Prefer rasterized MathTexImage for robustness in widget runtimes,
-      // where global MathJax sync APIs may throw "MathJax retry".
       const mob = new MathTexImage(opts);
-      if (Array.isArray(state.points) && state.points.length >= 3) {
-        mob._pendingTransform = state.points.slice(0, 3);
+      if (Array.isArray(state.points) && state.points.length === 4) {
+        mob._pendingTransform = state.points;
       }
       return mob;
     }
@@ -304,8 +305,8 @@ export class Player {
   }
 
   _applyTexTransform(mob, points) {
-    if (!points || points.length < 3) return;
-    const [origin, right, up] = points;
+    if (!points || points.length !== 4) return;
+    const [topLeft, topRight, bottomRight, bottomLeft] = points;
 
     // Keep MathTex centered before applying shared basis transform.
     if (typeof mob.centerPointsAroundPosition === "function") {
@@ -313,13 +314,22 @@ export class Player {
     }
 
     const rightVec = [
-      right[0] - origin[0],
-      right[1] - origin[1],
-      right[2] - origin[2],
+      (topRight[0] - topLeft[0]) / 2,
+      (topRight[1] - topLeft[1]) / 2,
+      (topRight[2] - topLeft[2]) / 2,
     ];
-    const upVec = [up[0] - origin[0], up[1] - origin[1], up[2] - origin[2]];
+    const upVec = [
+      (topLeft[0] - bottomLeft[0]) / 2,
+      (topLeft[1] - bottomLeft[1]) / 2,
+      (topLeft[2] - bottomLeft[2]) / 2,
+    ];
+    const center = [
+      (topLeft[0] + bottomRight[0]) / 2,
+      (topLeft[1] + bottomRight[1]) / 2,
+      (topLeft[2] + bottomRight[2]) / 2,
+    ];
 
-    this._applyBasisTransform(mob, origin, rightVec, upVec, origin, {
+    this._applyBasisTransform(mob, topLeft, rightVec, upVec, center, {
       uniformScale: true,
       baseBox: mob._baseTexBox || null,
       normalizeToBase: false,

@@ -1,8 +1,8 @@
 import numpy as np
-from manim import ORIGIN, RIGHT, UP, VMobject
+from manim import DOWN, LEFT, Mobject, RIGHT, UP
 
 
-class PatchedMathTex(VMobject):
+class PatchedMathTex(Mobject):
     def __init__(
         self,
         *tex_strings: str,
@@ -16,13 +16,23 @@ class PatchedMathTex(VMobject):
     ):
         self.tex_string = arg_separator.join(tex_strings)
         self.font_size = font_size
-        VMobject.__init__(self, **kwargs)
+
+        # Mobject does not accept many MathTex styling kwargs directly.
+        color = kwargs.pop("color", None) or kwargs.pop("fill_color", None)
+        _ = kwargs.pop("fill_opacity", None)
+        _ = kwargs.pop("stroke_opacity", None)
+
+        Mobject.__init__(self)
+        if color is not None and hasattr(self, "set_color"):
+            self.set_color(color)
+
+        scale = float(font_size) / 48.0
         self.points = np.array(
             [
-                np.array(ORIGIN),
-                np.array(RIGHT),
-                np.array(UP),
-                np.array(RIGHT) + np.array(UP),
+                (np.array(LEFT) + np.array(UP)) * scale,
+                (np.array(RIGHT) + np.array(UP)) * scale,
+                (np.array(RIGHT) + np.array(DOWN)) * scale,
+                (np.array(LEFT) + np.array(DOWN)) * scale,
             ],
             dtype=np.float64,
         )

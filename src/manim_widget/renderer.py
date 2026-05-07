@@ -130,19 +130,12 @@ class CaptureRenderer:
                 if hasattr(mob.points, "tolist")
                 else list(mob.points)
             )
-            # PatchedMathTex stores a canonical unit square in local tex space.
-            # Encode font-size into geometry so points are self-sufficient.
-            # Convention: unit square corresponds to font_size=48.
-            scale = float(getattr(mob, "font_size", 48) or 48) / 48.0
+            # Points already include signed-corner geometry and font-size scaling.
             state["points"] = [
-                [float(pt[0]) * scale, float(pt[1]) * scale, float(pt[2]) * scale]
-                for pt in points
+                [float(pt[0]), float(pt[1]), float(pt[2])] for pt in points
             ]
             if mob.color is not None:
                 state["color"] = self._color_to_hex(mob.color)
-            stroke_opacity = mob.get_stroke_opacity()
-            if stroke_opacity is not None:
-                state["stroke_opacity"] = stroke_opacity
             return state
 
         if isinstance(mob, AbstractImageMobject):

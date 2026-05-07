@@ -163,7 +163,7 @@
           },
           "minItems": 4,
           "maxItems": 4,
-          "description": "Local coordinate system [origin, right_point, up_point, top_right] for transform support. Points are font-size-normalized geometry: unit square [ORIGIN, RIGHT, UP, RIGHT+UP] corresponds to font_size=48. JS: 1) center the rendered glyph, 2) apply matrix derived from (right-origin, up-origin), 3) shift by origin. Result: object center at origin."
+          "description": "Signed corners [top_left, top_right, bottom_right, bottom_left]. Base corners are [LEFT+UP, RIGHT+UP, RIGHT+DOWN, LEFT+DOWN] scaled by (font_size/48). Player computes center as midpoint(top_left, bottom_right), rightVec=(top_right-top_left)/2, upVec=(top_left-bottom_left)/2."
         },
         "stroke_opacity": { "type": "number", "minimum": 0, "maximum": 1 },
         "color": { "$ref": "#/definitions/Color" },

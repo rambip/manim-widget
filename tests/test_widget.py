@@ -422,10 +422,12 @@ def test_static_mathtex_serialization():
     for pt in state["points"]:
         assert len(pt) == 3
 
-    # PatchedMathTex canonical square is scaled by font_size / 48.
-    # For font_size=72, right/up vectors should have length 1.5.
-    assert state["points"][1][0] == pytest.approx(1.5)
-    assert state["points"][2][1] == pytest.approx(1.5)
+    # Signed corners scaled by font_size / 48. For font_size=72 => scale=1.5.
+    # [top_left, top_right, bottom_right, bottom_left]
+    assert state["points"][0] == pytest.approx([-1.5, 1.5, 0.0])
+    assert state["points"][1] == pytest.approx([1.5, 1.5, 0.0])
+    assert state["points"][2] == pytest.approx([1.5, -1.5, 0.0])
+    assert state["points"][3] == pytest.approx([-1.5, -1.5, 0.0])
 
 
 def test_static_mathtex_transform_updates_points():
