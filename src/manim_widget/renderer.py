@@ -11,11 +11,8 @@ import numpy as np
 from PIL import Image
 
 from manim import (
-    Create,
     CyclicReplace,
-    FadeIn,
     FadeOut,
-    GrowFromCenter,
     ReplacementTransform,
     Rotate,
     ScaleInPlace,
@@ -24,7 +21,6 @@ from manim import (
     Text,
     ValueTracker,
     VGroup,
-    Write,
 )
 from manim.animation.animation import Animation
 from manim.mobject.mobject import Mobject
@@ -72,6 +68,13 @@ class CaptureRenderer:
         # Staging bucket for pre-play add() calls in current section.
         # Keyed by short_id; repeated add() of same object overwrites prior state.
         self._staged_adds: dict[str, Mobject] = {}
+        # Ignore internal scene.add() calls during animation setup to avoid
+        # duplicate staged register commands from introducer internals.
+        self._suppress_stage_adds: bool = False
+        # Runtime bookkeeping: whether a mobject has ever been introduced via
+        # an animation introducer (Create/FadeIn/Write/GrowFromCenter/Add...).
+        # Keyed by python object identity.
+        self._introduced_by_animation: dict[int, bool] = {}
 
     @property
     def camera(self):
@@ -273,16 +276,19 @@ class CaptureRenderer:
             member_id = id(member)
             self.registry[member_id] = member
             self._active_ids.add(member_id)
+            self._introduced_by_animation.setdefault(member_id, False)
 
     def unregister_mobject(self, mob: Mobject) -> None:
         for member in mob.get_family():
-            self._active_ids.discard(id(member))
+            member_id = id(member)
+            self._active_ids.discard(member_id)
+            self._introduced_by_animation.pop(member_id, None)
 
     def is_active(self, mob: Mobject) -> bool:
         return id(mob) in self._active_ids
 
     def flush_staged_adds(self) -> None:
-        """Emit staged pre-play add commands into the current section.
+        """Emit staged pre-play register commands into the current section.
 
         Staging is section-local and deduplicated by mobject id (last add wins).
         """
@@ -292,7 +298,7 @@ class CaptureRenderer:
         for mob in self._staged_adds.values():
             current.commands.append(
                 {
-                    "cmd": "add",
+                    "cmd": "register",
                     "id": short_id(mob),
                     "state_ref": self.state_ref_for(mob),
                 }
@@ -336,6 +342,29 @@ class CaptureRenderer:
         animate_descriptors: list[dict] = []
         post_commands: list[dict] = []
 
+        def _is_supported(mob: Mobject) -> bool:
+            if isinstance(mob, VMobject | ValueTracker | AbstractImageMobject):
+                return True
+            return bool(hasattr(mob, "submobjects") and mob.submobjects)
+
+        # Inject Add animations for currently present scene roots that were
+        # not introduced by an animation yet.
+        for mob in scene.mobjects:
+            if not _is_supported(mob):
+                continue
+            if not self.is_active(mob):
+                self.register_mobject(mob)
+                pre_commands.append(
+                    {
+                        "cmd": "register",
+                        "id": short_id(mob),
+                        "state_ref": self.state_ref_for(mob),
+                    }
+                )
+            if not self._introduced_by_animation.get(id(mob), False):
+                animate_descriptors.append({"kind": "Add", "id": short_id(mob)})
+                self._introduced_by_animation[id(mob)] = True
+
         for anim in animations:
             desc = self._descriptor_from_animation(anim)
             animate_descriptors.append(desc)
@@ -344,27 +373,21 @@ class CaptureRenderer:
             # Skip registration for group animation internal Groups
             if isinstance(anim, Swap | CyclicReplace):
                 continue
-            if isinstance(mob, Mobject) and not isinstance(
-                mob, VMobject | ValueTracker | AbstractImageMobject
-            ):
-                if not (hasattr(mob, "submobjects") and mob.submobjects):
-                    continue
-
-            # Intro animations (Create, FadeIn, etc.) need the mobject staged but hidden
-            is_intro_animation = isinstance(
-                anim, Create | FadeIn | Write | GrowFromCenter
-            )
+            if isinstance(mob, Mobject) and not _is_supported(mob):
+                continue
 
             if not self.is_active(mob):
                 self.register_mobject(mob)
-                add_cmd = {
-                    "cmd": "add",
-                    "id": short_id(mob),
-                    "state_ref": self.state_ref_for(mob),
-                }
-                if is_intro_animation:
-                    add_cmd["hidden"] = True
-                pre_commands.append(add_cmd)
+                pre_commands.append(
+                    {
+                        "cmd": "register",
+                        "id": short_id(mob),
+                        "state_ref": self.state_ref_for(mob),
+                    }
+                )
+
+            if anim.is_introducer():
+                self._introduced_by_animation[id(mob)] = True
 
             if isinstance(anim, ReplacementTransform):
                 target = anim.target_mobject
@@ -396,8 +419,12 @@ class CaptureRenderer:
         if post_commands:
             current.commands.extend(post_commands)
 
-        for anim in animations:
-            anim._setup_scene(scene)
+        self._suppress_stage_adds = True
+        try:
+            for anim in animations:
+                anim._setup_scene(scene)
+        finally:
+            self._suppress_stage_adds = False
         for anim in animations:
             anim.begin()
 
@@ -590,8 +617,12 @@ class CaptureRenderer:
 
         scene.animations = animations
         scene.last_t = 0.0
-        for anim in animations:
-            anim._setup_scene(scene)
+        self._suppress_stage_adds = True
+        try:
+            for anim in animations:
+                anim._setup_scene(scene)
+        finally:
+            self._suppress_stage_adds = False
         for anim in animations:
             anim.begin()
 

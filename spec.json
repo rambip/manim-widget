@@ -223,29 +223,25 @@
 
     "Command": {
       "oneOf": [
-        { "$ref": "#/definitions/AddCommand" },
+        { "$ref": "#/definitions/RegisterCommand" },
         { "$ref": "#/definitions/RemoveCommand" },
         { "$ref": "#/definitions/RebindCommand" },
         { "$ref": "#/definitions/AnimateCommand" }
       ]
     },
 
-    "AddCommand": {
+    "RegisterCommand": {
       "type": "object",
-      "description": "Register or update a mobject in the JS scene graph by binding id to a section-local state_ref.",
+      "description": "Bind or update a mobject in the JS scene graph by mapping id to a section-local state_ref, and add it to the visible scene.",
       "required": ["cmd", "id", "state_ref"],
       "additionalProperties": false,
       "properties": {
-        "cmd": { "type": "string", "const": "add" },
+        "cmd": { "type": "string", "const": "register" },
         "id": { "type": "string" },
         "state_ref": {
           "type": "integer",
           "minimum": 0,
           "description": "Index into section.states."
-        },
-        "hidden": {
-          "type": "boolean",
-          "description": "If true, mobject is staged but not added to scene. Intro animations (Create, FadeIn, etc.) pull from staging bucket and add to scene when they begin."
         }
       }
     },

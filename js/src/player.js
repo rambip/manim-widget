@@ -1,4 +1,5 @@
 import {
+  Add,
   Create,
   FadeIn,
   FadeOut,
@@ -21,6 +22,8 @@ import * as THREE from "three";
 function buildSimpleAnimation(mob, desc, registry) {
   const params = desc.params || {};
   switch (desc.kind) {
+    case "Add":
+      return new Add(mob);
     case "Create":
       return new Create(mob);
     case "FadeIn":
@@ -66,7 +69,6 @@ export class Player {
   constructor(scene, registry) {
     this._scene = scene;
     this._registry = registry;
-    this._stagedMobjects = new Map(); // id -> {mob, state}
     this._sections = [];
     this._fps = 10;
     this._isPlaying = false;
@@ -452,7 +454,6 @@ export class Player {
 
     this._scene.clear();
     this._registry.clear();
-    this._stagedMobjects.clear();
     await this._restoreSnapshot(section.snapshot || {}, section);
 
     // Set initial camera state for section (3D scenes only)
@@ -472,24 +473,15 @@ export class Player {
       await this._executeCommand(cmd, section);
     }
 
-    // Discard any remaining staged mobjects (not used by intro animations)
-    this._stagedMobjects.clear();
   }
 
   async _executeCommand(cmd, section) {
     switch (cmd?.cmd) {
-      case "add": {
+      case "register": {
         const state = this._stateFromRef(section, cmd.state_ref);
         const mob = this._instantiateFromRef(section, cmd.state_ref);
         this._registry.set(cmd.id, mob);
-
-        // If hidden, stage for later; intro animations will add to scene
-        if (cmd.hidden === true) {
-          this._stagedMobjects.set(cmd.id, { mob, state });
-        } else {
-          await this._finalizeMobject(mob, state);
-          this._scene.add(mob);
-        }
+        await this._finalizeMobject(mob, state);
         return;
       }
       case "remove": {
@@ -570,18 +562,6 @@ export class Player {
     const mob = this._registry.get(desc.id);
     if (!mob) {
       throw new Error(`Mobject not found: ${desc.id}`);
-    }
-
-    // Intro animations: pull from staging bucket
-    // Don't add to scene - manim-web's play() will handle that after begin()
-    const introKinds = ["Create", "FadeIn", "Write", "GrowFromCenter"];
-    if (introKinds.includes(desc.kind)) {
-      const staged = this._stagedMobjects.get(desc.id);
-      if (staged) {
-        // Apply state but let manim-web handle scene addition
-        await this._finalizeMobject(mob, staged.state);
-        this._stagedMobjects.delete(desc.id);
-      }
     }
 
     return buildSimpleAnimation(mob, desc, this._registry);

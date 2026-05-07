@@ -312,15 +312,14 @@ class TestCLIIntegration:
         section = fadein_image_data["sections"][0]
         assert section["states"][0]["kind"] == "ImageMobject"
 
-        add_cmd = section["construct"][0]
+        register_cmd = section["construct"][0]
         animate_cmd = section["construct"][1]
-        assert add_cmd["cmd"] == "add"
-        assert add_cmd["state_ref"] == 0
-        assert add_cmd.get("hidden") is True
+        assert register_cmd["cmd"] == "register"
+        assert register_cmd["state_ref"] == 0
 
         assert animate_cmd["cmd"] == "animate"
         assert animate_cmd["animations"][0]["kind"] == "FadeIn"
-        assert animate_cmd["animations"][0]["id"] == add_cmd["id"]
+        assert animate_cmd["animations"][0]["id"] == register_cmd["id"]
 
         returncode, stdout, stderr = run_cli(fadein_image_data, output_ids=True)
         assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
@@ -329,6 +328,13 @@ class TestCLIIntegration:
         assert len(sections[0]["ids"]) == 1
 
     def test_animate_shift_left(self, animate_shift_left_data):
+        section = animate_shift_left_data["sections"][0]
+        animate_cmds = [cmd for cmd in section["construct"] if cmd["cmd"] == "animate"]
+        assert len(animate_cmds) == 2
+        # First play is introducer (Create), so second non-introducer play should
+        # not need injected Add.
+        assert not any(a["kind"] == "Add" for a in animate_cmds[1]["animations"])
+
         returncode, stdout, stderr = run_cli(animate_shift_left_data, output_ids=True)
         assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
         sections = parse_section_ids(stdout)
@@ -435,7 +441,7 @@ class TestCLIIntegration:
                             ],
                         }
                     ],
-                    "construct": [{"cmd": "add", "id": "circle1", "state_ref": 0}],
+                    "construct": [{"cmd": "register", "id": "circle1", "state_ref": 0}],
                 }
             ],
         }
@@ -535,9 +541,9 @@ class TestCLIIntegration:
             f"Expected 3 states (2 children + Group), got {len(states)}"
         )
 
-        add_cmd = next((c for c in construct if c["cmd"] == "add"), None)
-        assert add_cmd is not None, "Expected an add command"
-        group_ref = add_cmd["state_ref"]
+        register_cmd = next((c for c in construct if c["cmd"] == "register"), None)
+        assert register_cmd is not None, "Expected a register command"
+        group_ref = register_cmd["state_ref"]
 
         group_state = states[group_ref]
         assert group_state["kind"] == "VGroup", (
@@ -691,8 +697,8 @@ def test_swap_with_world_coordinate_points():
                     },
                 ],
                 "construct": [
-                    {"cmd": "add", "id": "0", "state_ref": 0},
-                    {"cmd": "add", "id": "1", "state_ref": 1},
+                    {"cmd": "register", "id": "0", "state_ref": 0},
+                    {"cmd": "register", "id": "1", "state_ref": 1},
                     {
                         "cmd": "animate",
                         "duration": 1.0,
@@ -739,6 +745,24 @@ def test_swap_with_world_coordinate_points():
     )
 
 
+def test_js_create_without_explicit_add_has_no_injected_add():
+    class CreateOnlyScene(ManimWidget):
+        def construct(self):
+            c = Circle()
+            self.play(Create(c))
+
+    scene = CreateOnlyScene()
+    data = scene.scene_data
+    section = data["sections"][0]
+    animate_cmd = next(cmd for cmd in section["construct"] if cmd["cmd"] == "animate")
+
+    assert not any(a["kind"] == "Add" for a in animate_cmd["animations"])
+    assert any(a["kind"] == "Create" for a in animate_cmd["animations"])
+
+    returncode, stdout, stderr = run_cli(data, output_ids=True)
+    assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
+
+
 def test_js_static_mathtex_creates_and_transforms():
     scene_data = {
         "version": 2,
@@ -756,7 +780,7 @@ def test_js_static_mathtex_creates_and_transforms():
                         "color": "#83C167",
                     }
                 ],
-                "construct": [{"cmd": "add", "id": "tex1", "state_ref": 0}],
+                "construct": [{"cmd": "register", "id": "tex1", "state_ref": 0}],
             }
         ],
     }
@@ -786,7 +810,7 @@ def test_js_static_mathtex_with_scaled_transform():
                         "stroke_opacity": 1.0,
                     }
                 ],
-                "construct": [{"cmd": "add", "id": "frac", "state_ref": 0}],
+                "construct": [{"cmd": "register", "id": "frac", "state_ref": 0}],
             }
         ],
     }
