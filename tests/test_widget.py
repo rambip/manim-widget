@@ -17,10 +17,8 @@ from manim import (
     Create,
     Dot,
     LEFT,
-    ReplacementTransform,
     RIGHT,
     Square,
-    VGroup,
     ValueTracker,
     ImageMobject,
 )

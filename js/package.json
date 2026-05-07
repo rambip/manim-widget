@@ -10,7 +10,7 @@
     "katex": "^0.16.22",
     "manim-web": "file:../manim-web",
     "mathjax-full": "^3.2.2",
-    "three": "^0.180.0"
+    "three": "^0.184.0"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "^20.8.9"
