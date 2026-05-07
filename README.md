@@ -16,6 +16,11 @@ And you're good to go ! You do not even need to install LaTeX.
 
 > If you get errors during installation, go read the [manim install guide](https://docs.manim.community/en/stable/installation/uv.html)
 
+Want to try it online ?
+
+Thank's to [marimo](https://marimo.io/), that's a no brainer:
+[![Open in molab](https://molab.marimo.io/molab-shield.svg)](https://molab.marimo.io/notebooks/nb_v69Q632SKXkCxbZLF4Vpid)
+
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md)
