@@ -22,7 +22,7 @@
 - **Section**: named region delimited by `next_section()`.
 - **State bank**: section-local deduplicated list of serialized mobject states (`states`), addressed by integer `state_ref`.
 - **Snapshot**: section-entry map of `mob_id → state_ref`. Enables O(1) section jumps without replaying prior sections.
-- **Command stream** (`construct`): ordered section operations — `add`, `remove`, `rebind` and the more complex `animate`.
+- **Command stream** (`construct`): ordered section operations — `register`, `remove`, `rebind` and the more complex `animate`.
 - **Dry-run**: execute scene logic to capture playback data only; no video output.
 
 ---
@@ -84,7 +84,7 @@ Built from `js/src/*` via Bun. This is what packaged widget users execute. Rebui
 
 | cmd | purpose |
 |---|---|
-| `add` | bind `id → state_ref` in scene graph |
+| `register` | bind `id → state_ref` in scene graph and show in scene |
 | `remove` | free `id` from registry (emitted after `FadeOut`, `ReplacementTransform`) |
 | `rebind` | remap `source_id → target_id` (emitted after `ReplacementTransform`) |
 | `animate` | one `scene.play()`; contains both parralel animations and updaters for specific objects|

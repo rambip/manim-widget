@@ -149,8 +149,8 @@ def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
                     },
                 ],
                 "construct": [
-                    {"cmd": "add", "id": "0", "state_ref": 0},
-                    {"cmd": "add", "id": "1", "state_ref": 1},
+                    {"cmd": "register", "id": "0", "state_ref": 0},
+                    {"cmd": "register", "id": "1", "state_ref": 1},
                     {
                         "cmd": "updater",
                         "duration": 0.5,
@@ -164,6 +164,77 @@ def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
                     },
                 ],
             }
+        ],
+    }
+
+    assert_close(strip_points(data), strip_points(expected))
+
+
+def test_v2_create_then_next_section_snapshot_only_second_section():
+    class Move(ManimWidget):
+        def construct(self):
+            circle = Circle(1, color=GREEN, fill_opacity=1, stroke_opacity=1)
+            self.play(Create(circle))
+            self.next_section("a")
+
+    scene = Move()
+    data = scene.scene_data
+
+    expected = {
+        "version": 2,
+        "fps": 10,
+        "sections": [
+            {
+                "name": "initial",
+                "snapshot": {},
+                "camera": {
+                    "phi": 0.0,
+                    "theta": -1.5707963267948966,
+                    "distance": 5.0,
+                    "fov": 77.31961650818019,
+                },
+                "states": [
+                    {
+                        "kind": "VMobject",
+                        "fill_color": "#83C167",
+                        "fill_opacity": 1.0,
+                        "stroke_color": "#83C167",
+                        "stroke_width": 4,
+                        "stroke_opacity": 1.0,
+                        "z_index": 0,
+                    }
+                ],
+                "construct": [
+                    {"cmd": "register", "id": "0", "state_ref": 0},
+                    {
+                        "cmd": "animate",
+                        "duration": 1.0,
+                        "animations": [
+                            {
+                                "id": "0",
+                                "rate_func": "smooth",
+                                "kind": "Create",
+                            }
+                        ],
+                    },
+                ],
+            },
+            {
+                "name": "a",
+                "snapshot": {"0": 0},
+                "states": [
+                    {
+                        "kind": "VMobject",
+                        "fill_color": "#83C167",
+                        "fill_opacity": 1.0,
+                        "stroke_color": "#83C167",
+                        "stroke_width": 4,
+                        "stroke_opacity": 1.0,
+                        "z_index": 0,
+                    }
+                ],
+                "construct": [],
+            },
         ],
     }
 
@@ -206,7 +277,7 @@ def test_v2_method_animation_uses_move_to_target():
     anim_cmd = section["construct"][1]
     assert anim_cmd["cmd"] == "animate"
 
-    anim = anim_cmd["animations"][0]
+    anim = next(a for a in anim_cmd["animations"] if a["kind"] != "Add")
     assert anim["id"] == "0"
     assert "state_ref" in anim
     assert anim["kind"] == "MoveToTarget"
@@ -234,7 +305,7 @@ def test_v2_chained_method_animation_uses_move_to_target():
     anim_cmd = section["construct"][1]
     assert anim_cmd["cmd"] == "animate"
 
-    anim = anim_cmd["animations"][0]
+    anim = next(a for a in anim_cmd["animations"] if a["kind"] != "Add")
     assert anim["id"] == "0"
     assert "state_ref" in anim
     assert anim["kind"] == "MoveToTarget"
@@ -269,23 +340,78 @@ def test_v2_multiple_sections_with_move_to_target():
     section1 = data["sections"][0]
     assert section1["name"] == "initial"
     assert len(section1["states"]) >= 2
-    anim1 = section1["construct"][1]["animations"][0]
+    anim1 = next(
+        a for a in section1["construct"][1]["animations"] if a["kind"] != "Add"
+    )
     assert "state_ref" in anim1
     assert anim1["kind"] == "MoveToTarget"
 
     section2 = data["sections"][1]
     assert section2["name"] == "second"
     assert len(section2["states"]) >= 2
-    anim2 = section2["construct"][1]["animations"][0]
+    anim2 = next(
+        a for a in section2["construct"][1]["animations"] if a["kind"] != "Add"
+    )
     assert "state_ref" in anim2
     assert anim2["kind"] == "MoveToTarget"
 
     section3 = data["sections"][2]
     assert section3["name"] == "third"
     assert len(section3["states"]) >= 2
-    anim3 = section3["construct"][1]["animations"][0]
+    anim3 = next(
+        a for a in section3["construct"][1]["animations"] if a["kind"] != "Add"
+    )
     assert "state_ref" in anim3
     assert anim3["kind"] == "MoveToTarget"
+
+
+def test_add_injected_for_explicit_add_before_non_introducer_animation():
+    class ShiftScene(ManimWidget):
+        def construct(self):
+            c = Circle()
+            self.add(c)
+            self.play(c.animate.shift((1, 0, 0)))
+
+    scene = ShiftScene()
+    section = scene.scene_data["sections"][0]
+    anim_cmd = section["construct"][1]
+
+    assert anim_cmd["cmd"] == "animate"
+    assert any(a["kind"] == "Add" and a["id"] == "0" for a in anim_cmd["animations"])
+    assert any(
+        a["kind"] == "MoveToTarget" and a["id"] == "0" for a in anim_cmd["animations"]
+    )
+
+
+def test_add_not_reinjected_after_first_animation_batch():
+    class TwoPlaysScene(ManimWidget):
+        def construct(self):
+            c = Circle()
+            self.add(c)
+            self.play(c.animate.shift((1, 0, 0)))
+            self.play(c.animate.shift((1, 0, 0)))
+
+    scene = TwoPlaysScene()
+    section = scene.scene_data["sections"][0]
+    animate_cmds = [cmd for cmd in section["construct"] if cmd["cmd"] == "animate"]
+
+    assert len(animate_cmds) == 2
+    assert any(a["kind"] == "Add" for a in animate_cmds[0]["animations"])
+    assert not any(a["kind"] == "Add" for a in animate_cmds[1]["animations"])
+
+
+def test_create_without_explicit_add_does_not_emit_add_animation():
+    class CreateScene(ManimWidget):
+        def construct(self):
+            c = Circle()
+            self.play(Create(c))
+
+    scene = CreateScene()
+    section = scene.scene_data["sections"][0]
+    anim_cmd = next(cmd for cmd in section["construct"] if cmd["cmd"] == "animate")
+
+    assert not any(a["kind"] == "Add" for a in anim_cmd["animations"])
+    assert any(a["kind"] == "Create" and a["id"] == "0" for a in anim_cmd["animations"])
 
 
 def test_image_mobject_serializes_source_and_pixels():
@@ -310,7 +436,7 @@ def test_image_mobject_serializes_source_and_pixels():
     validate(data, schema)
 
     section = data["sections"][0]
-    assert section["construct"][0] == {"cmd": "add", "id": "0", "state_ref": 0}
+    assert section["construct"][0] == {"cmd": "register", "id": "0", "state_ref": 0}
 
     state = section["states"][0]
     assert state["kind"] == "ImageMobject"
@@ -378,7 +504,7 @@ def test_static_mathtex_transform_updates_points():
     assert initial_state["kind"] == "MathTexSource"
     initial_points = initial_state["points"]
 
-    anim = section["construct"][1]["animations"][0]
+    anim = next(a for a in section["construct"][1]["animations"] if a["kind"] != "Add")
     assert anim["kind"] == "MoveToTarget"
 
     final_state = section["states"][anim["state_ref"]]
@@ -429,8 +555,8 @@ def test_patch_tex_mathtex_add_serializes_as_mathtexsource():
         validate(data, schema)
 
         section = data["sections"][0]
-        add_cmd = section["construct"][0]
-        state = section["states"][add_cmd["state_ref"]]
+        register_cmd = section["construct"][0]
+        state = section["states"][register_cmd["state_ref"]]
 
         assert state["kind"] == "MathTexSource"
         assert state["latex"] == r"{0}"
@@ -466,7 +592,8 @@ def test_swap_animation_emits_group_animation():
             break
     assert animate_cmd is not None
 
-    anim = animate_cmd["animations"][0]
+    assert any(a["kind"] == "Add" for a in animate_cmd["animations"])
+    anim = next(a for a in animate_cmd["animations"] if a["kind"] != "Add")
     assert anim["kind"] == "Swap"
     assert "ids" in anim
     assert anim["ids"] == ["0", "1"]
@@ -502,7 +629,8 @@ def test_cyclic_replace_animation_emits_group_animation():
             break
     assert animate_cmd is not None
 
-    anim = animate_cmd["animations"][0]
+    assert any(a["kind"] == "Add" for a in animate_cmd["animations"])
+    anim = next(a for a in animate_cmd["animations"] if a["kind"] != "Add")
     assert anim["kind"] == "CyclicReplace"
     assert "ids" in anim
     assert len(anim["ids"]) == 3
@@ -576,17 +704,17 @@ def test_same_square_scaled_and_readded_serializes_only_scaled_state():
     data = scene.scene_data
     section = data["sections"][0]
 
-    add_cmds = [cmd for cmd in section["construct"] if cmd["cmd"] == "add"]
-    assert len(add_cmds) == 1
+    register_cmds = [cmd for cmd in section["construct"] if cmd["cmd"] == "register"]
+    assert len(register_cmds) == 1
 
-    state_ref = add_cmds[0]["state_ref"]
+    state_ref = register_cmds[0]["state_ref"]
     points = section["states"][state_ref]["points"]
     assert abs(points[0][0] - 1.0) < 1e-9
     assert abs(points[0][1] - 1.0) < 1e-9
     assert abs(points[0][2] - 0.0) < 1e-9
 
 
-def test_add_play_mutate_add_back_emits_two_adds_with_two_states():
+def test_register_play_mutate_register_back_emits_two_registers_with_two_states():
 
     class AddPlayMutateAddBack(ManimWidget):
         def construct(self):
@@ -599,17 +727,17 @@ def test_add_play_mutate_add_back_emits_two_adds_with_two_states():
     scene = AddPlayMutateAddBack(fps=10)
     section = scene.scene_data["sections"][0]
 
-    add_cmds = [cmd for cmd in section["construct"] if cmd["cmd"] == "add"]
-    assert len(add_cmds) == 2
+    register_cmds = [cmd for cmd in section["construct"] if cmd["cmd"] == "register"]
+    assert len(register_cmds) == 2
 
-    p0 = section["states"][add_cmds[0]["state_ref"]]["points"][0]
-    p1 = section["states"][add_cmds[1]["state_ref"]]["points"][0]
+    p0 = section["states"][register_cmds[0]["state_ref"]]["points"][0]
+    p1 = section["states"][register_cmds[1]["state_ref"]]["points"][0]
 
     assert abs(p0[0] - 0.5) < 1e-9
     assert abs(p1[0] - 1.0) < 1e-9
 
 
-def test_add_new_section_add_back_emits_two_adds_with_two_states():
+def test_register_new_section_register_back_emits_two_registers_with_two_states():
 
     class AddSectionAddBack(ManimWidget):
         def construct(self):
@@ -625,13 +753,13 @@ def test_add_new_section_add_back_emits_two_adds_with_two_states():
     s0 = data["sections"][0]
     s1 = data["sections"][1]
 
-    add0 = [cmd for cmd in s0["construct"] if cmd["cmd"] == "add"]
-    add1 = [cmd for cmd in s1["construct"] if cmd["cmd"] == "add"]
-    assert len(add0) == 1
-    assert len(add1) == 1
+    reg0 = [cmd for cmd in s0["construct"] if cmd["cmd"] == "register"]
+    reg1 = [cmd for cmd in s1["construct"] if cmd["cmd"] == "register"]
+    assert len(reg0) == 1
+    assert len(reg1) == 1
 
-    p0 = s0["states"][add0[0]["state_ref"]]["points"][0]
-    p1 = s1["states"][add1[0]["state_ref"]]["points"][0]
+    p0 = s0["states"][reg0[0]["state_ref"]]["points"][0]
+    p1 = s1["states"][reg1[0]["state_ref"]]["points"][0]
 
     assert abs(p0[0] - 0.5) < 1e-9
     assert abs(p1[0] - 1.0) < 1e-9

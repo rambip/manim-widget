@@ -233,7 +233,9 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
                 if mob_id not in self._renderer.registry:
                     self._renderer.register_mobject(mob)
                 # Stage pre-play adds; last add of same object wins.
-                self._renderer.stage_add(mob)
+                # Suppress staging for internal animation-setup scene.add() calls.
+                if not self._renderer._suppress_stage_adds:
+                    self._renderer.stage_add(mob)
         ThreeDScene.add(self, *mobjects)
 
     def remove(self, *mobjects: Mobject) -> None:  # type: ignore[override]
