@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import json
 import subprocess
-import tempfile
 from pathlib import Path
 
-import manim
 import numpy as np
 import pytest
+
+
 from manim import (
     BLUE,
     GREEN,
@@ -24,7 +24,6 @@ from manim import (
     Dot,
     Ellipse,
     Exclusion,
-    FadeIn,
     GrowFromCenter,
     Intersection,
     ImageMobject,
@@ -43,6 +42,18 @@ from manim import (
 )
 
 from manim_widget.widget import ManimWidget
+
+
+def _create_logo_group() -> VGroup:
+    """Create the standard logo group: circle, square, triangle."""
+    logo_green = "#87c2a5"
+    logo_black = "#343434"
+    logo_red = "#e07a5f"
+    circle = Circle(color=logo_green, fill_opacity=1).shift(LEFT)
+    square = Square(color=logo_black, fill_opacity=1).shift(UP)
+    triangle = Triangle(color=logo_red, fill_opacity=1).shift(RIGHT)
+    return VGroup(triangle, square, circle)
+
 
 CLI_PATH = Path(__file__).parent.parent / "js" / "src" / "test_cli.js"
 
@@ -162,14 +173,7 @@ class TestCLIIntegration:
         class VGroupReordered(ManimWidget):
             def construct(self):
                 self.camera.background_color = "#ece6e2"
-                logo_green = "#87c2a5"
-                logo_blue = "#525893"
-                logo_red = "#e07a5f"
-                logo_black = "#343434"
-                circle = Circle(color=logo_green, fill_opacity=1).shift(LEFT)
-                square = Square(color=logo_blue, fill_opacity=1).shift(UP)
-                triangle = Triangle(color=logo_red, fill_opacity=1).shift(RIGHT)
-                logo = VGroup(triangle, square, circle)
+                logo = _create_logo_group()
                 logo.move_to(ORIGIN + LEFT)
                 self.play(Create(logo))
 
@@ -226,14 +230,7 @@ class TestCLIIntegration:
         class VGroupScaleSection(ManimWidget):
             def construct(self):
                 self.camera.background_color = "#ece6e2"
-                logo_green = "#87c2a5"
-                logo_blue = "#525893"
-                logo_red = "#e07a5f"
-                logo_black = "#343434"
-                circle = Circle(color=logo_green, fill_opacity=1).shift(LEFT)
-                square = Square(color=logo_blue, fill_opacity=1).shift(UP)
-                triangle = Triangle(color=logo_red, fill_opacity=1).shift(RIGHT)
-                logo = VGroup(triangle, square, circle)
+                logo = _create_logo_group()
                 logo.move_to(ORIGIN + LEFT)
                 self.play(Create(logo))
                 self.next_section("scale")
