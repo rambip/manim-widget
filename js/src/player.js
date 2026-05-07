@@ -291,6 +291,9 @@ export class Player {
       typeof mob.getCenter === "function" &&
       typeof mob.shift === "function"
     ) {
+      // FIXME: Translation can appear scale-dependent for MathTexImage after
+      // basis scaling in manim-web. We currently apply center via shift delta;
+      // investigate transform-order / world-vs-local translation semantics.
       const currentCenter = mob.getCenter();
       mob.shift([
         center[0] - currentCenter[0],
