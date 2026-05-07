@@ -61,6 +61,9 @@ class PatchedMathTex(VMobject):
     def get_tex_string(self) -> str:
         return self.tex_string
 
+    def get_points_defining_boundary(self):
+        return self.points
+
     def __getitem__(self, key):
         raise NotImplementedError("Tex parts not supported")
 

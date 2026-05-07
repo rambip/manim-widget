@@ -388,6 +388,40 @@ def test_static_mathtex_transform_updates_points():
     assert initial_points != final_points
 
 
+def test_mathtex_boundary_points_and_scale_center():
+    """Verify get_points_defining_boundary returns corners and scale uses center."""
+    from manim_widget.tex_patch import PatchedMathTex
+
+    tex = PatchedMathTex("x^2", font_size=96)  # scale = 2.0
+
+    # Boundary points should be the 4 corners
+    boundary = tex.get_points_defining_boundary()
+    assert len(boundary) == 4
+
+    # Scale factor 96/48 = 2.0, so corners at ±2 in x and y
+    expected_corners = [
+        (-2.0, 2.0, 0.0),  # top_left
+        (2.0, 2.0, 0.0),  # top_right
+        (2.0, -2.0, 0.0),  # bottom_right
+        (-2.0, -2.0, 0.0),  # bottom_left
+    ]
+    for pt, exp in zip(boundary, expected_corners):
+        assert np.allclose(pt, exp)
+
+    # Center should be at origin
+    center = tex.get_center()
+    assert np.allclose(center, [0.0, 0.0, 0.0])
+
+    # After scaling about center, center should remain at origin
+    tex.scale(0.5)
+    assert np.allclose(tex.get_center(), [0.0, 0.0, 0.0])
+
+    # Points should be halved
+    new_boundary = tex.get_points_defining_boundary()
+    for pt, exp in zip(new_boundary, expected_corners):
+        assert np.allclose(pt, [e * 0.5 for e in exp])
+
+
 def test_patch_tex_replaces_manim_classes():
     from manim_widget import patch_tex
     import manim
