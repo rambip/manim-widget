@@ -1,6 +1,7 @@
 {
   "name": "manim-widget-js",
   "version": "0.1.0",
+  "workspaces": ["../manim-web"],
   "type": "module",
   "scripts": {
     "build": "bun build src/index.js --conditions source --minify --format=esm --outdir=../src/manim_widget/static --naming-pattern=[name].js",
