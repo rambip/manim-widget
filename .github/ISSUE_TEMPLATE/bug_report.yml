@@ -1,0 +1,57 @@
+name: Bug report
+description: Something isn't working correctly
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: <!-- Thanks for your interest in this project! 🎉 -->
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: What did you expect, and what did you get instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: The smallest scene that triggers the bug.
+      render: python
+      placeholder: |
+        from manim import *
+        from manim_widget import ManimWidget
+
+        class MyScene(Scene):
+            def construct(self):
+                ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: scene_data
+    attributes:
+      label: scene_data output
+      description: >
+        Paste the full output of `your_widget.scene_data` below.
+        The entire visual state is encoded in this JSON — do you notice something fishy?
+        A missing element, wrong coordinates, an animation that vanishes?
+      placeholder: |
+        ```json
+        Paste JSON here
+        ```
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Output of `uv run python -c "import manim_widget; print(manim_widget.__version__)"` and your OS/browser.
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?

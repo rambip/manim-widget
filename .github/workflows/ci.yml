@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  fast:
+    name: Lint, Python tests & JS build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install Python deps
+        run: uv sync
+
+      - name: Ruff lint
+        run: uvx ruff check .
+
+      - name: Ruff format
+        run: uvx ruff format --check .
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install JS deps
+        working-directory: js
+        run: bun install
+
+      - name: Build JS bundle
+        working-directory: js
+        run: bun run build
+
+      - name: Python unit tests
+        run: uv run pytest -q tests/test_widget.py
+
+  integration:
+    name: JS integration tests
+    runs-on: ubuntu-latest
+    # Don't block merges on this slow suite — it's informational on PRs
+    continue-on-error: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install Python deps
+        run: uv sync
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install JS deps
+        working-directory: js
+        run: bun install
+
+      - name: JS integration tests
+        timeout-minutes: 5
+        run: uv run pytest -q tests/test_js_integration.py
