@@ -23,7 +23,6 @@ from manim import (
     ImageMobject,
 )
 
-from manim_widget.snapshot import reset_id_counter
 from manim_widget.widget import ManimWidget
 
 
@@ -68,7 +67,6 @@ def strip_points(obj: dict) -> dict:
 
 
 def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
-    reset_id_counter()
 
     class DataScene(ManimWidget):
         def construct(self):
@@ -88,7 +86,12 @@ def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
             {
                 "name": "initial",
                 "snapshot": {},
-                "camera": {"phi": 0.0, "theta": -1.5707963267948966, "distance": 5.0, "fov": 77.31961650818019},
+                "camera": {
+                    "phi": 0.0,
+                    "theta": -1.5707963267948966,
+                    "distance": 5.0,
+                    "fov": 77.31961650818019,
+                },
                 "states": [
                     {"value": 0.0},
                     {
@@ -186,7 +189,6 @@ def test_wait_with_vmobject():
 
 
 def test_v2_method_animation_uses_move_to_target():
-    reset_id_counter()
 
     class ShiftScene(ManimWidget):
         def construct(self):
@@ -215,7 +217,6 @@ def test_v2_method_animation_uses_move_to_target():
 
 
 def test_v2_chained_method_animation_uses_move_to_target():
-    reset_id_counter()
 
     class ChainedScene(ManimWidget):
         def construct(self):
@@ -244,7 +245,6 @@ def test_v2_chained_method_animation_uses_move_to_target():
 
 
 def test_v2_multiple_sections_with_move_to_target():
-    reset_id_counter()
 
     class MultiSectionMoveToTarget(ManimWidget):
         def construct(self):
@@ -289,7 +289,6 @@ def test_v2_multiple_sections_with_move_to_target():
 
 
 def test_image_mobject_serializes_source_and_pixels():
-    reset_id_counter()
 
     pixels = np.array(
         [
@@ -327,7 +326,6 @@ def test_image_mobject_serializes_source_and_pixels():
 
 
 def test_static_mathtex_serialization():
-    reset_id_counter()
     from manim_widget.tex_patch import PatchedMathTex
 
     class TexScene(ManimWidget):
@@ -361,7 +359,6 @@ def test_static_mathtex_serialization():
 
 
 def test_static_mathtex_transform_updates_points():
-    reset_id_counter()
     from manim_widget.tex_patch import PatchedMathTex
 
     class TexTransformScene(ManimWidget):
@@ -411,7 +408,6 @@ def test_patch_tex_replaces_manim_classes():
 
 
 def test_patch_tex_mathtex_add_serializes_as_mathtexsource():
-    reset_id_counter()
     from manim_widget import patch_tex
     import manim
 
@@ -446,7 +442,6 @@ def test_patch_tex_mathtex_add_serializes_as_mathtexsource():
 
 
 def test_swap_animation_emits_group_animation():
-    reset_id_counter()
 
     class SwapScene(ManimWidget):
         def construct(self):
@@ -482,7 +477,6 @@ def test_swap_animation_emits_group_animation():
 
 
 def test_cyclic_replace_animation_emits_group_animation():
-    reset_id_counter()
 
     class CyclicReplaceScene(ManimWidget):
         def construct(self):
@@ -538,7 +532,6 @@ def test_camera_fov_calculation():
 
 
 def test_camera_theta_attr_assignment_is_serialized():
-    reset_id_counter()
 
     class ZYImageCNN(ManimWidget):
         def construct(self):
@@ -554,7 +547,6 @@ def test_camera_theta_attr_assignment_is_serialized():
 
 
 def test_camera_distance_and_fov_attr_assignment_is_serialized():
-    reset_id_counter()
 
     class ZYImageCNN(ManimWidget):
         def construct(self):
@@ -572,7 +564,6 @@ def test_camera_distance_and_fov_attr_assignment_is_serialized():
 
 
 def test_same_square_scaled_and_readded_serializes_only_scaled_state():
-    reset_id_counter()
 
     class ScaledSquareScene(ManimWidget):
         def construct(self):
@@ -596,7 +587,6 @@ def test_same_square_scaled_and_readded_serializes_only_scaled_state():
 
 
 def test_add_play_mutate_add_back_emits_two_adds_with_two_states():
-    reset_id_counter()
 
     class AddPlayMutateAddBack(ManimWidget):
         def construct(self):
@@ -620,7 +610,6 @@ def test_add_play_mutate_add_back_emits_two_adds_with_two_states():
 
 
 def test_add_new_section_add_back_emits_two_adds_with_two_states():
-    reset_id_counter()
 
     class AddSectionAddBack(ManimWidget):
         def construct(self):

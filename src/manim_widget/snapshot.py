@@ -2,9 +2,6 @@ from __future__ import annotations
 
 _CHARS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-_id_map: dict[int, str] = {}
-_counter = 0
-
 
 def base62_encode(n: int) -> str:
     if n == 0:
@@ -16,16 +13,16 @@ def base62_encode(n: int) -> str:
     return "".join(reversed(result))
 
 
-def short_id(mob: object) -> str:
-    key = id(mob)
-    if key not in _id_map:
-        global _counter
-        _id_map[key] = base62_encode(_counter)
-        _counter += 1
-    return _id_map[key]
+class IdCounter:
+    """Instance-based counter for generating stable short IDs for mobjects."""
 
+    def __init__(self) -> None:
+        self._id_map: dict[int, str] = {}
+        self._counter: int = 0
 
-def reset_id_counter() -> None:
-    global _counter, _id_map
-    _counter = 0
-    _id_map = {}
+    def short_id(self, mob: object) -> str:
+        key = id(mob)
+        if key not in self._id_map:
+            self._id_map[key] = base62_encode(self._counter)
+            self._counter += 1
+        return self._id_map[key]

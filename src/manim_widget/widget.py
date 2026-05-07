@@ -8,7 +8,6 @@ import traitlets
 from manim import Mobject, ThreeDScene
 
 from .renderer import CaptureRenderer, SectionRecord
-from .snapshot import short_id
 
 _ESM = Path(__file__).parent / "static" / "index.js"
 _JS_BUNDLE = _ESM.read_text()
@@ -221,7 +220,7 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
                 continue
             if mob_id in child_ids:
                 continue
-            mob_sid = short_id(mob)
+            mob_sid = self._renderer.short_id(mob)
             if mob_sid not in snapshot:
                 snapshot[mob_sid] = self._renderer.state_ref_for(mob)
         return snapshot
@@ -246,7 +245,7 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
                     current.commands.append(
                         {
                             "cmd": "remove",
-                            "id": short_id(mob),
+                            "id": self._renderer.short_id(mob),
                         }
                     )
         ThreeDScene.remove(self, *mobjects)
