@@ -11,7 +11,7 @@ jobs:
     name: Lint, Python tests & JS build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -53,7 +53,7 @@ jobs:
     # Don't block merges on this slow suite — it's informational on PRs
     continue-on-error: ${{ github.event_name == 'pull_request' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
 
