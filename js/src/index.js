@@ -1,19 +1,27 @@
-import { ThreeDScene } from "manim-web";
+import { ThreeDScene, Scene } from "manim-web";
 import { MobjectRegistry } from "./registry.js";
 import { createPlayer } from "./player.js";
 
 function buildUi(el) {
   el.innerHTML = `
-    <div style="position:relative;width:100%;height:100%;">
-      <div id="mw-container" style="width:100%;height:100%;"></div>
-      <div id="mw-controls" style="position:absolute;bottom:0;left:0;right:0;padding:10px;background:rgba(0,0,0,0.55);display:flex;gap:10px;align-items:center;">
-        <button id="mw-play">Play</button>
-        <button id="mw-pause">Pause</button>
-        <input type="range" id="mw-scrubber" min="0" max="0" value="0" style="flex:1;cursor:pointer;">
-        <span id="mw-section-info" style="color:white;min-width:100px;"></span>
+    <div id="mw-wrapper" style="display:inline-flex;flex-direction:column;max-width:100%;">
+      <div id="mw-video-area" style="position:relative;">
+        <div id="mw-container" style="width:600px;height:400px;max-width:100%;"></div>
       </div>
-      <div id="mw-warning" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(200,0,0,0.9);color:white;padding:14px;border-radius:8px;font-weight:bold;">
+      <div id="mw-warning" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(200,0,0,0.9);color:white;padding:14px;border-radius:8px;font-weight:bold;z-index:10;pointer-events:none;">
         Unsupported section
+      </div>
+      <div id="mw-controls" style="width:100%;box-sizing:border-box;display:flex;gap:0;align-items:stretch;margin-top:4px;background:rgba(200,200,200,1);">
+        <div id="mw-play-area" style="padding:4px;">
+          <button id="mw-play" style="font-size:2em;background:transparent;border:none;cursor:pointer;margin:0 8px;">↻</button>
+        </div>
+        <div id="mw-sections" style="flex:1;display:flex;flex-direction:column;padding:0;background:transparent;">
+          <div style="padding:2px 8px;font-size:1em;color:black;text-align:center;font-style:italic;font-weight:bold;">Section:</div>
+          <div id="mw-section-buttons" style="display:flex;gap:2px;padding:0 8px 0 8px;justify-content:center;align-items:stretch;"></div>
+        </div>
+        <div id="mw-3d-toggle" style="padding:4px 8px;display:flex;align-items:center;gap:4px;">
+          <label style="cursor:pointer;display:flex;align-items:center;gap:4px;font-size:0.9em;color:rgba(0,0,0,0.7);"><input type="checkbox" id="mw-3d-checkbox">3D</label>
+        </div>
       </div>
     </div>
   `;
@@ -21,10 +29,9 @@ function buildUi(el) {
   return {
     container: el.querySelector("#mw-container"),
     playBtn: el.querySelector("#mw-play"),
-    pauseBtn: el.querySelector("#mw-pause"),
-    scrubber: el.querySelector("#mw-scrubber"),
-    sectionInfo: el.querySelector("#mw-section-info"),
+    sectionsDiv: el.querySelector("#mw-section-buttons"),
     warning: el.querySelector("#mw-warning"),
+    d3Checkbox: el.querySelector("#mw-3d-checkbox"),
   };
 }
 
@@ -57,8 +64,41 @@ async function render({ model, el }) {
 
   let player = null;
   let sceneData = null;
+  let scene = null;
+  let registry = null;
 
-  async function renderSection(index) {
+  function updateSectionStyles(currentlyPlayingIndex = -1) {
+    const labels = ui.sectionsDiv.querySelectorAll('.mw-section-label');
+    labels.forEach((label, i) => {
+      const radio = label.querySelector('input[type="radio"]');
+      const span = label.querySelector('span');
+
+      const isSelected = radio.checked;
+      const isPlaying = i === currentlyPlayingIndex;
+
+      if (isSelected) {
+        // Selected: background color
+        label.style.background = 'rgba(120,120,120,1)';
+        label.style.border = '1px solid transparent';
+        span.style.color = 'rgba(255,255,255,1)';
+        span.style.fontWeight = 'bold';
+      } else if (isPlaying) {
+        // Currently playing: font change
+        label.style.background = 'transparent';
+        label.style.border = '1px solid rgba(0,0,0,0.3)';
+        span.style.color = 'rgba(0,0,0,1)';
+        span.style.fontWeight = 'bold';
+      } else {
+        // Default: border only
+        label.style.background = 'transparent';
+        label.style.border = '1px solid rgba(0,0,0,0.3)';
+        span.style.color = 'rgba(0,0,0,0.5)';
+        span.style.fontWeight = 'normal';
+      }
+    });
+  }
+
+  async function renderSection(index, updatePlaying = true) {
     if (!player || !sceneData) {
       return;
     }
@@ -68,8 +108,9 @@ async function render({ model, el }) {
       return;
     }
 
-    ui.sectionInfo.textContent = section.name || "";
-    ui.scrubber.value = String(index);
+    if (updatePlaying) {
+      updateSectionStyles(index);
+    }
 
     if (section.unsupported) {
       ui.warning.style.display = "block";
@@ -92,17 +133,31 @@ async function render({ model, el }) {
     sceneData = data;
     ui.container.innerHTML = "";
 
-    const scene = new ThreeDScene(ui.container, { width: 600, height: 400, enableOrbitControls: true, orbitControlsUp: 'z' });
-    const registry = new MobjectRegistry();
+    const is3D = model.get("is_3d");
+    scene = is3D
+      ? new ThreeDScene(ui.container, { width: 600, height: 400, enableOrbitControls: true, orbitControlsUp: 'z' })
+      : new Scene(ui.container, { width: 600, height: 400 });
+    registry = new MobjectRegistry();
     player = createPlayer(scene, registry);
     player.setfps(data.fps || 10);
     player.setSections(data.sections);
 
-    ui.scrubber.max = String(Math.max(0, data.sections.length - 1));
-    ui.scrubber.value = "0";
+    ui.sectionsDiv.innerHTML = data.sections
+      .map((s, i) => {
+        const name = s.name || `${i + 1}`;
+        return `<label class="mw-section-label" style="cursor:pointer;padding:2px 8px;border-radius:4px;border:1px solid rgba(0,0,0,0.3);background:transparent;min-width:10em;text-align:center;display:flex;align-items:center;justify-content:center;"><input type="radio" name="mw-section" value="${i}" style="display:none;"><span style="color:rgba(0,0,0,0.5);">${name}</span></label>`;
+      })
+      .join("");
 
-    if (data.sections.length > 0) {
-      await renderSection(0);
+    updateSectionStyles();
+
+    // Auto-play all sections on load
+    await player.play();
+    for (let i = 0; i < sceneData.sections.length; i += 1) {
+      if (!player.isPlaying) {
+        break;
+      }
+      await renderSection(i);
     }
   }
 
@@ -111,32 +166,43 @@ async function render({ model, el }) {
       return;
     }
 
-    await player.play();
-    let start = Number.parseInt(ui.scrubber.value || "0", 10);
-    if (!Number.isFinite(start) || start < 0) {
-      start = 0;
-    }
-
-    for (let i = start; i < sceneData.sections.length; i += 1) {
-      if (!player.isPlaying) {
-        break;
+    const checkedRadio = ui.sectionsDiv.querySelector('input[name="mw-section"]:checked');
+    if (checkedRadio) {
+      // Replay just the selected section
+      const currentIndex = Number.parseInt(checkedRadio.value, 10);
+      await renderSection(currentIndex);
+    } else {
+      // No section selected - replay all sections from start
+      await player.stop();
+      await player.play();
+      for (let i = 0; i < sceneData.sections.length; i += 1) {
+        if (!player.isPlaying) {
+          break;
+        }
+        await renderSection(i);
       }
-      await renderSection(i);
+      // Reset to default style after playing all
+      updateSectionStyles(-1);
     }
   });
 
-  ui.pauseBtn.addEventListener("click", async () => {
-    if (player) {
-      await player.pause();
-    }
-  });
-
-  ui.scrubber.addEventListener("input", async () => {
-    if (!sceneData) {
+  ui.sectionsDiv.addEventListener("change", async (e) => {
+    if (!sceneData || e.target.name !== "mw-section") {
       return;
     }
-    const index = Number.parseInt(ui.scrubber.value, 10);
-    await renderSection(index);
+    updateSectionStyles();
+    const index = Number.parseInt(e.target.value, 10);
+    await renderSection(index, false);
+  });
+
+  ui.sectionsDiv.addEventListener("click", (e) => {
+    if (e.target.closest('.mw-section-label')) {
+      return;
+    }
+    // Click on background - unset all radios
+    const radios = ui.sectionsDiv.querySelectorAll('input[type="radio"]');
+    radios.forEach(r => { r.checked = false; });
+    updateSectionStyles(-1);
   });
 
   model.on("change:scene_data", async () => {
@@ -146,6 +212,21 @@ async function render({ model, el }) {
     }
     await loadScene(data);
   });
+
+  model.on("change:is_3d", async () => {
+    ui.d3Checkbox.checked = model.get("is_3d");
+    if (sceneData) {
+      await loadScene(sceneData);
+    }
+  });
+
+  ui.d3Checkbox.addEventListener("change", async () => {
+    model.set("is_3d", ui.d3Checkbox.checked);
+    model.save_changes();
+  });
+
+  // Initialize checkbox from model
+  ui.d3Checkbox.checked = model.get("is_3d") || false;
 
   const initialData = model.get("scene_data");
   if (initialData) {
