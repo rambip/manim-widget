@@ -175,7 +175,7 @@ async function readInput() {
       process.stdin.on("error", reject);
     });
   }
-  
+
   const specPath = path.resolve(filePathArg);
   if (!fs.existsSync(specPath)) {
     console.error(`File not found: ${specPath}`);
@@ -309,7 +309,7 @@ for (let i = 0; i < spec.sections.length; i++) {
     }
 
     operations.push({ type: "section_end", index: i, name: section.name });
-    
+
     const ids = Array.from(registry._registry.keys());
     sectionIds.push({
       name: section.name,

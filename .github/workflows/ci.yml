@@ -60,7 +60,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v4
 
-        
+
       - name: Install system dependencies (Linux)
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
