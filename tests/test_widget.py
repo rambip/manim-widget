@@ -637,3 +637,80 @@ def test_camera_distance_and_fov_attr_assignment_is_serialized():
     camera = data["sections"][0]["camera"]
     assert abs(camera["distance"] - 7.5) < 1e-12
     assert abs(camera["fov"] - 52.0) < 1e-12
+
+
+def test_same_square_scaled_and_readded_serializes_only_scaled_state():
+    reset_id_counter()
+
+    class ScaledSquareScene(ManimWidget):
+        def construct(self):
+            s = Square(side_length=1.0)
+            self.add(s)
+            s.scale(2.0)
+            self.add(s)
+
+    scene = ScaledSquareScene(fps=10)
+    data = scene.scene_data
+    section = data["sections"][0]
+
+    add_cmds = [cmd for cmd in section["construct"] if cmd["cmd"] == "add"]
+    assert len(add_cmds) == 1
+
+    state_ref = add_cmds[0]["state_ref"]
+    points = section["states"][state_ref]["points"]
+    assert abs(points[0][0] - 1.0) < 1e-9
+    assert abs(points[0][1] - 1.0) < 1e-9
+    assert abs(points[0][2] - 0.0) < 1e-9
+
+
+def test_add_play_mutate_add_back_emits_two_adds_with_two_states():
+    reset_id_counter()
+
+    class AddPlayMutateAddBack(ManimWidget):
+        def construct(self):
+            s = Square(side_length=1.0)
+            self.add(s)
+            self.play()  # flush staged adds
+            s.scale(2.0)
+            self.add(s)
+
+    scene = AddPlayMutateAddBack(fps=10)
+    section = scene.scene_data["sections"][0]
+
+    add_cmds = [cmd for cmd in section["construct"] if cmd["cmd"] == "add"]
+    assert len(add_cmds) == 2
+
+    p0 = section["states"][add_cmds[0]["state_ref"]]["points"][0]
+    p1 = section["states"][add_cmds[1]["state_ref"]]["points"][0]
+
+    assert abs(p0[0] - 0.5) < 1e-9
+    assert abs(p1[0] - 1.0) < 1e-9
+
+
+def test_add_new_section_add_back_emits_two_adds_with_two_states():
+    reset_id_counter()
+
+    class AddSectionAddBack(ManimWidget):
+        def construct(self):
+            s = Square(side_length=1.0)
+            self.add(s)
+            self.next_section("second")
+            s.scale(2.0)
+            self.add(s)
+
+    scene = AddSectionAddBack(fps=10)
+    data = scene.scene_data
+
+    s0 = data["sections"][0]
+    s1 = data["sections"][1]
+
+    add0 = [cmd for cmd in s0["construct"] if cmd["cmd"] == "add"]
+    add1 = [cmd for cmd in s1["construct"] if cmd["cmd"] == "add"]
+    assert len(add0) == 1
+    assert len(add1) == 1
+
+    p0 = s0["states"][add0[0]["state_ref"]]["points"][0]
+    p1 = s1["states"][add1[0]["state_ref"]]["points"][0]
+
+    assert abs(p0[0] - 0.5) < 1e-9
+    assert abs(p1[0] - 1.0) < 1e-9

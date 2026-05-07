@@ -65,6 +65,9 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
         self.construct()
         
         # Capture final camera state if changed (for last section)
+        # Flush any remaining staged adds for final section with no play().
+        self._renderer.flush_staged_adds()
+
         final_cam = self._get_camera_state()
         last_section = self._renderer.sections[-1].name if self._renderer.sections else None
         if last_section and self._camera_changed(final_cam):
@@ -182,6 +185,8 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
         skip_animations: bool = False,
     ) -> None:
         del section_type, skip_animations
+        # Finalize staged adds into the outgoing section before section switch.
+        self._renderer.flush_staged_adds()
         self._renderer.open_section(name)
         self._snapshots[name] = self._snapshot_from_registry()
         
@@ -226,13 +231,8 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
                 mob_id = id(mob)
                 if mob_id not in self._renderer.registry:
                     self._renderer.register_mobject(mob)
-                    current.commands.append(
-                        {
-                            "cmd": "add",
-                            "id": short_id(mob),
-                            "state_ref": self._renderer.state_ref_for(mob),
-                        }
-                    )
+                # Stage pre-play adds; last add of same object wins.
+                self._renderer.stage_add(mob)
         ThreeDScene.add(self, *mobjects)
 
     def remove(self, *mobjects: Mobject) -> None:  # type: ignore[override]

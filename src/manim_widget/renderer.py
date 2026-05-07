@@ -70,6 +70,9 @@ class CaptureRenderer:
         self._active_ids: set[int] = set()
         self.sections: list[SectionRecord] = []
         self._current: SectionRecord | None = None
+        # Staging bucket for pre-play add() calls in current section.
+        # Keyed by short_id; repeated add() of same object overwrites prior state.
+        self._staged_adds: dict[str, Mobject] = {}
 
     @property
     def camera(self):
@@ -96,6 +99,7 @@ class CaptureRenderer:
     def open_section(self, name: str) -> None:
         self._current = SectionRecord(name=name, commands=[])
         self.sections.append(self._current)
+        self._staged_adds = {}
 
     def state_ref_for(self, mob: Mobject) -> int:
         # For groups (VGroup, Group, etc.), ensure children are serialized first
@@ -286,7 +290,31 @@ class CaptureRenderer:
     def is_active(self, mob: Mobject) -> bool:
         return id(mob) in self._active_ids
 
+    def flush_staged_adds(self) -> None:
+        """Emit staged pre-play add commands into the current section.
+
+        Staging is section-local and deduplicated by mobject id (last add wins).
+        """
+        current = self._current
+        if current is None or not self._staged_adds:
+            return
+        for mob in self._staged_adds.values():
+            current.commands.append(
+                {
+                    "cmd": "add",
+                    "id": short_id(mob),
+                    "state_ref": self.state_ref_for(mob),
+                }
+            )
+        self._staged_adds = {}
+
+    def stage_add(self, mob: Mobject) -> None:
+        """Stage an add command until play()/section-finalization flushes it."""
+        self._staged_adds[short_id(mob)] = mob
+
     def play(self, scene: Scene, *args: Any, **kwargs: Any) -> None:
+        self.flush_staged_adds()
+
         animations = scene.compile_animations(*args, **kwargs)
         if not animations:
             return
