@@ -1,8 +1,8 @@
 import numpy as np
-from manim import DOWN, LEFT, Mobject, RIGHT, UP
+from manim import DOWN, LEFT, Mobject, RIGHT, UP, VMobject
 
 
-class PatchedMathTex(Mobject):
+class PatchedMathTex(VMobject):
     def __init__(
         self,
         *tex_strings: str,
@@ -19,10 +19,28 @@ class PatchedMathTex(Mobject):
 
         # Mobject does not accept many MathTex styling kwargs directly.
         color = kwargs.pop("color", None) or kwargs.pop("fill_color", None)
-        _ = kwargs.pop("fill_opacity", None)
-        _ = kwargs.pop("stroke_opacity", None)
+        fill_opacity = kwargs.pop("fill_opacity", 1.0)
+        stroke_opacity = kwargs.pop("stroke_opacity", 1.0)
+        stroke_width = kwargs.pop("stroke_width", 0.0)
 
+        # VMobject.init_colors() is called during Mobject.__init__ via MRO and
+        # expects VMobject style attributes to already exist.
+        self.fill_opacity = float(fill_opacity)
+        self.stroke_opacity = float(stroke_opacity)
+        self.stroke_width = float(stroke_width)
+        self.background_stroke_color = "#000000"
+        self.background_stroke_opacity = 1.0
+        self.background_stroke_width = 0.0
+        self.sheen_factor = 0.0
+        self.sheen_direction = np.array([-1.0, 1.0, 0.0])
+        self.n_points_per_cubic_curve = 4
+        self._bezier_t_values = np.linspace(0, 1, self.n_points_per_cubic_curve)
+
+        # Must be a VMobject subtype so it can be added to VGroup, but avoid
+        # VMobject.__init__() heavy setup/normalization here.
         Mobject.__init__(self)
+
+        # Set color after base Mobject init so submobjects container exists.
         if color is not None and hasattr(self, "set_color"):
             self.set_color(color)
 

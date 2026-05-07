@@ -117,6 +117,7 @@ Families: `SimpleAnimation`, `TransformAnimation` (`Transform`, `MoveToTarget`),
 - Headless JS tests (`happy-dom`) can hang if image loading promises never resolve. Keep image-finalization logic non-blocking (timeouts/fallbacks) in `player.js`.
 - Bun/minified bundles can mangle `constructor.name` (e.g., `VGroup`→`e`). CLI integration tests should run Bun with `--conditions source` to keep deterministic end-state kind detection in `js/src/test_cli.js`.
 - Renderer command emission should prefer behavior/animation semantics over concrete class checks. Class-targeting can miss valid intro-animation mobjects (e.g., non-VMobject types).
+- Player ordering for textured/async mobjects matters: apply serialized geometry/state mutations before `scene.add(...)`. Mutating after add may only change logical state (`bbox`, `scaleVector`) without immediate visible sync in `manim-web` async render paths (e.g., `MathTexImage`).
 
 ---
 

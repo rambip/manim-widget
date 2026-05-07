@@ -428,8 +428,8 @@ export class Player {
       const state = this._stateFromRef(section, stateRef);
       const mob = this._instantiateFromRef(section, stateRef);
       this._registry.set(id, mob);
-      this._scene.add(mob);
       await this._finalizeMobject(mob, state);
+      this._scene.add(mob);
     }
   }
 
@@ -475,8 +475,8 @@ export class Player {
         if (cmd.hidden === true) {
           this._stagedMobjects.set(cmd.id, { mob, state });
         } else {
-          this._scene.add(mob);
           await this._finalizeMobject(mob, state);
+          this._scene.add(mob);
         }
         return;
       }
