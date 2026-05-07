@@ -61,21 +61,38 @@ async function render({ model, el }) {
   let player = null;
   let sceneData = null;
 
-  function updateSectionStyles() {
+  function updateSectionStyles(currentlyPlayingIndex = -1) {
     const labels = ui.sectionsDiv.querySelectorAll('.mw-section-label');
-    labels.forEach((label) => {
+    labels.forEach((label, i) => {
       const radio = label.querySelector('input[type="radio"]');
-      if (radio.checked) {
+      const span = label.querySelector('span');
+
+      const isSelected = radio.checked;
+      const isPlaying = i === currentlyPlayingIndex;
+
+      if (isSelected) {
+        // Selected: background color
         label.style.background = 'rgba(120,120,120,1)';
         label.style.border = '1px solid transparent';
-      } else {
+        span.style.color = 'rgba(255,255,255,1)';
+        span.style.fontWeight = 'bold';
+      } else if (isPlaying) {
+        // Currently playing: font change
         label.style.background = 'transparent';
         label.style.border = '1px solid rgba(0,0,0,0.3)';
+        span.style.color = 'rgba(0,0,0,1)';
+        span.style.fontWeight = 'bold';
+      } else {
+        // Default: border only
+        label.style.background = 'transparent';
+        label.style.border = '1px solid rgba(0,0,0,0.3)';
+        span.style.color = 'rgba(0,0,0,0.5)';
+        span.style.fontWeight = 'normal';
       }
     });
   }
 
-  async function renderSection(index) {
+  async function renderSection(index, updatePlaying = true) {
     if (!player || !sceneData) {
       return;
     }
@@ -85,9 +102,9 @@ async function render({ model, el }) {
       return;
     }
 
-    const radios = ui.sectionsDiv.querySelectorAll('input[type="radio"]');
-    radios.forEach((r, i) => { r.checked = (i === index); });
-    updateSectionStyles();
+    if (updatePlaying) {
+      updateSectionStyles(index);
+    }
 
     if (section.unsupported) {
       ui.warning.style.display = "block";
@@ -119,14 +136,19 @@ async function render({ model, el }) {
     ui.sectionsDiv.innerHTML = data.sections
       .map((s, i) => {
         const name = s.name || `${i + 1}`;
-        return `<label class="mw-section-label" style="cursor:pointer;padding:2px 8px;border-radius:4px;border:1px solid rgba(0,0,0,0.3);background:transparent;transition:background 0.2s;min-width:10em;text-align:center;display:flex;align-items:center;justify-content:center;"><input type="radio" name="mw-section" value="${i}" ${i === 0 ? 'checked' : ''} style="display:none;"><span>${name}</span></label>`;
+        return `<label class="mw-section-label" style="cursor:pointer;padding:2px 8px;border-radius:4px;border:1px solid rgba(0,0,0,0.3);background:transparent;min-width:10em;text-align:center;display:flex;align-items:center;justify-content:center;"><input type="radio" name="mw-section" value="${i}" style="display:none;"><span style="color:rgba(0,0,0,0.5);">${name}</span></label>`;
       })
       .join("");
 
     updateSectionStyles();
 
-    if (data.sections.length > 0) {
-      await renderSection(0);
+    // Auto-play all sections on load
+    await player.play();
+    for (let i = 0; i < sceneData.sections.length; i += 1) {
+      if (!player.isPlaying) {
+        break;
+      }
+      await renderSection(i);
     }
   }
 
@@ -135,15 +157,23 @@ async function render({ model, el }) {
       return;
     }
 
-    await player.stop();
-    await renderSection(0);
-    await player.play();
-
-    for (let i = 0; i < sceneData.sections.length; i += 1) {
-      if (!player.isPlaying) {
-        break;
+    const checkedRadio = ui.sectionsDiv.querySelector('input[name="mw-section"]:checked');
+    if (checkedRadio) {
+      // Replay just the selected section
+      const currentIndex = Number.parseInt(checkedRadio.value, 10);
+      await renderSection(currentIndex);
+    } else {
+      // No section selected - replay all sections from start
+      await player.stop();
+      await player.play();
+      for (let i = 0; i < sceneData.sections.length; i += 1) {
+        if (!player.isPlaying) {
+          break;
+        }
+        await renderSection(i);
       }
-      await renderSection(i);
+      // Reset to default style after playing all
+      updateSectionStyles(-1);
     }
   });
 
@@ -151,8 +181,19 @@ async function render({ model, el }) {
     if (!sceneData || e.target.name !== "mw-section") {
       return;
     }
+    updateSectionStyles();
     const index = Number.parseInt(e.target.value, 10);
-    await renderSection(index);
+    await renderSection(index, false);
+  });
+
+  ui.sectionsDiv.addEventListener("click", (e) => {
+    if (e.target.closest('.mw-section-label')) {
+      return;
+    }
+    // Click on background - unset all radios
+    const radios = ui.sectionsDiv.querySelectorAll('input[type="radio"]');
+    radios.forEach(r => { r.checked = false; });
+    updateSectionStyles(-1);
   });
 
   model.on("change:scene_data", async () => {

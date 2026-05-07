@@ -95,6 +95,11 @@ export class Player {
     this._isPlaying = false;
   }
 
+  async stop() {
+    this._isPlaying = false;
+    this._currentSectionIndex = 0;
+  }
+
   async seekToSection(index) {
     this._currentSectionIndex = index;
     if (index >= 0 && index < this._sections.length) {
