@@ -410,6 +410,63 @@ def test_create_without_explicit_add_does_not_emit_add_animation():
     assert any(a["kind"] == "Create" and a["id"] == "0" for a in anim_cmd["animations"])
 
 
+def test_mathtex_add_only_emits_add_animation():
+    from manim_widget import patch_tex
+    import manim
+
+    original_math_tex = manim.MathTex
+    original_tex = manim.Tex
+
+    patch_tex()
+    try:
+        from manim import MathTex, WHITE
+
+        class MathTexAddOnlyScene(ManimWidget):
+            def construct(self):
+                tex = MathTex(r"{0}", fill_color=WHITE)
+                self.add(tex)
+
+        scene = MathTexAddOnlyScene(fps=10)
+        section = scene.scene_data["sections"][0]
+        anim_cmd = next(cmd for cmd in section["construct"] if cmd["cmd"] == "animate")
+
+        assert any(
+            a["kind"] == "Add" and a["id"] == "0" for a in anim_cmd["animations"]
+        )
+    finally:
+        manim.MathTex = original_math_tex
+        manim.Tex = original_tex
+
+
+def test_mathtex_add_only_then_empty_section_emits_add_in_first_section():
+    from manim_widget import patch_tex
+    import manim
+
+    original_math_tex = manim.MathTex
+    original_tex = manim.Tex
+
+    patch_tex()
+    try:
+        from manim import MathTex, WHITE
+
+        class MathTexAddThenEmptySectionScene(ManimWidget):
+            def construct(self):
+                tex = MathTex(r"{0}", fill_color=WHITE)
+                self.add(tex)
+                self.next_section("empty")
+
+        scene = MathTexAddThenEmptySectionScene(fps=10)
+        first = scene.scene_data["sections"][0]
+        anim_cmd = next(cmd for cmd in first["construct"] if cmd["cmd"] == "animate")
+
+        assert any(
+            a["kind"] == "Add" and a["id"] == "0" for a in anim_cmd["animations"]
+        )
+    finally:
+        manim.MathTex = original_math_tex
+        manim.Tex = original_tex
+
+
 def test_image_mobject_serializes_source_and_pixels():
     pixels = np.array(
         [

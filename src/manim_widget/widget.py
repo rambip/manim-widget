@@ -66,6 +66,8 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
         # Capture final camera state if changed (for last section)
         # Flush any remaining staged adds for final section with no play().
         self._renderer.flush_staged_adds()
+        # If section only had add() calls and no play(), still emit semantic Add.
+        self._renderer.emit_final_add_animations(self)
 
         final_cam = self._get_camera_state()
         last_section = (
@@ -189,6 +191,9 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
         del section_type, skip_animations
         # Finalize staged adds into the outgoing section before section switch.
         self._renderer.flush_staged_adds()
+        # If outgoing section had only add() calls, emit terminal Add animate batch.
+        self._renderer.emit_final_add_animations(self)
+
         self._renderer.open_section(name)
         self._snapshots[name] = self._snapshot_from_registry()
 

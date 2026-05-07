@@ -309,6 +309,48 @@ class CaptureRenderer:
             )
         self._staged_adds = {}
 
+    def emit_final_add_animations(self, scene: Scene) -> None:
+        """Emit a terminal animate command with Add descriptors if needed.
+
+        This covers sections that only call ``self.add(...)`` and never call
+        ``play(...)``. In that case we still need an animate batch so the JS
+        player can apply the semantic Add operation.
+        """
+        current = self._current
+        if current is None:
+            return
+
+        def _is_supported(mob: Mobject) -> bool:
+            if isinstance(mob, VMobject | ValueTracker | AbstractImageMobject):
+                return True
+            return bool(hasattr(mob, "submobjects") and mob.submobjects)
+
+        # Only emit a terminal Add batch for sections with no playback commands.
+        # If section already has animate/updater entries, Add injection should
+        # happen during play-path handling instead.
+        if any(cmd.get("cmd") in {"animate", "updater"} for cmd in current.commands):
+            return
+
+        add_animations: list[dict[str, str]] = []
+        for mob in scene.mobjects:
+            if not _is_supported(mob):
+                continue
+            if not self.is_active(mob):
+                continue
+            if self._introduced_by_animation.get(id(mob), False):
+                continue
+            add_animations.append({"kind": "Add", "id": self.short_id(mob)})
+            self._introduced_by_animation[id(mob)] = True
+
+        if add_animations:
+            current.commands.append(
+                {
+                    "cmd": "animate",
+                    "duration": 0,
+                    "animations": add_animations,
+                }
+            )
+
     def stage_add(self, mob: Mobject) -> None:
         """Stage an add command until play()/section-finalization flushes it."""
         self._staged_adds[self.short_id(mob)] = mob
