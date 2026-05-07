@@ -1,34 +1,25 @@
-# manim-widget
+# Manim Widget
 
-Interactive Manim widget for Jupyter/marimo notebooks.
+<img width="690" height="548" alt="image" src="https://github.com/user-attachments/assets/7295bf5c-671d-49a8-9097-e7832ba92a18" />
+
+
+Interactive Manim for Jupyter/marimo notebooks. The power of [Manim](https://www.manim.community/), without the hassle.
 
 ## Installation
 
 ```bash
-uv pip install -e .
+# in your project
+uv add manim-widget
 ```
 
-## Browser Debug Flow (unbundled manim-web)
+And you're good to go ! You do not even need to install LaTeX.
 
-Use this when you want readable browser stack traces from `manim-web` TypeScript
-sources while replaying one `ManimWidget` scene payload.
+> If you get errors during installation, go read the [manim install guide](https://docs.manim.community/en/stable/installation/uv.html)
 
-1. Start `manim-web` in Vite dev mode:
+## Contributing
 
-```bash
-cd manim-web
-npm run dev -- --host 127.0.0.1 --port 5173 --cors
-```
+See [CONTRIBUTING.md](./CONTRIBUTING.md)
 
-2. In another terminal, start the Python debug server with your scene:
+## AI
 
-```bash
-uv run python scripts/debug_scene_server.py your_module:YourSceneClass
-```
-
-3. Open `http://127.0.0.1:8765/`.
-
-The page fetches `/scene.json` live on reload, imports `manim-web` from the Vite
-server, and reuses `js/src/player.js` + `js/src/registry.js` directly. Runtime
-errors and unhandled rejections are printed with stack traces and
-`__MW_LAST_ANIM_DEBUG` context.
+This project used AI extensively. I still spent hours on papers for the design decisions, and reviewed every line (except for JS 😬)
