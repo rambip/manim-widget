@@ -22,4 +22,4 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md)
 
 ## AI
 
-This project used AI extensively. I still spent hours on papers for the design decisions, and reviewed evey line (except for JS 😬)
+This project used AI extensively. I still spent hours on papers for the design decisions, and reviewed every line (except for JS 😬)
