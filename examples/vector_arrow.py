@@ -11,6 +11,7 @@ with app.setup:
         ORIGIN,
     )
     from manim_widget import patch_tex
+
     patch_tex()
 
 

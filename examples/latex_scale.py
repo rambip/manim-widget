@@ -5,6 +5,7 @@ app = marimo.App(width="columns")
 
 with app.setup:
     from manim_widget import ManimWidget, patch_tex
+
     patch_tex()
     from manim import MathTex
 
@@ -13,8 +14,8 @@ with app.setup:
 class LatexScale(ManimWidget):
     def construct(self):
         # Grid to see coordinates
-        #grid = NumberPlane()
-        #self.add(grid)
+        # grid = NumberPlane()
+        # self.add(grid)
 
         # Start with a zero glyph
         zero = MathTex("0", stroke_opacity=1, fill_opacity=1)
@@ -23,8 +24,8 @@ class LatexScale(ManimWidget):
         self.add(zero.scale(2))
 
         # Transform to 3x bigger
-        #big_zero = MathTex("0", stroke_opacity=1, fill_opacity=1, font_size=144)
-        #self.play(Create(zero.scale(2)))
+        # big_zero = MathTex("0", stroke_opacity=1, fill_opacity=1, font_size=144)
+        # self.play(Create(zero.scale(2)))
 
 
 @app.cell

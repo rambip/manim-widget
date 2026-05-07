@@ -15,6 +15,7 @@ with app.setup:
         always_redraw,
     )
     from manim_widget import patch_tex
+
     patch_tex()
 
 
@@ -65,7 +66,9 @@ def _(ManimWidget):
             polygon = always_redraw(get_rectangle)
 
             dot = Dot()
-            dot.add_updater(lambda x: x.move_to(ax.c2p(t.get_value(), k / t.get_value())))
+            dot.add_updater(
+                lambda x: x.move_to(ax.c2p(t.get_value(), k / t.get_value()))
+            )
             dot.set_z_index(10)
 
             self.add(ax, graph, dot)

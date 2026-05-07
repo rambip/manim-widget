@@ -5,13 +5,13 @@ app = marimo.App(width="columns")
 
 with app.setup:
     from manim_widget import ManimWidget, patch_tex
+
     patch_tex()
     from manim import (
         Create,
         MathTex,
         RIGHT,
     )
-
 
 
 @app.class_definition

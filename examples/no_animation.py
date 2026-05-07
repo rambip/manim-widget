@@ -7,6 +7,7 @@ app = marimo.App(width="columns")
 with app.setup:
     from manim import Circle, Square, Triangle, VGroup, LEFT, UP, RIGHT, ORIGIN
     from manim_widget import patch_tex
+
     patch_tex()
 
 

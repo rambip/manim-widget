@@ -56,20 +56,22 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
 
         self._renderer.open_section("initial")
         self._snapshots["initial"] = self._snapshot_from_registry()
-        
+
         # Capture initial camera state
         cam_state = self._get_camera_state()
         self._cameras["initial"] = cam_state
         self._last_camera_state = cam_state
-        
+
         self.construct()
-        
+
         # Capture final camera state if changed (for last section)
         # Flush any remaining staged adds for final section with no play().
         self._renderer.flush_staged_adds()
 
         final_cam = self._get_camera_state()
-        last_section = self._renderer.sections[-1].name if self._renderer.sections else None
+        last_section = (
+            self._renderer.sections[-1].name if self._renderer.sections else None
+        )
         if last_section and self._camera_changed(final_cam):
             self._cameras[last_section] = final_cam
 
@@ -139,6 +141,7 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
     def _get_camera_state(self) -> dict[str, float]:
         """Capture current 3D camera state including computed FOV."""
         import math
+
         cam = self.camera
         distance_default = float(getattr(cam, "default_distance", 5))
         distance = self._resolve_camera_scalar(
@@ -189,7 +192,7 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
         self._renderer.flush_staged_adds()
         self._renderer.open_section(name)
         self._snapshots[name] = self._snapshot_from_registry()
-        
+
         # Capture camera only if changed
         cam_state = self._get_camera_state()
         if self._camera_changed(cam_state):

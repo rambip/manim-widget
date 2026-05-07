@@ -21,6 +21,7 @@ with app.setup:
         Union,
     )
     from manim_widget import ManimWidget, patch_tex
+
     patch_tex()
 
 
@@ -48,13 +49,17 @@ class BooleanOperations(ManimWidget):
 
         e = Exclusion(ellipse1, ellipse2, color=mn.YELLOW, fill_opacity=0.5)
         exclusion_text = Text("Exclusion", font_size=23)
-        self.play(e.animate.scale(0.3).next_to(u, DOWN, buff=exclusion_text.height * 3.5))
+        self.play(
+            e.animate.scale(0.3).next_to(u, DOWN, buff=exclusion_text.height * 3.5)
+        )
         exclusion_text.next_to(e, UP)
         self.play(FadeIn(exclusion_text))
 
         d = Difference(ellipse1, ellipse2, color=mn.PINK, fill_opacity=0.5)
         difference_text = Text("Difference", font_size=23)
-        self.play(d.animate.scale(0.3).next_to(u, LEFT, buff=difference_text.height * 3.5))
+        self.play(
+            d.animate.scale(0.3).next_to(u, LEFT, buff=difference_text.height * 3.5)
+        )
         difference_text.next_to(d, UP)
         self.play(FadeIn(difference_text))
 

@@ -29,7 +29,7 @@ class ManimCELogo(ManimWidget):
         logo_blue = "#525893"
         logo_red = "#e07a5f"
         # FIXME: black logo
-        #logo_black = "#343434"
+        # logo_black = "#343434"
         ds_m = MathTex(r"\mathbb{M}", fill_color=WHITE).scale(7)
         ds_m.shift(2.25 * LEFT + 1.5 * UP)
         circle = Circle(color=logo_green, fill_opacity=1).shift(LEFT)

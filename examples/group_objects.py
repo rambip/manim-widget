@@ -12,6 +12,7 @@ with app.setup:
         RIGHT,
     )
     from manim_widget import patch_tex
+
     patch_tex()
 
 

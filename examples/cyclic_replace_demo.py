@@ -8,7 +8,7 @@ app = marimo.App(width="columns")
 def _():
     from manim_widget import ManimWidget
 
-    return ManimWidget,
+    return (ManimWidget,)
 
 
 @app.cell
@@ -41,7 +41,7 @@ def _(ManimWidget):
             # Do it again to see the cycle continue
             self.play(CyclicReplace(c1, c2, c3))
 
-    return CyclicReplaceDemo,
+    return (CyclicReplaceDemo,)
 
 
 @app.cell

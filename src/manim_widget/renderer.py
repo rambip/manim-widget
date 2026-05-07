@@ -92,7 +92,8 @@ class CaptureRenderer:
         # This ensures scene.camera is available after init_scene
         if self._camera is None:
             from manim.camera.three_d_camera import ThreeDCamera
-            camera_class = getattr(scene, 'camera_class', None) or ThreeDCamera
+
+            camera_class = getattr(scene, "camera_class", None) or ThreeDCamera
             self._camera = camera_class()
 
     def open_section(self, name: str) -> None:
@@ -139,9 +140,7 @@ class CaptureRenderer:
 
         if isinstance(mob, AbstractImageMobject):
             state["kind"] = "ImageMobject"
-            state["source"] = self._image_source_from_pixel_array(
-                mob.get_pixel_array()
-            )
+            state["source"] = self._image_source_from_pixel_array(mob.get_pixel_array())
             points = (
                 mob.points.tolist()
                 if hasattr(mob.points, "tolist")
@@ -350,10 +349,12 @@ class CaptureRenderer:
             ):
                 if not (hasattr(mob, "submobjects") and mob.submobjects):
                     continue
-            
+
             # Intro animations (Create, FadeIn, etc.) need the mobject staged but hidden
-            is_intro_animation = isinstance(anim, Create | FadeIn | Write | GrowFromCenter)
-            
+            is_intro_animation = isinstance(
+                anim, Create | FadeIn | Write | GrowFromCenter
+            )
+
             if not self.is_active(mob):
                 self.register_mobject(mob)
                 add_cmd = {

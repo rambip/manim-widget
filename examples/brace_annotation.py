@@ -13,6 +13,7 @@ with app.setup:
         PI,
     )
     from manim_widget import patch_tex
+
     patch_tex()
 
 

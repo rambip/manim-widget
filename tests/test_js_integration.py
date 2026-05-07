@@ -590,7 +590,9 @@ class TestCLIIntegration:
         return scene.scene_data
 
     def test_cyclic_replace_animation(self, cyclic_replace_animation_data):
-        returncode, stdout, stderr = run_cli(cyclic_replace_animation_data, output_ids=True)
+        returncode, stdout, stderr = run_cli(
+            cyclic_replace_animation_data, output_ids=True
+        )
         assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
         sections = parse_section_ids(stdout)
         assert len(sections) == 1
@@ -601,7 +603,7 @@ class TestCLIIntegration:
 def test_swap_with_world_coordinate_points():
     """
     Test that Swap works correctly with world-coordinate points.
-    
+
     Python manim's shift() modifies points directly, but manim-web's Swap
     now auto-centers points before the animation, so it works correctly.
     """
@@ -623,13 +625,33 @@ def test_swap_with_world_coordinate_points():
                         "fill_opacity": 0.0,
                         "z_index": 0,
                         # Circle centered at x=-1 (radius 1)
-                        "points": [[-2, 0, 0], [-2, 0.26, 0], [-1.89, 0.52, 0], [-1.71, 0.71, 0],
-                                   [-1.52, 0.89, 0], [-1.26, 1.0, 0], [-1.0, 1.0, 0], [-0.74, 1.0, 0],
-                                   [-0.48, 0.89, 0], [-0.29, 0.71, 0], [-0.11, 0.52, 0], [0, 0.26, 0],
-                                   [0, 0, 0], [0, -0.26, 0], [-0.11, -0.52, 0], [-0.29, -0.71, 0],
-                                   [-0.48, -0.89, 0], [-0.74, -1.0, 0], [-1.0, -1.0, 0], [-1.26, -1.0, 0],
-                                   [-1.52, -0.89, 0], [-1.71, -0.71, 0], [-1.89, -0.52, 0], [-2, -0.26, 0],
-                                   [-2, 0, 0]]
+                        "points": [
+                            [-2, 0, 0],
+                            [-2, 0.26, 0],
+                            [-1.89, 0.52, 0],
+                            [-1.71, 0.71, 0],
+                            [-1.52, 0.89, 0],
+                            [-1.26, 1.0, 0],
+                            [-1.0, 1.0, 0],
+                            [-0.74, 1.0, 0],
+                            [-0.48, 0.89, 0],
+                            [-0.29, 0.71, 0],
+                            [-0.11, 0.52, 0],
+                            [0, 0.26, 0],
+                            [0, 0, 0],
+                            [0, -0.26, 0],
+                            [-0.11, -0.52, 0],
+                            [-0.29, -0.71, 0],
+                            [-0.48, -0.89, 0],
+                            [-0.74, -1.0, 0],
+                            [-1.0, -1.0, 0],
+                            [-1.26, -1.0, 0],
+                            [-1.52, -0.89, 0],
+                            [-1.71, -0.71, 0],
+                            [-1.89, -0.52, 0],
+                            [-2, -0.26, 0],
+                            [-2, 0, 0],
+                        ],
                     },
                     {
                         "kind": "VMobject",
@@ -639,14 +661,34 @@ def test_swap_with_world_coordinate_points():
                         "fill_opacity": 0.0,
                         "z_index": 0,
                         # Circle centered at x=+1 (radius 1)
-                        "points": [[0, 0, 0], [0, 0.26, 0], [0.11, 0.52, 0], [0.29, 0.71, 0],
-                                   [0.48, 0.89, 0], [0.74, 1.0, 0], [1.0, 1.0, 0], [1.26, 1.0, 0],
-                                   [1.52, 0.89, 0], [1.71, 0.71, 0], [1.89, 0.52, 0], [2, 0.26, 0],
-                                   [2, 0, 0], [2, -0.26, 0], [1.89, -0.52, 0], [1.71, -0.71, 0],
-                                   [1.52, -0.89, 0], [1.26, -1.0, 0], [1.0, -1.0, 0], [0.74, -1.0, 0],
-                                   [0.48, -0.89, 0], [0.29, -0.71, 0], [0.11, -0.52, 0], [0, -0.26, 0],
-                                   [0, 0, 0]]
-                    }
+                        "points": [
+                            [0, 0, 0],
+                            [0, 0.26, 0],
+                            [0.11, 0.52, 0],
+                            [0.29, 0.71, 0],
+                            [0.48, 0.89, 0],
+                            [0.74, 1.0, 0],
+                            [1.0, 1.0, 0],
+                            [1.26, 1.0, 0],
+                            [1.52, 0.89, 0],
+                            [1.71, 0.71, 0],
+                            [1.89, 0.52, 0],
+                            [2, 0.26, 0],
+                            [2, 0, 0],
+                            [2, -0.26, 0],
+                            [1.89, -0.52, 0],
+                            [1.71, -0.71, 0],
+                            [1.52, -0.89, 0],
+                            [1.26, -1.0, 0],
+                            [1.0, -1.0, 0],
+                            [0.74, -1.0, 0],
+                            [0.48, -0.89, 0],
+                            [0.29, -0.71, 0],
+                            [0.11, -0.52, 0],
+                            [0, -0.26, 0],
+                            [0, 0, 0],
+                        ],
+                    },
                 ],
                 "construct": [
                     {"cmd": "add", "id": "0", "state_ref": 0},
@@ -654,16 +696,23 @@ def test_swap_with_world_coordinate_points():
                     {
                         "cmd": "animate",
                         "duration": 1.0,
-                        "animations": [{"kind": "Swap", "ids": ["0", "1"], "params": {"path_arc": 1.57}, "rate_func": "smooth"}]
-                    }
-                ]
+                        "animations": [
+                            {
+                                "kind": "Swap",
+                                "ids": ["0", "1"],
+                                "params": {"path_arc": 1.57},
+                                "rate_func": "smooth",
+                            }
+                        ],
+                    },
+                ],
             }
-        ]
+        ],
     }
-    
+
     returncode, stdout, stderr = run_cli(scene_data, output_end_state=True)
     assert returncode == 0, f"CLI failed: {stderr}"
-    
+
     # Extract JSON from output (after the === Section End State === marker)
     # JSON is pretty-printed, so find the opening brace
     json_start = stdout.find('{\n  "sections"')
@@ -671,19 +720,23 @@ def test_swap_with_world_coordinate_points():
         json_start = stdout.find('{"sections"')
     assert json_start >= 0, f"Could not find JSON in output: {stdout}"
     end_state = json.loads(stdout[json_start:])
-    
+
     # After swap, circle 0 should be at x=+1, circle 1 at x=-1
     states = end_state["sections"][0]["end_state"]["states"]
     snapshot = end_state["sections"][0]["end_state"]["snapshot"]
-    
+
     # Circle 0 (red) should now be at x=+1 (was at x=-1)
     state0 = states[snapshot["0"]]
     assert "position" in state0, "position should be in end state"
-    assert state0["position"][0] > 0.5, f"Circle 0 should be at positive x after swap, got {state0['position'][0]}"
-    
+    assert state0["position"][0] > 0.5, (
+        f"Circle 0 should be at positive x after swap, got {state0['position'][0]}"
+    )
+
     # Circle 1 (blue) should now be at x=-1 (was at x=+1)
     state1 = states[snapshot["1"]]
-    assert state1["position"][0] < -0.5, f"Circle 1 should be at negative x after swap, got {state1['position'][0]}"
+    assert state1["position"][0] < -0.5, (
+        f"Circle 1 should be at negative x after swap, got {state1['position'][0]}"
+    )
 
 
 def test_js_static_mathtex_creates_and_transforms():
@@ -742,7 +795,6 @@ def test_js_static_mathtex_with_scaled_transform():
     assert returncode == 0, f"CLI failed: {stderr}"
     sections = parse_section_ids(stdout)
     assert len(sections) == 1
-
 
 
 def test_arrow_vgroup_body_points_applied_in_end_state():
