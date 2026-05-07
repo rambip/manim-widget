@@ -208,7 +208,6 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
         for mob_id, mob in self._renderer.registry.items():
             if mob_id not in self._renderer._active_ids:
                 continue
-            from manim import VGroup
 
             if hasattr(mob, "submobjects") and mob.submobjects:
                 for child in mob.submobjects:
@@ -239,7 +238,6 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
         current = self._renderer._current
         if current is not None:
             for mob in mobjects:
-                mob_id = id(mob)
                 if self._renderer.is_active(mob):
                     self._renderer.unregister_mobject(mob)
                     current.commands.append(

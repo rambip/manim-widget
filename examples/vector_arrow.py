@@ -5,14 +5,12 @@ app = marimo.App(width="columns")
 
 
 with app.setup:
-    import manim as mn
     from manim import (
         Arrow,
         Dot,
         ORIGIN,
     )
-    import marimo as mo
-    from manim_widget import ManimWidget, patch_tex
+    from manim_widget import patch_tex
     patch_tex()
 
 

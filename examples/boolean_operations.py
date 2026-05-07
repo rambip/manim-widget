@@ -20,7 +20,6 @@ with app.setup:
         UP,
         Union,
     )
-    import marimo as mo
     from manim_widget import ManimWidget, patch_tex
     patch_tex()
 

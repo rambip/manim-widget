@@ -4,7 +4,6 @@ __generated_with = "0.23.0"
 app = marimo.App(width="columns")
 
 with app.setup:
-    import manim as mn
     from manim_widget import ManimWidget, patch_tex
 
     patch_tex()
@@ -17,12 +16,9 @@ with app.setup:
         UP,
         ORIGIN,
         RIGHT,
-        Create,
-        TAU,
         MathTex,
         WHITE,
     )
-    import marimo as mo
 
 
 @app.class_definition
@@ -32,7 +28,8 @@ class ManimCELogo(ManimWidget):
         logo_green = "#87c2a5"
         logo_blue = "#525893"
         logo_red = "#e07a5f"
-        logo_black = "#343434"
+        # FIXME: black logo
+        #logo_black = "#343434"
         ds_m = MathTex(r"\mathbb{M}", fill_color=WHITE).scale(7)
         ds_m.shift(2.25 * LEFT + 1.5 * UP)
         circle = Circle(color=logo_green, fill_opacity=1).shift(LEFT)

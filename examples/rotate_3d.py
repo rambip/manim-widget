@@ -9,22 +9,16 @@ with app.setup:
     from manim import (
         Create,
         Circle,
-        FadeIn,
         Rotate,
         RED,
         GREEN,
         BLUE,
-        ORIGIN,
-        LEFT,
         RIGHT,
         UP,
         OUT,
-        IN,
 
     )
 
-    import marimo as mo
-    from manim_widget import ManimWidget
 
 
 @app.cell

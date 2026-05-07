@@ -5,7 +5,6 @@ app = marimo.App(width="columns")
 
 with app.setup:
     import numpy as np
-    import marimo as mo
     from manim import FadeIn, ImageMobject
     from manim_widget import ManimWidget
 

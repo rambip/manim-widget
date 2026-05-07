@@ -14,8 +14,7 @@ with app.setup:
         ValueTracker,
         always_redraw,
     )
-    import marimo as mo
-    from manim_widget import ManimWidget, patch_tex
+    from manim_widget import patch_tex
     patch_tex()
 
 

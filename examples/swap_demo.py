@@ -6,7 +6,6 @@ app = marimo.App(width="columns")
 
 @app.cell
 def _():
-    import marimo as mo
     from manim_widget import ManimWidget
 
     return (ManimWidget,)
@@ -14,15 +13,12 @@ def _():
 
 @app.cell
 def _(ManimWidget):
-    import manim as mn
     from manim import (
         Circle,
         Swap,
         Create,
         LEFT,
         RIGHT,
-        UP,
-        DOWN,
         RED,
         GREEN,
         BLUE,

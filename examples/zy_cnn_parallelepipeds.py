@@ -19,7 +19,6 @@ with app.setup:
         OUT,
         IN,
         PI,
-        FadeIn,
         Create,
         GrowArrow,
         Arrow,

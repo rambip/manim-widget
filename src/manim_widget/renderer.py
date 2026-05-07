@@ -5,7 +5,7 @@ import io
 import json
 import math
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 from PIL import Image
@@ -22,7 +22,6 @@ from manim import (
     Scene,
     Swap,
     Text,
-    ThreeDCamera,  # NEW
     ValueTracker,
     VGroup,
     Write,
