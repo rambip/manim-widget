@@ -87,7 +87,7 @@ Built from `js/src/*` via Bun. This is what packaged widget users execute. Rebui
 | `register` | bind `id → state_ref` in scene graph and show in scene |
 | `remove` | free `id` from registry (emitted after `FadeOut`, `ReplacementTransform`) |
 | `rebind` | remap `source_id → target_id` (emitted after `ReplacementTransform`) |
-| `animate` | one `scene.play()`; contains both parralel animations and updaters for specific objects|
+| `animate` | one `scene.play()`; contains both parallel animations and updaters for specific objects|
 
 ### Animation descriptors
 
