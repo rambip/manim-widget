@@ -39,6 +39,7 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
     _esm = _JS_BUNDLE
     scene_data = traitlets.Any({}).tag(sync=True)
     playback_error = traitlets.Unicode("").tag(sync=True)
+    is_3d = traitlets.Bool(False).tag(sync=True)
 
     def __init__(self, fps: int = 10, **kwargs: Any) -> None:
         self._fps = fps

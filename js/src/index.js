@@ -1,4 +1,4 @@
-import { ThreeDScene } from "manim-web";
+import { ThreeDScene, Scene } from "manim-web";
 import { MobjectRegistry } from "./registry.js";
 import { createPlayer } from "./player.js";
 
@@ -19,6 +19,9 @@ function buildUi(el) {
           <div style="padding:2px 8px;font-size:1em;color:black;text-align:center;font-style:italic;font-weight:bold;">Section:</div>
           <div id="mw-section-buttons" style="display:flex;gap:2px;padding:0 8px 0 8px;justify-content:center;align-items:stretch;"></div>
         </div>
+        <div id="mw-3d-toggle" style="padding:4px 8px;display:flex;align-items:center;gap:4px;">
+          <label style="cursor:pointer;display:flex;align-items:center;gap:4px;font-size:0.9em;color:rgba(0,0,0,0.7);"><input type="checkbox" id="mw-3d-checkbox">3D</label>
+        </div>
       </div>
     </div>
   `;
@@ -28,6 +31,7 @@ function buildUi(el) {
     playBtn: el.querySelector("#mw-play"),
     sectionsDiv: el.querySelector("#mw-section-buttons"),
     warning: el.querySelector("#mw-warning"),
+    d3Checkbox: el.querySelector("#mw-3d-checkbox"),
   };
 }
 
@@ -60,6 +64,8 @@ async function render({ model, el }) {
 
   let player = null;
   let sceneData = null;
+  let scene = null;
+  let registry = null;
 
   function updateSectionStyles(currentlyPlayingIndex = -1) {
     const labels = ui.sectionsDiv.querySelectorAll('.mw-section-label');
@@ -127,8 +133,11 @@ async function render({ model, el }) {
     sceneData = data;
     ui.container.innerHTML = "";
 
-    const scene = new ThreeDScene(ui.container, { width: 600, height: 400, enableOrbitControls: true, orbitControlsUp: 'z' });
-    const registry = new MobjectRegistry();
+    const is3D = model.get("is_3d");
+    scene = is3D
+      ? new ThreeDScene(ui.container, { width: 600, height: 400, enableOrbitControls: true, orbitControlsUp: 'z' })
+      : new Scene(ui.container, { width: 600, height: 400 });
+    registry = new MobjectRegistry();
     player = createPlayer(scene, registry);
     player.setfps(data.fps || 10);
     player.setSections(data.sections);
@@ -203,6 +212,21 @@ async function render({ model, el }) {
     }
     await loadScene(data);
   });
+
+  model.on("change:is_3d", async () => {
+    ui.d3Checkbox.checked = model.get("is_3d");
+    if (sceneData) {
+      await loadScene(sceneData);
+    }
+  });
+
+  ui.d3Checkbox.addEventListener("change", async () => {
+    model.set("is_3d", ui.d3Checkbox.checked);
+    model.save_changes();
+  });
+
+  // Initialize checkbox from model
+  ui.d3Checkbox.checked = model.get("is_3d") || false;
 
   const initialData = model.get("scene_data");
   if (initialData) {
