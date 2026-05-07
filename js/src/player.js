@@ -397,6 +397,15 @@ export class Player {
 
   async _finalizeMobject(mob, state) {
     if (!mob) return;
+
+    // Finalize children first so nested async/textured mobjects are fully
+    // mutated before their parent is attached to the scene.
+    if (Array.isArray(mob.submobjects) && mob.submobjects.length > 0) {
+      for (const child of mob.submobjects) {
+        await this._finalizeMobject(child, null);
+      }
+    }
+
     if (typeof mob.waitForRender === "function") {
       await mob.waitForRender();
       if (state) {
