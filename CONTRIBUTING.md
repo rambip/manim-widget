@@ -44,12 +44,15 @@ cd js && bun run cli --conditions source < ../spec.json
 This project uses [Ruff](https://docs.astral.sh/ruff/) for linting and formatting:
 
 ```sh
-uvx ruff check .          # lint
-uvx ruff format .         # format in place
-uvx ruff format --check . # check only (what CI does)
+uv run ruff check .          # lint
+uv run ruff format .         # format in place
+uv run ruff format --check . # check only (what CI does)
 ```
 
-No need to install it separately — `uvx` fetches it on demand.
+If you want do run them automatically on commit, do:
+```
+uv run pre-commit install
+```
 
 ---
 

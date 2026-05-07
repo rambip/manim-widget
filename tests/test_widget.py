@@ -67,7 +67,6 @@ def strip_points(obj: dict) -> dict:
 
 
 def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
-
     class DataScene(ManimWidget):
         def construct(self):
             vt = ValueTracker(0)
@@ -260,7 +259,6 @@ def test_wait_with_vmobject():
 
 
 def test_v2_method_animation_uses_move_to_target():
-
     class ShiftScene(ManimWidget):
         def construct(self):
             c = Circle()
@@ -288,7 +286,6 @@ def test_v2_method_animation_uses_move_to_target():
 
 
 def test_v2_chained_method_animation_uses_move_to_target():
-
     class ChainedScene(ManimWidget):
         def construct(self):
             s = Square(side_length=1.0)
@@ -316,7 +313,6 @@ def test_v2_chained_method_animation_uses_move_to_target():
 
 
 def test_v2_multiple_sections_with_move_to_target():
-
     class MultiSectionMoveToTarget(ManimWidget):
         def construct(self):
             c = Circle()
@@ -415,7 +411,6 @@ def test_create_without_explicit_add_does_not_emit_add_animation():
 
 
 def test_image_mobject_serializes_source_and_pixels():
-
     pixels = np.array(
         [
             [[255, 0, 0, 255], [0, 255, 0, 255], [0, 0, 255, 255]],
@@ -568,7 +563,6 @@ def test_patch_tex_mathtex_add_serializes_as_mathtexsource():
 
 
 def test_swap_animation_emits_group_animation():
-
     class SwapScene(ManimWidget):
         def construct(self):
             from manim import Swap
@@ -604,7 +598,6 @@ def test_swap_animation_emits_group_animation():
 
 
 def test_cyclic_replace_animation_emits_group_animation():
-
     class CyclicReplaceScene(ManimWidget):
         def construct(self):
             from manim import CyclicReplace, Triangle, UP
@@ -660,7 +653,6 @@ def test_camera_fov_calculation():
 
 
 def test_camera_theta_attr_assignment_is_serialized():
-
     class ZYImageCNN(ManimWidget):
         def construct(self):
             self.camera.theta = 0.2
@@ -675,7 +667,6 @@ def test_camera_theta_attr_assignment_is_serialized():
 
 
 def test_camera_distance_and_fov_attr_assignment_is_serialized():
-
     class ZYImageCNN(ManimWidget):
         def construct(self):
             self.camera.distance = 7.5
@@ -692,7 +683,6 @@ def test_camera_distance_and_fov_attr_assignment_is_serialized():
 
 
 def test_same_square_scaled_and_readded_serializes_only_scaled_state():
-
     class ScaledSquareScene(ManimWidget):
         def construct(self):
             s = Square(side_length=1.0)
@@ -715,7 +705,6 @@ def test_same_square_scaled_and_readded_serializes_only_scaled_state():
 
 
 def test_register_play_mutate_register_back_emits_two_registers_with_two_states():
-
     class AddPlayMutateAddBack(ManimWidget):
         def construct(self):
             s = Square(side_length=1.0)
@@ -738,7 +727,6 @@ def test_register_play_mutate_register_back_emits_two_registers_with_two_states(
 
 
 def test_register_new_section_register_back_emits_two_registers_with_two_states():
-
     class AddSectionAddBack(ManimWidget):
         def construct(self):
             s = Square(side_length=1.0)
