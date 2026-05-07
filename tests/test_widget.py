@@ -240,6 +240,7 @@ def test_v2_create_then_next_section_snapshot_only_second_section():
 
     assert_close(strip_points(data), strip_points(expected))
 
+
 def test_wait_with_vmobject():
     class SceneWithWait(ManimWidget):
         def construct(self):
