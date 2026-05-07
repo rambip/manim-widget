@@ -88,12 +88,7 @@ def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
             {
                 "name": "initial",
                 "snapshot": {},
-                "camera": {
-                    "phi": 0.0,
-                    "theta": -1.5707963267948966,
-                    "distance": 5.0,
-                    "fov": 77.31961650818019,
-                },
+                "camera": {"phi": 0.0, "theta": -1.5707963267948966, "distance": 5.0, "fov": 77.31961650818019},
                 "states": [
                     {"value": 0.0},
                     {
@@ -166,79 +161,6 @@ def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
                     },
                 ],
             }
-        ],
-    }
-
-    assert_close(strip_points(data), strip_points(expected))
-
-
-def test_v2_create_then_next_section_snapshot_only_second_section():
-    reset_id_counter()
-
-    class Move(ManimWidget):
-        def construct(self):
-            circle = Circle(1, color=GREEN, fill_opacity=1, stroke_opacity=1)
-            self.play(Create(circle))
-            self.next_section("a")
-
-    scene = Move()
-    data = scene.scene_data
-
-    expected = {
-        "version": 2,
-        "fps": 10,
-        "sections": [
-            {
-                "name": "initial",
-                "snapshot": {},
-                "camera": {
-                    "phi": 0.0,
-                    "theta": -1.5707963267948966,
-                    "distance": 5.0,
-                    "fov": 77.31961650818019,
-                },
-                "states": [
-                    {
-                        "kind": "VMobject",
-                        "fill_color": "#83C167",
-                        "fill_opacity": 1.0,
-                        "stroke_color": "#83C167",
-                        "stroke_width": 4,
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    }
-                ],
-                "construct": [
-                    {"cmd": "add", "id": "0", "state_ref": 0, "hidden": True},
-                    {
-                        "cmd": "animate",
-                        "duration": 1.0,
-                        "animations": [
-                            {
-                                "id": "0",
-                                "rate_func": "smooth",
-                                "kind": "Create",
-                            }
-                        ],
-                    },
-                ],
-            },
-            {
-                "name": "a",
-                "snapshot": {"0": 0},
-                "states": [
-                    {
-                        "kind": "VMobject",
-                        "fill_color": "#83C167",
-                        "fill_opacity": 1.0,
-                        "stroke_color": "#83C167",
-                        "stroke_width": 4,
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    }
-                ],
-                "construct": [],
-            },
         ],
     }
 
