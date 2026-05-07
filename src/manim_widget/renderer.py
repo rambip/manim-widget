@@ -27,7 +27,7 @@ from manim.mobject.mobject import Mobject
 from manim.mobject.types.image_mobject import AbstractImageMobject
 from manim.mobject.types.vectorized_mobject import VMobject
 
-from .snapshot import short_id
+from .snapshot import IdCounter
 from .tex_patch import PatchedMathTex
 
 
@@ -75,6 +75,10 @@ class CaptureRenderer:
         # an animation introducer (Create/FadeIn/Write/GrowFromCenter/Add...).
         # Keyed by python object identity.
         self._introduced_by_animation: dict[int, bool] = {}
+        self._id_counter = IdCounter()
+
+    def short_id(self, mob: object) -> str:
+        return self._id_counter.short_id(mob)
 
     @property
     def camera(self):
@@ -299,7 +303,7 @@ class CaptureRenderer:
             current.commands.append(
                 {
                     "cmd": "register",
-                    "id": short_id(mob),
+                    "id": self.short_id(mob),
                     "state_ref": self.state_ref_for(mob),
                 }
             )
@@ -307,7 +311,7 @@ class CaptureRenderer:
 
     def stage_add(self, mob: Mobject) -> None:
         """Stage an add command until play()/section-finalization flushes it."""
-        self._staged_adds[short_id(mob)] = mob
+        self._staged_adds[self.short_id(mob)] = mob
 
     def play(self, scene: Scene, *args: Any, **kwargs: Any) -> None:
         self.flush_staged_adds()
@@ -357,12 +361,12 @@ class CaptureRenderer:
                 pre_commands.append(
                     {
                         "cmd": "register",
-                        "id": short_id(mob),
+                        "id": self.short_id(mob),
                         "state_ref": self.state_ref_for(mob),
                     }
                 )
             if not self._introduced_by_animation.get(id(mob), False):
-                animate_descriptors.append({"kind": "Add", "id": short_id(mob)})
+                animate_descriptors.append({"kind": "Add", "id": self.short_id(mob)})
                 self._introduced_by_animation[id(mob)] = True
 
         for anim in animations:
@@ -381,7 +385,7 @@ class CaptureRenderer:
                 pre_commands.append(
                     {
                         "cmd": "register",
-                        "id": short_id(mob),
+                        "id": self.short_id(mob),
                         "state_ref": self.state_ref_for(mob),
                     }
                 )
@@ -397,13 +401,15 @@ class CaptureRenderer:
                 post_commands.append(
                     {
                         "cmd": "rebind",
-                        "source_id": short_id(source),
-                        "target_id": short_id(target),
+                        "source_id": self.short_id(source),
+                        "target_id": self.short_id(target),
                     }
                 )
 
             elif isinstance(anim, FadeOut):
-                post_commands.append({"cmd": "remove", "id": short_id(anim.mobject)})
+                post_commands.append(
+                    {"cmd": "remove", "id": self.short_id(anim.mobject)}
+                )
 
         if pre_commands:
             current.commands.extend(pre_commands)
@@ -478,7 +484,7 @@ class CaptureRenderer:
         descriptor: dict[str, Any] = {}
 
         if hasattr(anim, "mobject") and anim_name != "Wait":
-            descriptor["id"] = short_id(anim.mobject)
+            descriptor["id"] = self.short_id(anim.mobject)
 
         target_mobject = getattr(anim, "target_mobject", None)
 
@@ -526,7 +532,7 @@ class CaptureRenderer:
                 raise RuntimeError(msg)
             descriptor = {
                 "kind": "Swap",
-                "ids": [short_id(m) for m in submobjects[:2]],
+                "ids": [self.short_id(m) for m in submobjects[:2]],
             }
             swap_params: dict[str, Any] = {}
             path_arc = getattr(anim, "path_arc", None)
@@ -553,7 +559,7 @@ class CaptureRenderer:
                 raise RuntimeError(msg)
             descriptor = {
                 "kind": "CyclicReplace",
-                "ids": [short_id(m) for m in submobjects],
+                "ids": [self.short_id(m) for m in submobjects],
             }
             cyclic_params: dict[str, Any] = {}
             path_arc = getattr(anim, "path_arc", None)
@@ -582,7 +588,7 @@ class CaptureRenderer:
         else:
             path = getattr(anim, "path", None)
             if path is not None:
-                params["path_id"] = short_id(path)
+                params["path_id"] = self.short_id(path)
             about_point = getattr(anim, "about_point", None)
             if about_point is not None:
                 params["about_point"] = list(about_point)
@@ -644,7 +650,7 @@ class CaptureRenderer:
             scene.update_to_time(t)
             frame: dict[str, Any] = {}
             for mob in tracked:
-                mob_id = short_id(mob)
+                mob_id = self.short_id(mob)
                 frame[mob_id] = {"state_ref": self.state_ref_for(mob)}
             frames.append(frame)
 
