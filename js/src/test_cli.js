@@ -90,12 +90,12 @@ function serializeRuntimeState(registry) {
     const zIndex = typeof mob.zIndex === "number" ? mob.zIndex : undefined;
 
     let state;
-    if (ctorName === "VGroup") {
+    if (ctorName === "VGroup" || ctorName === "Arrow") {
       const children = Array.isArray(mob.submobjects)
         ? mob.submobjects.map(serializeMobject).filter((ref) => ref !== null)
         : [];
       state = {
-        kind: "VGroup",
+        kind: ctorName === "Arrow" ? "Arrow" : "VGroup",
         children,
         opacity,
       };
