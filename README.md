@@ -1,6 +1,6 @@
 # Manim Widget
 
-<img width="690" height="548" alt="image" src="https://github.com/user-attachments/assets/7295bf5c-671d-49a8-9097-e7832ba92a18" />
+<img width="645" height="544" alt="image" src="https://github.com/user-attachments/assets/e8094a2c-864b-45f1-9d0d-cd724f859e18" />
 
 
 Interactive Manim for Jupyter/marimo notebooks. The power of [Manim](https://www.manim.community/), without the hassle.
