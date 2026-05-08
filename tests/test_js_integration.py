@@ -822,7 +822,7 @@ def test_js_static_mathtex_with_scaled_transform():
 
 
 def test_arrow_vgroup_body_points_applied_in_end_state():
-    """Regression: Arrow body points must be applied when state.kind is VGroup."""
+    """Regression: Arrow body points must be applied when state.kind is Arrow."""
     from manim import Arrow, ORIGIN, RIGHT
 
     class ArrowScene(ManimWidget):
@@ -843,7 +843,7 @@ def test_arrow_vgroup_body_points_applied_in_end_state():
     root_ref = next(iter(snapshot.values()))
     root_state = states[root_ref]
 
-    assert root_state["kind"] == "VGroup"
+    assert root_state["kind"] == "Arrow"
     assert "children" in root_state and len(root_state["children"]) == 2
 
     body_ref = root_state["children"][0]
