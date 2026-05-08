@@ -144,14 +144,8 @@ def _():
 
 @app.cell
 def _(ZYImageCNN):
-    scene = ZYImageCNN()
+    scene = ZYImageCNN(is_3d=True)
     scene
-    return (scene,)
-
-
-@app.cell
-def _(scene):
-    scene.scene_data
     return
 
 

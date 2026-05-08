@@ -41,7 +41,7 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
     playback_error = traitlets.Unicode("").tag(sync=True)
     is_3d = traitlets.Bool(False).tag(sync=True)
 
-    def __init__(self, fps: int = 10, **kwargs: Any) -> None:
+    def __init__(self, fps: int = 10, is_3d: bool = False, **kwargs: Any) -> None:
         self._fps = fps
         self._renderer = CaptureRenderer(fps=fps)
         self._snapshots: dict[str, dict[str, Any]] = {}
@@ -50,6 +50,7 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
 
         anywidget.AnyWidget.__init__(self)
         ThreeDScene.__init__(self, renderer=self._renderer, **kwargs)
+        self.is_3d = is_3d
 
         # Initialize renderer - this makes scene.camera available
         self._renderer.init_scene(self)
