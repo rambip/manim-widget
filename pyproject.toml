@@ -1,6 +1,6 @@
 [project]
 name = "manim-widget"
-version = "0.1.4"
+version = "0.1.5"
 description = "Manim widget"
 readme = "README.md"
 authors = [
