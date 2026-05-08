@@ -127,8 +127,8 @@
       "properties": {
         "kind": {
           "type": "string",
-          "const": "VGroup",
-          "description": "Group of child mobjects."
+          "enum": ["VGroup", "Arrow"],
+          "description": "Group of child mobjects. Arrow kind: points is the shaft VMobject, children[0] is the tip VMobject."
         },
         "children": {
           "type": "array",

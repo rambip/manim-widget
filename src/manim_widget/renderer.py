@@ -22,6 +22,7 @@ from manim import (
     ValueTracker,
     VGroup,
 )
+from manim.mobject.geometry.line import Arrow
 from manim.animation.animation import Animation
 from manim.mobject.mobject import Mobject
 from manim.mobject.types.image_mobject import AbstractImageMobject
@@ -199,7 +200,7 @@ class CaptureRenderer:
                     state["points"] = points_3n1
 
         if hasattr(mob, "submobjects") and mob.submobjects:
-            state["kind"] = "VGroup"
+            state["kind"] = "Arrow" if isinstance(mob, Arrow) else "VGroup"
             state["children"] = [self.state_ref_for(child) for child in mob.submobjects]
         else:
             state["kind"] = "VMobject"
