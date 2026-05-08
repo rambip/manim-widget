@@ -869,3 +869,35 @@ def test_arrow_serializes_with_arrow_kind():
     assert "points" in arrow_state
     assert "children" in arrow_state
     assert len(arrow_state["children"]) == 1  # One tip child
+
+
+def test_camera_set_before_next_section_appears_in_first_and_second_sections():
+    """Test that camera parameters set before next_section() appear in both outgoing and new section entry."""
+
+    class CameraSetupScene(ManimWidget):
+        def construct(self):
+            # Manually set camera parameters before any sections
+            self.camera.theta = 0.5
+            self.camera.phi = 0.3
+            self.camera.distance = 10.0
+            self.next_section("after_camera_setup")
+
+    scene = CameraSetupScene(fps=10)
+    data = scene.scene_data
+
+    first_section = data["sections"][0]
+    second_section = data["sections"][1]
+
+    assert first_section["name"] == "initial"
+    assert second_section["name"] == "after_camera_setup"
+
+    first_camera = first_section["camera"]
+    second_camera = second_section["camera"]
+
+    assert abs(first_camera["theta"] - 0.5) < 1e-9
+    assert abs(first_camera["phi"] - 0.3) < 1e-9
+    assert abs(first_camera["distance"] - 10.0) < 1e-9
+
+    assert abs(second_camera["theta"] - 0.5) < 1e-9
+    assert abs(second_camera["phi"] - 0.3) < 1e-9
+    assert abs(second_camera["distance"] - 10.0) < 1e-9
