@@ -13,13 +13,13 @@ repos:
         name: Validate pyproject.toml
 
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.4.1
+    rev: v2.4.2
     hooks:
       - id: codespell
         files: ^.*\.(py|md|rst)$
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.9
+    rev: v0.15.15
     hooks:
       - id: ruff
         name: ruff lint
