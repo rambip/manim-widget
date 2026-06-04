@@ -24,13 +24,19 @@ from manim import (
 )
 from manim.mobject.svg.brace import Brace
 from manim.animation.composition import AnimationGroup
-from manim.mobject.geometry.line import Arrow
 from manim.animation.animation import Animation
 from manim.mobject.mobject import Mobject
 from manim.mobject.types.image_mobject import AbstractImageMobject
 from manim.mobject.types.vectorized_mobject import VMobject
 
 from .snapshot import IdCounter
+from .states import (
+    ImageMobjectState,
+    MathTexState,
+    MobjectState,
+    VMobjectState,
+    ValueTrackerState,
+)
 from .tex_patch import PatchedMathTex
 
 
@@ -140,6 +146,12 @@ class CaptureRenderer:
         self._staged_adds = {}
 
     def state_ref_for(self, mob: Mobject) -> int:
+        """Return the state-bank index for mob in the current section.
+
+        pre: self._current is not None
+        post: 0 <= __return__ < len(self._current.states)
+        post: self.state_ref_for(mob) == self.state_ref_for(mob)
+        """
         # For groups (VGroup, Group, etc.), ensure children are serialized first
         if hasattr(mob, "submobjects") and mob.submobjects:
             for child in mob.submobjects:
@@ -156,72 +168,60 @@ class CaptureRenderer:
             )
 
         if isinstance(mob, ValueTracker):
-            return {
-                "value": float(mob.get_value()),
-            }
-
-        state: dict[str, object] = {}
-
-        if isinstance(mob, Text):
-            state["text"] = mob.text
-            state["font_size"] = mob.font_size
+            return ValueTrackerState(value=float(mob.get_value()))
 
         if isinstance(mob, PatchedMathTex):
-            state["kind"] = "MathTexSource"
-            state["latex"] = mob.tex_string
-            points = (
+            raw = (
                 mob.points.tolist()
                 if hasattr(mob.points, "tolist")
                 else list(mob.points)
             )
-            # Points already include signed-corner geometry and font-size scaling.
-            state["points"] = [
-                [float(pt[0]), float(pt[1]), float(pt[2])] for pt in points
-            ]
-            if mob.color is not None:
-                state["color"] = self._color_to_hex(mob.color)
-            return state
+            pts = [[float(p[0]), float(p[1]), float(p[2])] for p in raw]
+            return MathTexState(
+                latex=mob.tex_string,
+                points=pts,
+                color=self._color_to_hex(mob.color) if mob.color is not None else None,
+            )
 
         if isinstance(mob, AbstractImageMobject):
-            state["kind"] = "ImageMobject"
-            state["source"] = self._image_source_from_pixel_array(mob.get_pixel_array())
-            points = (
+            raw = (
                 mob.points.tolist()
                 if hasattr(mob.points, "tolist")
                 else list(mob.points)
             )
-            if len(points) == 4:
-                state["points"] = points
-            z_index = getattr(mob, "z_index", None)
-            if z_index is not None:
-                state["z_index"] = z_index
-            return state
+            return ImageMobjectState(
+                source=self._image_source_from_pixel_array(mob.get_pixel_array()),
+                points=raw if len(raw) == 4 else None,
+                z_index=getattr(mob, "z_index", None),
+            )
 
+        # Collect VMobject styling shared by single-path and vgroup paths.
+        style: dict[str, object] = {}
         if isinstance(mob, VMobject) and not isinstance(mob, VGroup):
             fill_color = mob.get_fill_color()
             if fill_color:
-                state["fill_color"] = self._color_to_hex(fill_color)
+                style["fill_color"] = self._color_to_hex(fill_color)
             fill_opacity = mob.get_fill_opacity()
             if fill_opacity is not None:
-                state["fill_opacity"] = fill_opacity
+                style["fill_opacity"] = fill_opacity
             stroke_color = mob.get_stroke_color()
             if stroke_color:
-                state["stroke_color"] = self._color_to_hex(stroke_color)
+                style["stroke_color"] = self._color_to_hex(stroke_color)
             stroke_width = mob.get_stroke_width()
             if stroke_width:
-                state["stroke_width"] = stroke_width
+                style["stroke_width"] = stroke_width
             stroke_opacity = mob.get_stroke_opacity()
             if stroke_opacity is not None:
-                state["stroke_opacity"] = stroke_opacity
+                style["stroke_opacity"] = stroke_opacity
             z_index = getattr(mob, "z_index", None)
             if z_index is not None:
-                state["z_index"] = z_index
+                style["z_index"] = z_index
 
         if isinstance(mob, VMobject):
             subpaths = mob.get_subpaths()
             if len(subpaths) > 1:
                 return self._serialize_multi_subpath(
-                    mob, subpaths, for_snapshot=for_snapshot
+                    mob, subpaths, style=style, for_snapshot=for_snapshot
                 )
             if subpaths:
                 raw_points = subpaths[0]
@@ -233,18 +233,23 @@ class CaptureRenderer:
                             points_3n1.extend(chunk.tolist())
                         else:
                             points_3n1.extend(chunk[1:].tolist())
-                    state["points"] = points_3n1
+                    style["points"] = points_3n1
 
         if hasattr(mob, "submobjects") and mob.submobjects:
-            state["kind"] = "Arrow" if isinstance(mob, Arrow) else "VGroup"
-            state["children"] = [self.state_ref_for(child) for child in mob.submobjects]
-        else:
-            state["kind"] = "VMobject"
+            return {
+                "kind": "VGroup",
+                "children": [self.state_ref_for(child) for child in mob.submobjects],
+            }
 
-        return state
+        text_extras: dict[str, object] = {}
+        if isinstance(mob, Text):
+            text_extras["text"] = mob.text
+            text_extras["font_size"] = mob.font_size
+
+        return VMobjectState(**style, **text_extras)
 
     def _serialize_multi_subpath(
-        self, mob: Mobject, subpaths: list, *, for_snapshot: bool
+        self, mob: Mobject, subpaths: list, *, style: dict, for_snapshot: bool
     ) -> dict[str, object]:
         child_refs: list[int] = []
         for subpath in subpaths:
@@ -257,47 +262,35 @@ class CaptureRenderer:
                     points_3n1.extend(chunk.tolist())
                 else:
                     points_3n1.extend(chunk[1:].tolist())
-            child_state: dict[str, object] = {
-                "kind": "VMobject",
-                "points": points_3n1,
-            }
-            if isinstance(mob, VMobject):
-                fill_color = mob.get_fill_color()
-                if fill_color:
-                    child_state["fill_color"] = self._color_to_hex(fill_color)
-                fill_opacity = mob.get_fill_opacity()
-                if fill_opacity is not None:
-                    child_state["fill_opacity"] = fill_opacity
-                stroke_color = mob.get_stroke_color()
-                if stroke_color:
-                    child_state["stroke_color"] = self._color_to_hex(stroke_color)
-                stroke_width = mob.get_stroke_width()
-                if stroke_width:
-                    child_state["stroke_width"] = stroke_width
-                stroke_opacity = mob.get_stroke_opacity()
-                if stroke_opacity is not None:
-                    child_state["stroke_opacity"] = stroke_opacity
-                z_index = getattr(mob, "z_index", None)
-                if z_index is not None:
-                    child_state["z_index"] = z_index
-            child_refs.append(self._intern_state(child_state))
+            child_refs.append(
+                self._intern_state(VMobjectState(points=points_3n1, **style))
+            )
 
         return {
             "kind": "VGroup",
             "children": child_refs,
         }
 
-    def _intern_state(self, state: dict[str, object]) -> int:
+    def _intern_state(self, state: MobjectState) -> int:
+        """Insert state into the section bank or return its existing index.
+
+        pre: self._current is not None
+        post: 0 <= __return__ < len(self._current.states)
+        post: self._intern_state(state) == self._intern_state(state)
+        post: implies(__return__ == len(__old__.self._current.states),
+                      len(self._current.states) == len(__old__.self._current.states) + 1)
+        """
         current = self._current
         if current is None:
             msg = "No active section"
             raise RuntimeError(msg)
-        key = json.dumps(state, sort_keys=True, separators=(",", ":"))
+        d = state.model_dump(exclude_none=True)
+        key = json.dumps(d, sort_keys=True, separators=(",", ":"))
         existing = current._state_ref_map.get(key)
         if existing is not None:
             return existing
         ref = len(current.states)
-        current.states.append(state)
+        current.states.append(d)
         current._state_ref_map[key] = ref
         return ref
 
@@ -417,6 +410,14 @@ class CaptureRenderer:
     def _play_animate_path(
         self, scene: Scene, animations: list[Animation], run_time: float
     ) -> None:
+        """Emit register + animate + post commands for a non-updater play() call.
+
+        post: self._current.commands[-1]["cmd"] == "animate"
+        post: implies(isinstance(anim, GrowArrow) for anim in animations,
+                      forall([d for d in self._current.commands[-1]["animations"]
+                               if "state_ref" in d],
+                             lambda d: isinstance(d["state_ref"], int)))
+        """
         current = self._current
         if current is None:
             return
@@ -574,6 +575,15 @@ class CaptureRenderer:
             current.commands[-1]["camera_updates"] = camera_frames
 
     def _descriptor_from_animation(self, anim: Animation) -> dict[str, Any]:
+        """Translate a single manim Animation into a wire-format descriptor dict.
+
+        post: "kind" in __return__
+        post: implies("state_ref" in __return__, isinstance(__return__["state_ref"], int))
+        post: implies(isinstance(anim, GrowArrow), __return__["kind"] == "Transform")
+        post: implies(isinstance(anim, GrowArrow), "state_ref" in __return__)
+        post: implies(isinstance(anim, (Swap, CyclicReplace)), "ids" in __return__)
+        post: implies(isinstance(anim, (Swap, CyclicReplace)), "id" not in __return__)
+        """
         anim_name = type(anim).__name__
         params: dict[str, Any] = {}
         descriptor: dict[str, Any] = {}

@@ -197,6 +197,43 @@ manim-widget/
 
 ---
 
+## PEP 316 Contract Syntax
+
+Invariants are expressed in docstrings. The checker is optional; the docstrings serve as machine-readable specs for Hypothesis tests and human reviewers.
+
+```python
+def sort(a: list[int]) -> None:
+    """Sort a list in-place.
+
+    pre: isinstance(a, list)
+    post[a]: forall(range(len(a) - 1), lambda i: a[i] <= a[i + 1])
+    post[a]: len(a) == len(__old__.a)
+    post[a]: forall(__old__.a, lambda x: a.count(x) == __old__.a.count(x))
+    """
+
+def intern(self, state: MobjectState) -> int:
+    """Insert or return dedup'd index.
+
+    pre: self._current is not None
+    post: 0 <= __return__ < len(self._current.states)
+    post: self.intern(state) == self.intern(state)                   # idempotent
+    post: implies(__return__ == len(__old__.self._current.states),   # new entry only
+                  len(self._current.states) == len(__old__.self._current.states) + 1)
+    """
+```
+
+Key rules:
+- `pre:` / `post:` — standard precondition / postcondition.
+- `post[var]:` — postcondition that may side-effect `var` (use when the function mutates something).
+- `__return__` — the return value inside a `post:` clause.
+- `__old__` — snapshot of `self` (or any binding) captured before the call; access via `__old__.attr`.
+- `implies(cond, expr)` — logical implication; `expr` is only checked when `cond` is true.
+- `forall(iterable, predicate)` — universal quantifier; equivalent to `all(predicate(x) for x in iterable)`.
+- Do **not** write `cond implies expr` (plain text); always use the `implies()` function form.
+- Pydantic field validators encode structural invariants (point format, enum literals); PEP 316 clauses encode semantic / relational ones that span across call sites.
+
+---
+
 ## Implementation Guidelines
 
 - `spec.json` changes first, always.
