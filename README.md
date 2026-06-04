@@ -37,4 +37,4 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md)
 
 ## AI
 
-This project used AI extensively. I still spent hours on papers for the design decisions, and reviewed every line (except for JS 😬)
+This project used AI extensively. I still spent hours on papers for the design decisions, and reviewed most of the architecture, contracts and tests (except for JS 😬)
