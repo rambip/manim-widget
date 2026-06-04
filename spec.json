@@ -127,8 +127,8 @@
       "properties": {
         "kind": {
           "type": "string",
-          "enum": ["VGroup", "Arrow"],
-          "description": "Group of child mobjects. Arrow kind: points is the shaft VMobject, children[0] is the tip VMobject."
+          "const": "VGroup",
+          "description": "Group of child mobjects. Mobjects that own geometry and hold child mobjects (e.g. Arrow's shaft + tip) are serialized this way: each subpath becomes a child VMobject and child mobjects follow, so the container carries no geometry of its own."
         },
         "children": {
           "type": "array",

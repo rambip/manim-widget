@@ -136,6 +136,7 @@ def _():
             self.add(img)
             self.play(Create(block1), GrowArrow(a1))
             self.play(Create(block2), GrowArrow(a2))
+            self.next_section("test")
             self.play(img.animate.shift(RIGHT * 2))
             self.play(img.animate.shift(RIGHT * 2))
 
@@ -145,12 +146,13 @@ def _():
 @app.cell
 def _(ZYImageCNN):
     scene = ZYImageCNN(is_3d=True)
-    scene
-    return
+    scene.scene_data["sections"][0]["camera"]
+    return (scene,)
 
 
 @app.cell
-def _():
+def _(scene):
+    scene
     return
 
 

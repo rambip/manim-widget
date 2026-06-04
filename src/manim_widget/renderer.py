@@ -13,6 +13,7 @@ from PIL import Image
 from manim import (
     CyclicReplace,
     FadeOut,
+    GrowArrow,
     ReplacementTransform,
     Rotate,
     ScaleInPlace,
@@ -22,7 +23,6 @@ from manim import (
     ValueTracker,
     VGroup,
 )
-from manim.mobject.geometry.line import Arrow
 from manim.animation.animation import Animation
 from manim.mobject.mobject import Mobject
 from manim.mobject.types.image_mobject import AbstractImageMobject
@@ -181,12 +181,17 @@ class CaptureRenderer:
             if z_index is not None:
                 state["z_index"] = z_index
 
+        has_children = bool(getattr(mob, "submobjects", None))
+
         if isinstance(mob, VMobject):
             subpaths = mob.get_subpaths()
-            if len(subpaths) > 1:
-                return self._serialize_multi_subpath(
-                    mob, subpaths, for_snapshot=for_snapshot
-                )
+            # A mobject that owns geometry *and* holds child mobjects (e.g.
+            # Arrow's shaft + tip), or that has multiple disconnected subpaths,
+            # is serialized as a pure VGroup container: each subpath becomes a
+            # child VMobject and child mobjects follow. The container carries no
+            # geometry of its own, so restore and Transform work generically.
+            if len(subpaths) > 1 or (subpaths and has_children):
+                return self._serialize_vgroup(mob, subpaths, for_snapshot=for_snapshot)
             if subpaths:
                 raw_points = subpaths[0]
                 if len(raw_points) > 0:
@@ -199,15 +204,15 @@ class CaptureRenderer:
                             points_3n1.extend(chunk[1:].tolist())
                     state["points"] = points_3n1
 
-        if hasattr(mob, "submobjects") and mob.submobjects:
-            state["kind"] = "Arrow" if isinstance(mob, Arrow) else "VGroup"
+        if has_children:
+            state["kind"] = "VGroup"
             state["children"] = [self.state_ref_for(child) for child in mob.submobjects]
         else:
             state["kind"] = "VMobject"
 
         return state
 
-    def _serialize_multi_subpath(
+    def _serialize_vgroup(
         self, mob: Mobject, subpaths: list, *, for_snapshot: bool
     ) -> dict[str, object]:
         child_refs: list[int] = []
@@ -245,6 +250,10 @@ class CaptureRenderer:
                 if z_index is not None:
                     child_state["z_index"] = z_index
             child_refs.append(self._intern_state(child_state))
+
+        # Own child mobjects (e.g. an Arrow's tip) follow the subpath children.
+        for child in getattr(mob, "submobjects", None) or []:
+            child_refs.append(self.state_ref_for(child))
 
         return {
             "kind": "VGroup",
@@ -425,11 +434,18 @@ class CaptureRenderer:
 
             if not self.is_active(mob):
                 self.register_mobject(mob)
+                # GrowArrow grows from a collapsed arrow: register the starting
+                # (zero-scale) state so the paired Transform descriptor animates
+                # collapsed -> full.
+                if isinstance(anim, GrowArrow):
+                    register_ref = self.state_ref_for(anim.create_starting_mobject())
+                else:
+                    register_ref = self.state_ref_for(mob)
                 pre_commands.append(
                     {
                         "cmd": "register",
                         "id": self.short_id(mob),
-                        "state_ref": self.state_ref_for(mob),
+                        "state_ref": register_ref,
                     }
                 )
 
@@ -545,6 +561,15 @@ class CaptureRenderer:
                 raise RuntimeError(msg)
             descriptor["kind"] = "MoveToTarget"
             descriptor["state_ref"] = self.state_ref_for(target_mobject)
+            return descriptor
+
+        if isinstance(anim, GrowArrow):
+            # GrowArrow is replayed as a Transform from the collapsed arrow (its
+            # starting mobject, registered as the initial state) to the full
+            # arrow. This keeps the JS player free of arrow-specific growth and
+            # reconstruction logic.
+            descriptor["kind"] = "Transform"
+            descriptor["state_ref"] = self.state_ref_for(anim.mobject)
             return descriptor
 
         if anim_name in ("Transform", "ReplacementTransform"):

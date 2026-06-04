@@ -12,12 +12,10 @@ import {
   VGroup,
   Write,
   GrowFromCenter,
-  GrowArrow,
   MoveAlongPath,
   Rotating,
   MathTexImage,
   ImageMobject,
-  Arrow,
 } from "manim-web";
 import * as THREE from "three";
 
@@ -46,8 +44,6 @@ function buildSimpleAnimation(mob, desc, registry) {
       });
     case "GrowFromCenter":
       return new GrowFromCenter(mob);
-    case "GrowArrow":
-      return new GrowArrow(mob);
     case "Rotating":
       return new Rotating(mob, {
         aboutPoint: params.aboutPoint ?? params.about_point,
@@ -154,11 +150,6 @@ export class Player {
 
     if (state.kind === "VGroup") {
       return new VGroup();
-    }
-
-    if (state.kind === "Arrow") {
-      // Create dummy Arrow; shaft/tip content replaced in _instantiateFromRef
-      return new Arrow();
     }
 
     const mob = new VMobject();
@@ -399,74 +390,12 @@ export class Player {
     const mob = this._createMobjectFromState(state);
     this._applyState(mob, state);
     if (state.kind === "VGroup") {
-      if (Array.isArray(state.points) && state.points.length > 0) {
-        const bodyMob = new VMobject();
-        this._applyState(bodyMob, state);
-        mob.add(bodyMob);
-      }
       if (Array.isArray(state.children) && state.children.length > 0) {
         for (const childRef of state.children) {
           const child = this._instantiateFromRef(section, childRef);
           mob.add(child);
         }
       }
-    }
-    if (state.kind === "Arrow") {
-      const shaftPoints = Array.isArray(state.points) ? state.points : [];
-      const tipState =
-        Array.isArray(state.children) && state.children.length > 0
-          ? this._stateFromRef(section, state.children[0])
-          : null;
-      const tipPoints = Array.isArray(tipState?.points) ? tipState.points : [];
-
-      const start = shaftPoints.length > 0 ? shaftPoints[0] : [0, 0, 0];
-      const end = tipPoints.length > 0 ? tipPoints[0] : [1, 0, 0];
-
-      const shaftEnd = shaftPoints.length > 0 ? shaftPoints[shaftPoints.length - 1] : null;
-      const tipLength =
-        shaftEnd && tipPoints.length > 0
-          ? Math.hypot(
-              end[0] - shaftEnd[0],
-              end[1] - shaftEnd[1],
-              end[2] - shaftEnd[2],
-            )
-          : undefined;
-
-      const tipWidth =
-        shaftEnd && tipPoints.length > 0
-          ? (() => {
-              const axis = [end[0] - start[0], end[1] - start[1], end[2] - start[2]];
-              const axisLen = Math.hypot(axis[0], axis[1], axis[2]);
-              if (axisLen <= 1e-9) return undefined;
-              const u = [axis[0] / axisLen, axis[1] / axisLen, axis[2] / axisLen];
-
-              // tipWidth convention in Arrow: perpendicular offset from tip-base center.
-              // shaftEnd is tip-base center for canonical serialized arrows.
-              return Math.max(
-                ...tipPoints.map((p) => {
-                  const v = [p[0] - shaftEnd[0], p[1] - shaftEnd[1], p[2] - shaftEnd[2]];
-                  const parallel = v[0] * u[0] + v[1] * u[1] + v[2] * u[2];
-                  const perp = [
-                    v[0] - parallel * u[0],
-                    v[1] - parallel * u[1],
-                    v[2] - parallel * u[2],
-                  ];
-                  return Math.hypot(perp[0], perp[1], perp[2]);
-                }),
-              );
-            })()
-          : undefined;
-
-      const arrow = new Arrow({
-        start,
-        end,
-        color: state.stroke_color,
-        strokeWidth: state.stroke_width,
-        ...(typeof tipLength === "number" && tipLength > 0 ? { tipLength } : {}),
-        ...(typeof tipWidth === "number" && tipWidth > 0 ? { tipWidth } : {}),
-      });
-      this._applyState(arrow, state);
-      return arrow;
     }
     return mob;
   }

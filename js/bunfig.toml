@@ -1,0 +1,4 @@
+preload = ["./typia-preload.ts"]
+
+[test]
+preload = ["./typia-preload.ts"]

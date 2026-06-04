@@ -844,8 +844,8 @@ def test_register_new_section_register_back_emits_two_registers_with_two_states(
     assert abs(p1[0] - 1.0) < 1e-9
 
 
-def test_arrow_serializes_with_arrow_kind():
-    """Test that Arrow serializes with kind='Arrow' and shaft/tip structure."""
+def test_arrow_serializes_as_vgroup_container():
+    """Arrow serializes as a pure VGroup container: shaft + tip as children."""
     from manim import Arrow, Create
 
     class ArrowScene(ManimWidget):
@@ -855,20 +855,26 @@ def test_arrow_serializes_with_arrow_kind():
 
     scene = ArrowScene(fps=10)
     data = scene.scene_data
+    states = data["sections"][0]["states"]
 
-    # Find Arrow state in section states
+    # Find the Arrow's VGroup container: a VGroup whose children are a shaft
+    # VMobject (with points) and a tip VMobject (with points).
     arrow_state = None
-    for state in data["sections"][0]["states"]:
-        if state.get("kind") == "Arrow":
+    for state in states:
+        if state.get("kind") != "VGroup":
+            continue
+        children = [states[ref] for ref in state["children"]]
+        if all(c.get("kind") == "VMobject" and c.get("points") for c in children):
             arrow_state = state
             break
 
-    assert arrow_state is not None, "Arrow state not found"
-    assert arrow_state["kind"] == "Arrow"
-    # Arrow has points (shaft) and children (tip)
-    assert "points" in arrow_state
-    assert "children" in arrow_state
-    assert len(arrow_state["children"]) == 1  # One tip child
+    assert arrow_state is not None, "Arrow VGroup container not found"
+    # Pure container: no geometry of its own, shaft + tip live in children.
+    assert "points" not in arrow_state
+    assert len(arrow_state["children"]) == 2  # shaft + tip
+    shaft = states[arrow_state["children"][0]]
+    assert shaft["kind"] == "VMobject"
+    assert len(shaft["points"]) >= 4
 
 
 def test_camera_set_before_next_section_appears_in_first_and_second_sections():

@@ -77,6 +77,8 @@ def run_cli(
         input=scene_json,
         capture_output=True,
         text=True,
+        # Run from the js/ dir so bun picks up bunfig.toml (typia transform).
+        cwd=str(CLI_PATH.parent.parent),
     )
     return result.returncode, result.stdout, result.stderr
 
@@ -822,7 +824,7 @@ def test_js_static_mathtex_with_scaled_transform():
 
 
 def test_arrow_vgroup_body_points_applied_in_end_state():
-    """Regression: Arrow body points must be applied when state.kind is Arrow."""
+    """Regression: Arrow restores as a VGroup whose shaft child keeps its points."""
     from manim import Arrow, ORIGIN, RIGHT
 
     class ArrowScene(ManimWidget):
@@ -843,7 +845,7 @@ def test_arrow_vgroup_body_points_applied_in_end_state():
     root_ref = next(iter(snapshot.values()))
     root_state = states[root_ref]
 
-    assert root_state["kind"] == "Arrow"
+    assert root_state["kind"] == "VGroup"
     assert "children" in root_state and len(root_state["children"]) == 2
 
     body_ref = root_state["children"][0]
