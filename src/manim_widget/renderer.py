@@ -34,6 +34,34 @@ from .snapshot import IdCounter
 from .tex_patch import PatchedMathTex
 
 
+def _needs_camera_frame_loop(scene: Scene, animations: list) -> bool:
+    """Return True when the per-frame camera-capture loop must run.
+
+    The loop is the only reason _play_animate_path ticks through time at all
+    (mobject updaters are handled by _play_data_path). It is safe to skip when:
+
+    - The camera has no updaters of its own.
+    - No animation in the batch directly targets the camera object.
+
+    This is 2D/3D-agnostic: a 3D scene whose camera is static during a given
+    play() call gains the same speedup as a 2D scene.
+
+    NOTE: camera animations (self.play(self.camera.animate.set_phi(...))) are
+    not yet a first-class supported feature — they would need a dedicated
+    command type in the wire format. The check below handles the case where
+    they appear anyway so the frame loop still runs rather than silently
+    dropping camera movement.
+    """
+    camera = getattr(scene, "camera", None)
+    if camera is None:
+        return False
+    if getattr(camera, "updaters", []):
+        return True
+    if any(getattr(a, "mobject", None) is camera for a in animations):
+        return True
+    return False
+
+
 def _compute_camera_state(cam) -> dict[str, float]:
     """Extract camera state including computed FOV from Manim camera."""
     distance = float(getattr(cam, "default_distance", 5))
@@ -502,14 +530,13 @@ class CaptureRenderer:
         for anim in animations:
             anim.begin()
 
-        # Track camera frames for 3D scenes during animation playback
         n_frames = math.ceil(run_time * self.fps)
         camera_frames: list[dict[str, float]] = []
-        is_3d = hasattr(scene, "camera") and hasattr(scene.camera, "get_phi")
+        needs_frame_loop = _needs_camera_frame_loop(scene, animations)
 
         # Capture initial camera state
         initial_cam_state: dict[str, float] | None = None
-        if is_3d:
+        if needs_frame_loop:
             initial_cam_state = _compute_camera_state(scene.camera)
 
         # Set up scene for animation updates
@@ -524,7 +551,7 @@ class CaptureRenderer:
             scene.update_to_time(t)
 
             # Capture camera state for 3D scenes (skip duplicates, skip if unchanged from start)
-            if is_3d:
+            if needs_frame_loop:
                 cam_state = _compute_camera_state(scene.camera)
                 # Only add frames that differ from initial state (actual camera movement)
                 if cam_state != initial_cam_state and cam_state != last_cam_state:

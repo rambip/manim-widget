@@ -2,9 +2,15 @@ from __future__ import annotations
 
 import base64
 import io
+import json
+import math
+import os
 
 import numpy as np
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
+from jsonschema import validate
 from PIL import Image
 
 from manim_widget.models import SceneData
@@ -21,6 +27,17 @@ from manim import (
 )
 
 from manim_widget.widget import ManimWidget
+from manim_widget.renderer import CaptureRenderer, _needs_camera_frame_loop
+from tests.scene_strategies import (
+    construct_script,
+    run_generated_scene,
+    UpdaterCmd,
+)
+from manim_widget.states import (
+    VMobjectState,
+    VGroupState,
+    ValueTrackerState,
+)
 
 
 def assert_valid_scene(data: dict) -> None:
@@ -45,6 +62,61 @@ def assert_close(actual: object, expected: object, tol: float = 1e-9) -> None:
             assert_close(actual[key], expected[key], tol=tol)
         return
     assert actual == expected
+
+
+def load_schema() -> dict:
+    schema_path = os.path.join(os.path.dirname(__file__), "..", "spec.json")
+    with open(schema_path) as f:
+        return json.load(f)
+
+
+def _fresh_renderer() -> CaptureRenderer:
+    """Return a renderer with one open section, ready for direct unit testing."""
+    r = CaptureRenderer(fps=10)
+    r.open_section("test")
+    return r
+
+
+# ---------------------------------------------------------------------------
+# Hypothesis strategies
+# ---------------------------------------------------------------------------
+
+coord = st.floats(-20.0, 20.0, allow_nan=False, allow_infinity=False)
+point3 = st.lists(coord, min_size=3, max_size=3)
+hex_color = st.from_regex(r"#[0-9A-F]{6}", fullmatch=True)
+opacity = st.floats(0.0, 1.0, allow_nan=False)
+z_idx = st.floats(-10.0, 10.0, allow_nan=False, allow_infinity=False)
+
+
+@st.composite
+def bezier_points_3n1(draw, min_segments: int = 0, max_segments: int = 4):
+    """Generate a valid 3n+1 points list (n bezier segments)."""
+    n = draw(st.integers(min_value=min_segments, max_value=max_segments))
+    if n == 0:
+        return []
+    pts = draw(st.lists(point3, min_size=3 * n + 1, max_size=3 * n + 1))
+    return pts
+
+
+@st.composite
+def vmobject_state(draw):
+    points = draw(st.one_of(st.none(), bezier_points_3n1()))
+    return VMobjectState(
+        points=points,
+        fill_color=draw(st.one_of(st.none(), hex_color)),
+        fill_opacity=draw(st.one_of(st.none(), opacity)),
+        stroke_color=draw(st.one_of(st.none(), hex_color)),
+        stroke_width=draw(st.one_of(st.none(), st.floats(0.0, 20.0, allow_nan=False))),
+        stroke_opacity=draw(st.one_of(st.none(), opacity)),
+        z_index=draw(st.one_of(st.none(), z_idx)),
+    )
+
+
+@st.composite
+def value_tracker_state(draw):
+    return ValueTrackerState(
+        value=draw(st.floats(-1e6, 1e6, allow_nan=False, allow_infinity=False))
+    )
 
 
 def strip_points(obj: dict) -> dict:
@@ -712,7 +784,6 @@ def test_cyclic_replace_animation_emits_group_animation():
 
 def test_camera_fov_calculation():
     """Test that FOV is correctly computed from Manim camera parameters."""
-    import math
 
     class SimpleScene(ManimWidget):
         def construct(self):
@@ -889,3 +960,225 @@ def test_camera_set_before_next_section_appears_in_first_and_second_sections():
     assert abs(second_camera["theta"] - 0.5) < 1e-9
     assert abs(second_camera["phi"] - 0.3) < 1e-9
     assert abs(second_camera["distance"] - 10.0) < 1e-9
+
+
+def test_arrow_serializes_as_vgroup_container():
+    """Arrow: pure VGroup container, no points on container, 2 VMobject children."""
+    from manim import Arrow
+
+    class ArrowScene(ManimWidget):
+        def construct(self):
+            a = Arrow(start=LEFT, end=RIGHT)
+            self.play(Create(a))
+
+    scene = ArrowScene(fps=10)
+    states = scene.scene_data["sections"][0]["states"]
+
+    arrow_state = next(
+        (
+            s
+            for s in states
+            if s.get("kind") == "VGroup"
+            and all(
+                states[r].get("kind") == "VMobject" and states[r].get("points")
+                for r in s["children"]
+            )
+        ),
+        None,
+    )
+
+    assert arrow_state is not None
+    assert "points" not in arrow_state
+    assert len(arrow_state["children"]) == 2
+
+
+@given(
+    st.lists(vmobject_state(), min_size=2, max_size=6),
+    st.integers(min_value=0, max_value=5),
+)
+def test_intern_state_ref_always_in_bounds_after_mixed_inserts(states, extra_repeats):
+    """Repeating intern calls never push ref out of bounds."""
+    r = _fresh_renderer()
+    refs = [r._intern_state(s) for s in states]
+    # Re-intern a subset to exercise deduplication path
+    for s in states[:extra_repeats]:
+        ref = r._intern_state(s)
+        assert 0 <= ref < len(r._current.states)
+    for ref in refs:
+        assert 0 <= ref < len(r._current.states)
+
+
+@given(bezier_points_3n1(min_segments=1, max_segments=3))
+@settings(max_examples=25)
+def test_state_bank_stores_dict_not_pydantic_model(pts):
+    """States in the bank must be plain dicts (for JSON serialization)."""
+    r = _fresh_renderer()
+    state = VMobjectState(points=pts)
+    ref = r._intern_state(state)
+    stored = r._current.states[ref]
+    assert isinstance(stored, dict)
+    assert stored.get("kind") == "VMobject"
+
+
+@given(vmobject_state())
+def test_serialize_mobject_never_produces_arrow_kind(state):
+    """No serialize path should ever emit kind='Arrow'."""
+    d = state.model_dump(exclude_none=True)
+    assert d.get("kind") != "Arrow"
+
+
+@given(
+    st.lists(vmobject_state(), min_size=1, max_size=4),
+)
+def test_vgroup_state_children_are_all_ints(child_states):
+    r = _fresh_renderer()
+    children = [r._intern_state(s) for s in child_states]
+    vg = VGroupState(children=children)
+    assert all(isinstance(c, int) for c in vg.children)
+    d = vg.model_dump(exclude_none=True)
+    assert "points" not in d
+    assert d["kind"] == "VGroup"
+
+
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Integration tests: frame-loop routing
+# ---------------------------------------------------------------------------
+
+
+def test_manim_camera_has_no_updaters_attribute():
+    """Manim's ThreeDCamera has no 'updaters' attribute, so the camera-updater
+    branch of _needs_camera_frame_loop is currently unreachable for real scenes.
+    If a future Manim version adds camera updaters this test will fail and we'll
+    need to revisit the predicate."""
+    from manim.camera.three_d_camera import ThreeDCamera
+
+    cam = ThreeDCamera()
+    assert not hasattr(cam, "updaters"), (
+        "ThreeDCamera now has 'updaters' — revisit _needs_camera_frame_loop"
+    )
+
+
+def test_needs_camera_frame_loop_false_for_real_scene_with_real_animation():
+    """_needs_camera_frame_loop must return False for a typical non-camera play()
+    so the optimised (no frame-loop) path is actually taken."""
+
+    class SimpleScene(ManimWidget):
+        _captured: bool = False
+
+        def construct(self):
+            c = Circle()
+            anims = self.compile_animations(Create(c))
+            SimpleScene._captured = _needs_camera_frame_loop(self, anims)
+            self.play(Create(c))
+
+    SimpleScene()
+    assert not SimpleScene._captured
+
+
+# ---------------------------------------------------------------------------
+# Property tests: generated scenes
+# ---------------------------------------------------------------------------
+
+
+@given(construct_script(min_mobs=1, max_mobs=4, min_plays=2, max_plays=5))
+@settings(max_examples=30, deadline=None)
+def test_generated_scene_produces_valid_schema(args):
+    """Any randomly generated (non-updater) scene must pass JSON schema validation."""
+    mob_specs, commands = args
+    schema = load_schema()
+    data = run_generated_scene(mob_specs, commands, fps=5)
+    validate(data, schema)
+
+
+@given(construct_script(min_mobs=1, max_mobs=4, min_plays=2, max_plays=5))
+@settings(max_examples=30, deadline=None)
+def test_generated_scene_no_camera_updates_in_animate_commands(args):
+    """Non-updater scenes must never emit camera_updates in animate commands
+    (frame loop skipped)."""
+    mob_specs, commands = args
+    data = run_generated_scene(mob_specs, commands, fps=5)
+    for section in data["sections"]:
+        for cmd in section["construct"]:
+            if cmd["cmd"] == "animate":
+                assert "camera_updates" not in cmd
+
+
+@given(
+    construct_script(
+        min_mobs=1, max_mobs=3, min_plays=1, max_plays=4, allow_updaters=True
+    )
+)
+@settings(max_examples=20, deadline=None)
+def test_generated_scene_updater_commands_have_correct_frame_count(args):
+    """Every 'updater' command must have exactly ceil(fps * run_time) frames."""
+    import math as _math
+
+    mob_specs, commands = args
+    fps = 5
+    data = run_generated_scene(mob_specs, commands, fps=fps)
+
+    updater_run_times = [
+        cmd.run_time for cmd in commands if isinstance(cmd, UpdaterCmd)
+    ]
+    updater_wire_cmds = [
+        c
+        for section in data["sections"]
+        for c in section["construct"]
+        if c["cmd"] == "updater"
+    ]
+
+    assert len(updater_wire_cmds) == len(updater_run_times)
+    for wire_cmd, rt in zip(updater_wire_cmds, updater_run_times):
+        assert len(wire_cmd["frames"]) == _math.ceil(fps * rt)
+
+
+@given(construct_script(min_mobs=1, max_mobs=3, min_plays=2, max_plays=5))
+@settings(max_examples=20, deadline=None)
+def test_generated_scene_all_state_refs_in_bounds(args):
+    """Every state_ref anywhere in the output must be a valid index into
+    the section's states list."""
+    mob_specs, commands = args
+    data = run_generated_scene(mob_specs, commands, fps=5)
+
+    for section in data["sections"]:
+        n_states = len(section["states"])
+        for ref in section.get("snapshot", {}).values():
+            assert 0 <= ref < n_states
+        for cmd in section["construct"]:
+            if "state_ref" in cmd:
+                assert 0 <= cmd["state_ref"] < n_states
+            for anim in cmd.get("animations", []):
+                if "state_ref" in anim:
+                    assert 0 <= anim["state_ref"] < n_states
+            for frame in cmd.get("frames", []):
+                for mob_frame in frame.values():
+                    assert 0 <= mob_frame["state_ref"] < n_states
+
+
+@given(
+    construct_script(
+        min_mobs=2,
+        max_mobs=4,
+        min_plays=3,
+        max_plays=6,
+        allow_transform=True,
+        allow_fadeout=True,
+        allow_groups=True,
+    )
+)
+@settings(max_examples=20, deadline=None)
+def test_generated_scene_with_transforms_fadeouts_groups_is_valid(args):
+    """Scenes mixing Create, Transform, Shift, FadeOut and VGroups must pass
+    schema validation and have coherent state refs."""
+    mob_specs, commands = args
+    schema = load_schema()
+    data = run_generated_scene(mob_specs, commands, fps=5)
+    validate(data, schema)
+
+    for section in data["sections"]:
+        n_states = len(section["states"])
+        for cmd in section["construct"]:
+            for anim in cmd.get("animations", []):
+                if "state_ref" in anim:
+                    assert 0 <= anim["state_ref"] < n_states
