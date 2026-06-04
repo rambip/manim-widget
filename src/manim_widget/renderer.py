@@ -41,6 +41,34 @@ from .states import (
 from .tex_patch import PatchedMathTex
 
 
+def _needs_camera_frame_loop(scene: Scene, animations: list) -> bool:
+    """Return True when the per-frame camera-capture loop must run.
+
+    The loop is the only reason _play_animate_path ticks through time at all
+    (mobject updaters are handled by _play_data_path). It is safe to skip when:
+
+    - The camera has no updaters of its own.
+    - No animation in the batch directly targets the camera object.
+
+    This is 2D/3D-agnostic: a 3D scene whose camera is static during a given
+    play() call gains the same speedup as a 2D scene.
+
+    NOTE: camera animations (self.play(self.camera.animate.set_phi(...))) are
+    not yet a first-class supported feature — they would need a dedicated
+    command type in the wire format. The check below handles the case where
+    they appear anyway so the frame loop still runs rather than silently
+    dropping camera movement.
+    """
+    camera = getattr(scene, "camera", None)
+    if camera is None:
+        return False
+    if getattr(camera, "updaters", []):
+        return True
+    if any(getattr(a, "mobject", None) is camera for a in animations):
+        return True
+    return False
+
+
 def _compute_camera_state(cam) -> dict[str, float]:
     """Extract camera state including computed FOV from Manim camera."""
     distance = float(getattr(cam, "default_distance", 5))
@@ -509,13 +537,12 @@ class CaptureRenderer:
         finally:
             self._suppress_stage_adds = False
 
-        # Track camera frames for 3D scenes during animation playback
         n_frames = math.ceil(run_time * self.fps)
         camera_frames: list[dict[str, float]] = []
-        is_3d = hasattr(scene, "camera") and hasattr(scene.camera, "get_phi")
+        needs_frame_loop = _needs_camera_frame_loop(scene, animations)
 
         initial_cam_state: dict[str, float] | None = None
-        if is_3d:
+        if needs_frame_loop:
             initial_cam_state = _compute_camera_state(scene.camera)
         last_cam_state = initial_cam_state
 
@@ -546,22 +573,22 @@ class CaptureRenderer:
                     force_end_state(anim)
 
         if not begin_failed:
-            scene.animations = animations
-            scene.last_t = 0.0
+            if needs_frame_loop:
+                scene.animations = animations
+                scene.last_t = 0.0
 
-            for i in range(n_frames):
-                t = (i + 1) / self.fps
-                if t > run_time:
-                    t = run_time
-                scene.update_to_time(t)
+                for i in range(n_frames):
+                    t = (i + 1) / self.fps
+                    if t > run_time:
+                        t = run_time
+                    scene.update_to_time(t)
 
-                if is_3d:
                     cam_state = _compute_camera_state(scene.camera)
                     if cam_state != initial_cam_state and cam_state != last_cam_state:
                         camera_frames.append(cam_state)
                         last_cam_state = cam_state
 
-            scene.animations = None
+                scene.animations = None
 
             for anim in animations:
                 anim.finish()

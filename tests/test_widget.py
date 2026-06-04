@@ -27,7 +27,12 @@ from manim import (
 )
 
 from manim_widget.widget import ManimWidget
-from manim_widget.renderer import CaptureRenderer
+from manim_widget.renderer import CaptureRenderer, _needs_camera_frame_loop
+from tests.scene_strategies import (
+    construct_script,
+    run_generated_scene,
+    UpdaterCmd,
+)
 from manim_widget.states import (
     VMobjectState,
     VGroupState,
@@ -833,3 +838,147 @@ def test_vgroup_state_children_are_all_ints(child_states):
     d = vg.model_dump(exclude_none=True)
     assert "points" not in d
     assert d["kind"] == "VGroup"
+
+
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Integration tests: frame-loop routing
+# ---------------------------------------------------------------------------
+
+
+def test_manim_camera_has_no_updaters_attribute():
+    """Manim's ThreeDCamera has no 'updaters' attribute, so the camera-updater
+    branch of _needs_camera_frame_loop is currently unreachable for real scenes.
+    If a future Manim version adds camera updaters this test will fail and we'll
+    need to revisit the predicate."""
+    from manim.camera.three_d_camera import ThreeDCamera
+
+    cam = ThreeDCamera()
+    assert not hasattr(cam, "updaters"), (
+        "ThreeDCamera now has 'updaters' — revisit _needs_camera_frame_loop"
+    )
+
+
+def test_needs_camera_frame_loop_false_for_real_scene_with_real_animation():
+    """_needs_camera_frame_loop must return False for a typical non-camera play()
+    so the optimised (no frame-loop) path is actually taken."""
+
+    class SimpleScene(ManimWidget):
+        _captured: bool = False
+
+        def construct(self):
+            c = Circle()
+            anims = self.compile_animations(Create(c))
+            SimpleScene._captured = _needs_camera_frame_loop(self, anims)
+            self.play(Create(c))
+
+    SimpleScene()
+    assert not SimpleScene._captured
+
+
+# ---------------------------------------------------------------------------
+# Property tests: generated scenes
+# ---------------------------------------------------------------------------
+
+
+@given(construct_script(min_mobs=1, max_mobs=4, min_plays=2, max_plays=5))
+@settings(max_examples=30, deadline=None)
+def test_generated_scene_produces_valid_schema(args):
+    """Any randomly generated (non-updater) scene must pass JSON schema validation."""
+    mob_specs, commands = args
+    schema = load_schema()
+    data = run_generated_scene(mob_specs, commands, fps=5)
+    validate(data, schema)
+
+
+@given(construct_script(min_mobs=1, max_mobs=4, min_plays=2, max_plays=5))
+@settings(max_examples=30, deadline=None)
+def test_generated_scene_no_camera_updates_in_animate_commands(args):
+    """Non-updater scenes must never emit camera_updates in animate commands
+    (frame loop skipped)."""
+    mob_specs, commands = args
+    data = run_generated_scene(mob_specs, commands, fps=5)
+    for section in data["sections"]:
+        for cmd in section["construct"]:
+            if cmd["cmd"] == "animate":
+                assert "camera_updates" not in cmd
+
+
+@given(
+    construct_script(
+        min_mobs=1, max_mobs=3, min_plays=1, max_plays=4, allow_updaters=True
+    )
+)
+@settings(max_examples=20, deadline=None)
+def test_generated_scene_updater_commands_have_correct_frame_count(args):
+    """Every 'updater' command must have exactly ceil(fps * run_time) frames."""
+    import math as _math
+
+    mob_specs, commands = args
+    fps = 5
+    data = run_generated_scene(mob_specs, commands, fps=fps)
+
+    updater_run_times = [
+        cmd.run_time for cmd in commands if isinstance(cmd, UpdaterCmd)
+    ]
+    updater_wire_cmds = [
+        c
+        for section in data["sections"]
+        for c in section["construct"]
+        if c["cmd"] == "updater"
+    ]
+
+    assert len(updater_wire_cmds) == len(updater_run_times)
+    for wire_cmd, rt in zip(updater_wire_cmds, updater_run_times):
+        assert len(wire_cmd["frames"]) == _math.ceil(fps * rt)
+
+
+@given(construct_script(min_mobs=1, max_mobs=3, min_plays=2, max_plays=5))
+@settings(max_examples=20, deadline=None)
+def test_generated_scene_all_state_refs_in_bounds(args):
+    """Every state_ref anywhere in the output must be a valid index into
+    the section's states list."""
+    mob_specs, commands = args
+    data = run_generated_scene(mob_specs, commands, fps=5)
+
+    for section in data["sections"]:
+        n_states = len(section["states"])
+        for ref in section.get("snapshot", {}).values():
+            assert 0 <= ref < n_states
+        for cmd in section["construct"]:
+            if "state_ref" in cmd:
+                assert 0 <= cmd["state_ref"] < n_states
+            for anim in cmd.get("animations", []):
+                if "state_ref" in anim:
+                    assert 0 <= anim["state_ref"] < n_states
+            for frame in cmd.get("frames", []):
+                for mob_frame in frame.values():
+                    assert 0 <= mob_frame["state_ref"] < n_states
+
+
+@given(
+    construct_script(
+        min_mobs=2,
+        max_mobs=4,
+        min_plays=3,
+        max_plays=6,
+        allow_transform=True,
+        allow_fadeout=True,
+        allow_groups=True,
+    )
+)
+@settings(max_examples=20, deadline=None)
+def test_generated_scene_with_transforms_fadeouts_groups_is_valid(args):
+    """Scenes mixing Create, Transform, Shift, FadeOut and VGroups must pass
+    schema validation and have coherent state refs."""
+    mob_specs, commands = args
+    schema = load_schema()
+    data = run_generated_scene(mob_specs, commands, fps=5)
+    validate(data, schema)
+
+    for section in data["sections"]:
+        n_states = len(section["states"])
+        for cmd in section["construct"]:
+            for anim in cmd.get("animations", []):
+                if "state_ref" in anim:
+                    assert 0 <= anim["state_ref"] < n_states
