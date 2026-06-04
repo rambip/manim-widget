@@ -28,6 +28,7 @@ from manim.mobject.mobject import Mobject
 from manim.mobject.types.image_mobject import AbstractImageMobject
 from manim.mobject.types.vectorized_mobject import VMobject
 
+from .anim_compat import force_end_state
 from .snapshot import IdCounter
 from .states import (
     ImageMobjectState,
@@ -507,42 +508,64 @@ class CaptureRenderer:
                 anim._setup_scene(scene)
         finally:
             self._suppress_stage_adds = False
-        for anim in animations:
-            anim.begin()
 
         # Track camera frames for 3D scenes during animation playback
         n_frames = math.ceil(run_time * self.fps)
         camera_frames: list[dict[str, float]] = []
         is_3d = hasattr(scene, "camera") and hasattr(scene.camera, "get_phi")
 
-        # Capture initial camera state
         initial_cam_state: dict[str, float] | None = None
         if is_3d:
             initial_cam_state = _compute_camera_state(scene.camera)
-
-        # Set up scene for animation updates
-        scene.animations = animations
-        scene.last_t = 0.0
         last_cam_state = initial_cam_state
 
-        for i in range(n_frames):
-            t = (i + 1) / self.fps
-            if t > run_time:
-                t = run_time
-            scene.update_to_time(t)
+        # Run the animation lifecycle so mobjects reach their end state.
+        # Some transforms (e.g. between ImageMobjects of different pixel
+        # dimensions) cannot interpolate Python-side; Manim raises in begin().
+        # If that happens we warn, apply end states directly, and skip the
+        # frame loop — it would fail too. Visual interpolation is the JS
+        # player's job; Python only needs correct final geometry.
+        # NOTE: mixing interpolable and non-interpolable animations in one
+        # play() call is not supported — the whole batch is skipped on failure.
+        begin_failed = False
+        try:
+            for anim in animations:
+                anim.begin()
+        except Exception as exc:
+            import warnings
 
-            # Capture camera state for 3D scenes (skip duplicates, skip if unchanged from start)
-            if is_3d:
-                cam_state = _compute_camera_state(scene.camera)
-                # Only add frames that differ from initial state (actual camera movement)
-                if cam_state != initial_cam_state and cam_state != last_cam_state:
-                    camera_frames.append(cam_state)
-                    last_cam_state = cam_state
+            warnings.warn(
+                f"Animation batch could not begin Python-side ({exc}). "
+                "Applying end states directly; this scene would not play back "
+                "in plain Manim. See manim_widget.anim_compat for details.",
+                stacklevel=3,
+            )
+            begin_failed = True
+            for anim in animations:
+                if hasattr(anim, "target_mobject"):
+                    force_end_state(anim)
 
-        scene.animations = None  # Clean up
+        if not begin_failed:
+            scene.animations = animations
+            scene.last_t = 0.0
 
-        for anim in animations:
-            anim.finish()
+            for i in range(n_frames):
+                t = (i + 1) / self.fps
+                if t > run_time:
+                    t = run_time
+                scene.update_to_time(t)
+
+                if is_3d:
+                    cam_state = _compute_camera_state(scene.camera)
+                    if cam_state != initial_cam_state and cam_state != last_cam_state:
+                        camera_frames.append(cam_state)
+                        last_cam_state = cam_state
+
+            scene.animations = None
+
+            for anim in animations:
+                anim.finish()
+
         for anim in animations:
             if isinstance(anim, (FadeOut, ReplacementTransform)):
                 self.unregister_mobject(anim.mobject)
