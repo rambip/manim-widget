@@ -1,10 +1,10 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://manim-widget/schema/v2",
+  "$id": "https://manim-widget/schema/v3",
   "title": "ManimWidgetScene",
   "description": "Complete serialized Manim scene for client-side playback.",
   "type": "object",
-  "required": ["version", "sections"],
+  "required": ["version", "states", "sections"],
   "additionalProperties": false,
   "properties": {
     "fps": {
@@ -13,13 +13,12 @@
     },
     "version": {
       "type": "integer",
-      "const": 2
+      "const": 1
     },
-    "frame_width": {
-      "type": "integer"
-    },
-    "frame_heighheight": {
-      "type": "integer"
+    "states": {
+      "type": "array",
+      "description": "Global list of all serialized mobject states shared across sections. Commands reference entries by integer index.",
+      "items": { "$ref": "#/definitions/MobjectState" }
     },
     "sections": {
       "type": "array",
@@ -30,7 +29,7 @@
   "definitions": {
     "Section": {
       "type": "object",
-      "required": ["name", "snapshot", "states", "construct"],
+      "required": ["name", "setup", "construct"],
       "additionalProperties": false,
       "properties": {
         "name": { "type": "string" },
@@ -45,14 +44,10 @@
           "type": "string",
           "description": "Human-readable explanation of why the section is unsupported."
         },
-        "snapshot": {
-          "oneOf": [{ "$ref": "#/definitions/Snapshot" }, { "type": "null" }],
-          "description": "Full scene state at section entry. Null only when unsupported=true. Maps mob_id to state_ref index into section.states."
-        },
-        "states": {
+        "setup": {
           "type": "array",
-          "description": "List of all serialized Geometrical data that will be used in this section (excluding updaters). Other commands and animations acces it using integer indices.",
-          "items": { "$ref": "#/definitions/MobjectState" }
+          "description": "Ordered register commands that restore scene state at section entry. Image mobs reference a DerivedState that carries their position patch over the shared content state.",
+          "items": { "$ref": "#/definitions/RegisterCommand" }
         },
         "construct": {
           "type": "array",
@@ -66,26 +61,46 @@
       }
     },
 
-    "Snapshot": {
-      "type": "object",
-      "description": "Scene state at the start of this section. It is a map of object_id -> index in section.states. Note that for groups, VGroup children are NOT included - the player must restore the children from VGroupState.children.",
-      "additionalProperties": { "type": "integer", "minimum": 0 }
-    },
-
     "MobjectState": {
-      "description": "State variant holding geometrical or textual data. Nature of data is determined by the 'kind' field: either 'VMobject', 'VGroup', 'MathTexSource'",
+      "description": "State entry in the global states list. Either a full typed state or a derived state that extends a base state via the 'from' field.",
       "oneOf": [
         { "$ref": "#/definitions/VMobjectState" },
         { "$ref": "#/definitions/VGroupState" },
         { "$ref": "#/definitions/MathTexSourceState" },
         { "$ref": "#/definitions/ImageMobjectState" },
-        { "$ref": "#/definitions/ValueTrackerState" }
+        { "$ref": "#/definitions/ValueTrackerState" },
+        { "$ref": "#/definitions/DerivedState" }
       ]
+    },
+
+    "DerivedState": {
+      "type": "object",
+      "description": "A state that extends a base state by index. The JS player resolves it as Object.assign({}, states[from], thisState). Used for image position patches: the base carries {kind, source} and the derived state adds {points}.",
+      "required": ["from"],
+      "additionalProperties": true,
+      "properties": {
+        "from": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Index of the base state in the global states list."
+        },
+        "points": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "type": "array",
+            "items": { "type": "number" },
+            "minItems": 3,
+            "maxItems": 3
+          }
+        }
+      }
     },
 
     "VMobjectState": {
       "type": "object",
-      "required": ["kind", "points"],
+      "required": ["kind"],
       "additionalProperties": false,
       "properties": {
         "kind": {
@@ -173,7 +188,7 @@
 
     "ImageMobjectState": {
       "type": "object",
-      "required": ["kind", "source", "points"],
+      "required": ["kind"],
       "additionalProperties": false,
       "properties": {
         "kind": {
@@ -232,7 +247,7 @@
 
     "RegisterCommand": {
       "type": "object",
-      "description": "Bind or update a mobject in the JS scene graph by mapping id to a section-local state_ref, and add it to the visible scene.",
+      "description": "Bind a mobject id to a state and add it to the visible scene. The state may be a DerivedState; the JS player resolves the full state before constructing the mob.",
       "required": ["cmd", "id", "state_ref"],
       "additionalProperties": false,
       "properties": {
@@ -241,7 +256,7 @@
         "state_ref": {
           "type": "integer",
           "minimum": 0,
-          "description": "Index into section.states."
+          "description": "Index into global states list."
         }
       }
     },
@@ -493,7 +508,7 @@
         "state_ref": {
           "type": "integer",
           "minimum": 0,
-          "description": "Index into section.states for destination state."
+          "description": "Index into global states for destination state."
         },
         "rate_func": { "$ref": "#/definitions/RateFunc" },
         "params": { "$ref": "#/definitions/TransformAnimationParams" }

@@ -16,18 +16,18 @@ _JS_BUNDLE = _ESM.read_text()
 def serialize_scene(
     fps: int,
     sections: list[SectionRecord],
-    snapshots: dict[str, dict[str, object]],
     cameras: dict[str, dict[str, float]],
+    states: list[object],
 ) -> dict[str, object]:
     return {
-        "version": 2,
+        "version": 1,
         "fps": fps,
+        "states": states,
         "sections": [
             {
                 "name": s.name,
-                "snapshot": snapshots.get(s.name, {}),
+                "setup": s.setup,
                 **({"camera": cameras[s.name]} if s.name in cameras else {}),
-                "states": s.states,
                 "construct": s.commands,
             }
             for s in sections
@@ -44,7 +44,6 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
     def __init__(self, fps: int = 10, is_3d: bool = False, **kwargs: Any) -> None:
         self._fps = fps
         self._renderer = CaptureRenderer(fps=fps)
-        self._snapshots: dict[str, dict[str, Any]] = {}
         self._cameras: dict[str, dict[str, float]] = {}
         self._last_camera_state: dict[str, float] | None = None
 
@@ -56,7 +55,7 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
         self._renderer.init_scene(self)
 
         self._renderer.open_section("initial")
-        self._snapshots["initial"] = self._snapshot_from_registry()
+        self._flush_setup_to_section()
 
         # Capture initial camera state
         cam_state = self._get_camera_state()
@@ -65,7 +64,6 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
 
         self.construct()
 
-        # Capture final camera state if changed (for last section)
         # Flush any remaining staged adds for final section with no play().
         self._renderer.flush_staged_adds()
         # If section only had add() calls and no play(), still emit semantic Add.
@@ -81,8 +79,8 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
         data = serialize_scene(
             fps=self._fps,
             sections=self._renderer.sections,
-            snapshots=self._snapshots,
             cameras=self._cameras,
+            states=self._renderer._state_registry.as_list(),
         )
         self.scene_data = data
 
@@ -177,36 +175,45 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
             self._last_camera_state = cam_state
 
         self._renderer.open_section(name)
-        self._snapshots[name] = self._snapshot_from_registry()
+        self._flush_setup_to_section()
         if changed:
             self._cameras[name] = cam_state
 
-    def _snapshot_from_registry(self) -> dict[str, int]:
-        """Build snapshot as mob_id -> state_ref mapping.
+    def _flush_setup_to_section(self) -> None:
+        """Populate the current section's setup with register commands for all active mobs.
 
-        Only includes root mobjects. VGroup children are NOT included separately
-        since they are referenced via the VGroupState's children array.
+        For ImageMobjects two register commands are emitted: one carrying only the
+        pixel data (kind + source, no points) and one carrying only the position
+        (points). This way the expensive PNG blob is stored once in the global
+        states bank and position updates in later sections only add a cheap
+        points-only entry — never re-encode the image.
+
+        Only root mobjects are included; VGroup children are referenced via their
+        parent's VGroupState children array.
         """
-        snapshot: dict[str, int] = {}
+        renderer = self._renderer
+        current = renderer._current
+        if current is None:
+            return
 
         child_ids: set[int] = set()
-        for mob_id, mob in self._renderer.registry.items():
-            if mob_id not in self._renderer._active_ids:
+        for mob_id, mob in renderer.registry.items():
+            if mob_id not in renderer._active_ids:
                 continue
-
             if hasattr(mob, "submobjects") and mob.submobjects:
                 for child in mob.submobjects:
                     child_ids.add(id(child))
 
-        for mob_id, mob in self._renderer.registry.items():
-            if mob_id not in self._renderer._active_ids:
+        for mob_id, mob in renderer.registry.items():
+            if mob_id not in renderer._active_ids:
                 continue
             if mob_id in child_ids:
                 continue
-            mob_sid = self._renderer.short_id(mob)
-            if mob_sid not in snapshot:
-                snapshot[mob_sid] = self._renderer.state_ref_for(mob)
-        return snapshot
+            mob_sid = renderer.short_id(mob)
+            state_ref = renderer.state_ref_for(mob)
+            current.setup.append(
+                {"cmd": "register", "id": mob_sid, "state_ref": state_ref}
+            )
 
     def add(self, *mobjects: Mobject) -> None:  # type: ignore[override]
         current = self._renderer._current

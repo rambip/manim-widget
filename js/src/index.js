@@ -41,7 +41,13 @@ async function render({ model, el }) {
     globalThis.addEventListener("error", (event) => {
       try {
         console.error("[ManimWidget] window.error", {
-          args: [event?.message, event?.filename, event?.lineno, event?.colno, event?.error],
+          args: [
+            event?.message,
+            event?.filename,
+            event?.lineno,
+            event?.colno,
+            event?.error,
+          ],
           lastAnimationDebug: globalThis.__MW_LAST_ANIM_DEBUG || null,
         });
       } catch {
@@ -68,32 +74,32 @@ async function render({ model, el }) {
   let registry = null;
 
   function updateSectionStyles(currentlyPlayingIndex = -1) {
-    const labels = ui.sectionsDiv.querySelectorAll('.mw-section-label');
+    const labels = ui.sectionsDiv.querySelectorAll(".mw-section-label");
     labels.forEach((label, i) => {
       const radio = label.querySelector('input[type="radio"]');
-      const span = label.querySelector('span');
+      const span = label.querySelector("span");
 
       const isSelected = radio.checked;
       const isPlaying = i === currentlyPlayingIndex;
 
       if (isSelected) {
         // Selected: background color
-        label.style.background = 'rgba(120,120,120,1)';
-        label.style.border = '1px solid transparent';
-        span.style.color = 'rgba(255,255,255,1)';
-        span.style.fontWeight = 'bold';
+        label.style.background = "rgba(120,120,120,1)";
+        label.style.border = "1px solid transparent";
+        span.style.color = "rgba(255,255,255,1)";
+        span.style.fontWeight = "bold";
       } else if (isPlaying) {
         // Currently playing: font change
-        label.style.background = 'transparent';
-        label.style.border = '1px solid rgba(0,0,0,0.3)';
-        span.style.color = 'rgba(0,0,0,1)';
-        span.style.fontWeight = 'bold';
+        label.style.background = "transparent";
+        label.style.border = "1px solid rgba(0,0,0,0.3)";
+        span.style.color = "rgba(0,0,0,1)";
+        span.style.fontWeight = "bold";
       } else {
         // Default: border only
-        label.style.background = 'transparent';
-        label.style.border = '1px solid rgba(0,0,0,0.3)';
-        span.style.color = 'rgba(0,0,0,0.5)';
-        span.style.fontWeight = 'normal';
+        label.style.background = "transparent";
+        label.style.border = "1px solid rgba(0,0,0,0.3)";
+        span.style.color = "rgba(0,0,0,0.5)";
+        span.style.fontWeight = "normal";
       }
     });
   }
@@ -125,9 +131,10 @@ async function render({ model, el }) {
   }
 
   async function loadScene(data) {
-    if (!data || data.version !== 2 || !Array.isArray(data.sections)) {
-      console.warn("Invalid V2 scene payload");
-      return;
+    if (!data || !Array.isArray(data.sections)) {
+      throw new Error(
+        `Invalid scene payload: expected {sections: [...]} got ${JSON.stringify(data)?.slice(0, 200)}`,
+      );
     }
 
     sceneData = data;
@@ -135,11 +142,17 @@ async function render({ model, el }) {
 
     const is3D = model.get("is_3d");
     scene = is3D
-      ? new ThreeDScene(ui.container, { width: 600, height: 400, enableOrbitControls: true, orbitControlsUp: 'z' })
+      ? new ThreeDScene(ui.container, {
+          width: 600,
+          height: 400,
+          enableOrbitControls: true,
+          orbitControlsUp: "z",
+        })
       : new Scene(ui.container, { width: 600, height: 400 });
     registry = new MobjectRegistry();
     player = createPlayer(scene, registry);
     player.setfps(data.fps || 10);
+    player.setGlobalStates(data.states || []);
     player.setSections(data.sections);
 
     ui.sectionsDiv.innerHTML = data.sections
@@ -166,7 +179,9 @@ async function render({ model, el }) {
       return;
     }
 
-    const checkedRadio = ui.sectionsDiv.querySelector('input[name="mw-section"]:checked');
+    const checkedRadio = ui.sectionsDiv.querySelector(
+      'input[name="mw-section"]:checked',
+    );
     if (checkedRadio) {
       // Replay just the selected section
       const currentIndex = Number.parseInt(checkedRadio.value, 10);
@@ -196,12 +211,14 @@ async function render({ model, el }) {
   });
 
   ui.sectionsDiv.addEventListener("click", (e) => {
-    if (e.target.closest('.mw-section-label')) {
+    if (e.target.closest(".mw-section-label")) {
       return;
     }
     // Click on background - unset all radios
     const radios = ui.sectionsDiv.querySelectorAll('input[type="radio"]');
-    radios.forEach(r => { r.checked = false; });
+    radios.forEach((r) => {
+      r.checked = false;
+    });
     updateSectionStyles(-1);
   });
 

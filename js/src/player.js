@@ -60,8 +60,7 @@ function buildSimpleAnimation(mob, desc, registry) {
       }
       return new MoveAlongPath(mob, { path });
     default:
-      console.warn(`Unsupported simple animation kind: ${desc.kind}`);
-      return null;
+      throw new Error(`Unsupported simple animation kind: ${desc.kind}`);
   }
 }
 
@@ -70,6 +69,7 @@ export class Player {
     this._scene = scene;
     this._registry = registry;
     this._sections = [];
+    this._globalStates = [];
     this._fps = 10;
     this._isPlaying = false;
     this._currentSectionIndex = 0;
@@ -81,6 +81,10 @@ export class Player {
 
   setSections(sections) {
     this._sections = Array.isArray(sections) ? sections : [];
+  }
+
+  setGlobalStates(states) {
+    this._globalStates = Array.isArray(states) ? states : [];
   }
 
   get isPlaying() {
@@ -101,17 +105,15 @@ export class Player {
   }
 
   async seekToSection(index) {
-    this._currentSectionIndex = index;
-    if (index >= 0 && index < this._sections.length) {
-      await this._playSection(this._sections[index]);
+    if (index < 0 || index >= this._sections.length) {
+      throw new Error(`seekToSection: index ${index} out of bounds (${this._sections.length} sections)`);
     }
+    this._currentSectionIndex = index;
+    await this._playSection(this._sections[index]);
   }
 
-  _stateFromRef(section, stateRef) {
-    const states = section?.states;
-    if (!Array.isArray(states)) {
-      throw new Error("Section is missing states array");
-    }
+  _stateFromRef(stateRef) {
+    const states = this._globalStates;
     if (
       !Number.isInteger(stateRef) ||
       stateRef < 0 ||
@@ -120,6 +122,17 @@ export class Player {
       throw new Error(`Invalid state_ref: ${stateRef}`);
     }
     return states[stateRef];
+  }
+
+  // Resolve a state by following 'from' chains (DAG of derived states).
+  // Returns the fully merged state object.
+  _resolveState(stateRef) {
+    const raw = this._stateFromRef(stateRef);
+    if (raw.from === undefined) {
+      return raw;
+    }
+    const base = this._resolveState(raw.from);
+    return { ...base, ...raw };
   }
 
   _createMobjectFromState(state) {
@@ -385,19 +398,20 @@ export class Player {
     this._applyBasisTransform(mob, ul, rightVec, upVec, center);
   }
 
-  _instantiateFromRef(section, stateRef) {
-    const state = this._stateFromRef(section, stateRef);
+  _instantiateMob(state) {
     const mob = this._createMobjectFromState(state);
     this._applyState(mob, state);
-    if (state.kind === "VGroup") {
-      if (Array.isArray(state.children) && state.children.length > 0) {
-        for (const childRef of state.children) {
-          const child = this._instantiateFromRef(section, childRef);
-          mob.add(child);
-        }
+    if (state.kind === "VGroup" && Array.isArray(state.children)) {
+      for (const childRef of state.children) {
+        mob.add(this._instantiateFromRef(childRef));
       }
     }
     return mob;
+  }
+
+  _instantiateFromRef(stateRef) {
+    const state = this._stateFromRef(stateRef);
+    return this._instantiateMob(state);
   }
 
   async _finalizeMobject(mob, state) {
@@ -437,24 +451,34 @@ export class Player {
     }
   }
 
-  async _restoreSnapshot(snapshot, section) {
-    for (const [id, stateRef] of Object.entries(snapshot)) {
-      const state = this._stateFromRef(section, stateRef);
-      const mob = this._instantiateFromRef(section, stateRef);
-      this._registry.set(id, mob);
+  async _applySetup(section) {
+    const setupCmds = Array.isArray(section.setup) ? section.setup : [];
+    for (const cmd of setupCmds) {
+      if (cmd.cmd !== "register") continue;
+      const state = this._resolveState(cmd.state_ref);
+      let mob = this._registry.get(cmd.id);
+      if (!mob) {
+        mob = this._instantiateMob(state);
+        this._registry.set(cmd.id, mob);
+        this._scene.add(mob);
+      }
+      this._applyState(mob, state);
       await this._finalizeMobject(mob, state);
-      this._scene.add(mob);
     }
   }
 
   async _playSection(section) {
-    if (!section || section.unsupported) {
+    if (!section) {
+      throw new Error("_playSection called with null/undefined section");
+    }
+    if (section.unsupported) {
+      console.warn(`Skipping unsupported section "${section.name}": ${section.unsupported_reason ?? "(no reason)"}`);
       return;
     }
 
     this._scene.clear();
     this._registry.clear();
-    await this._restoreSnapshot(section.snapshot || {}, section);
+    await this._applySetup(section);
 
     // Set initial camera state for section (3D scenes only)
     if (
@@ -478,9 +502,14 @@ export class Player {
   async _executeCommand(cmd, section) {
     switch (cmd?.cmd) {
       case "register": {
-        const state = this._stateFromRef(section, cmd.state_ref);
-        const mob = this._instantiateFromRef(section, cmd.state_ref);
-        this._registry.set(cmd.id, mob);
+        const state = this._resolveState(cmd.state_ref);
+        let mob = this._registry.get(cmd.id);
+        if (!mob) {
+          mob = this._instantiateMob(state);
+          this._registry.set(cmd.id, mob);
+          this._scene.add(mob);
+        }
+        this._applyState(mob, state);
         await this._finalizeMobject(mob, state);
         return;
       }
@@ -505,7 +534,7 @@ export class Player {
         return;
       }
       default:
-        console.warn(`Unknown command: ${cmd?.cmd}`);
+        throw new Error(`Unknown command: ${cmd?.cmd}`);
     }
   }
 
@@ -523,8 +552,14 @@ export class Player {
       if (!mob) {
         throw new Error(`Mobject not found: ${desc.id}`);
       }
-      const targetState = this._stateFromRef(section, desc.state_ref);
-      const target = this._instantiateFromRef(section, desc.state_ref);
+      const targetState = this._resolveState(desc.state_ref);
+      const target = this._createMobjectFromState(targetState);
+      this._applyState(target, targetState);
+      if (targetState.kind === "VGroup" && Array.isArray(targetState.children)) {
+        for (const childRef of targetState.children) {
+          target.add(this._instantiateFromRef(childRef));
+        }
+      }
       await this._finalizeMobject(target, targetState);
       return new Transform(mob, target);
     }
@@ -555,8 +590,7 @@ export class Player {
       if (desc.kind === "CyclicReplace") {
         return new CyclicReplace(mobjects, options);
       }
-      console.warn(`Unsupported group animation: ${desc.kind}`);
-      return null;
+      throw new Error(`Unsupported group animation: ${desc.kind}`);
     }
 
     const mob = this._registry.get(desc.id);
@@ -616,7 +650,7 @@ export class Player {
           if (!mob) {
             continue;
           }
-          const state = this._stateFromRef(section, frameEntry.state_ref);
+          const state = this._resolveState(frameEntry.state_ref);
           this._applyState(mob, state);
         }
       }

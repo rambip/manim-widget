@@ -7,7 +7,7 @@ with app.setup:
     from manim_widget import ManimWidget, patch_tex
 
     patch_tex()
-    from manim import MathTex
+    from manim import MathTex, Create
 
 
 @app.class_definition
@@ -24,8 +24,7 @@ class LatexScale(ManimWidget):
         self.add(zero.scale(2))
 
         # Transform to 3x bigger
-        # big_zero = MathTex("0", stroke_opacity=1, fill_opacity=1, font_size=144)
-        # self.play(Create(zero.scale(2)))
+        self.play(Create(zero.scale(2)))
 
 
 @app.cell

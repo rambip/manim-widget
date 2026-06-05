@@ -60,7 +60,7 @@ Built from `js/src/*` via Bun. This is what packaged widget users execute. Rebui
 
 ```json
 {
-  "version": 2,
+  "version": 1,
   "sections": [ ... ]
 }
 ```

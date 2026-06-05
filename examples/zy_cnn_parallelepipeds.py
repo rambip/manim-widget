@@ -95,7 +95,7 @@ def _():
         bottom = Rectangle(
             width=x_thickness,
             height=z_size,
-            fill_color="#1E40AF",
+            fill_color="#0E40AF",
             fill_opacity=0.18,
             **style,
         )
@@ -146,13 +146,24 @@ def _():
 @app.cell
 def _(ZYImageCNN):
     scene = ZYImageCNN(is_3d=True)
-    scene.scene_data["sections"][0]["camera"]
+    # scene.scene_data["sections"][0]["camera"]
     return (scene,)
 
 
 @app.cell
 def _(scene):
     scene
+    return
+
+
+@app.cell
+def _(scene):
+    scene.scene_data["states"][1]
+    return
+
+
+@app.cell
+def _():
     return
 
 

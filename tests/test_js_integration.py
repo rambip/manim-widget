@@ -6,12 +6,9 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-
-
 from manim import (
     BLUE,
     GREEN,
-    Group,
     LEFT,
     ORIGIN,
     RED,
@@ -24,9 +21,11 @@ from manim import (
     Dot,
     Ellipse,
     Exclusion,
+    FadeIn,
+    Group,
     GrowFromCenter,
-    Intersection,
     ImageMobject,
+    Intersection,
     Line,
     MarkupText,
     MoveAlongPath,
@@ -38,7 +37,6 @@ from manim import (
     VGroup,
     VMobject,
     linear,
-    FadeIn,
 )
 
 from manim_widget.widget import ManimWidget
@@ -60,17 +58,18 @@ CLI_PATH = Path(__file__).parent.parent / "js" / "src" / "test_cli.js"
 
 def run_cli(
     scene_data: str | dict, output_ids: bool = False, output_end_state: bool = False
-) -> tuple[int, str, str]:
-    if isinstance(scene_data, dict):
-        scene_json = json.dumps(scene_data)
-    else:
-        scene_json = scene_data
+) -> tuple[int, dict]:
+    """Run the test CLI and return (returncode, report_dict).
+
+    The CLI always emits a single JSON report object on stdout.
+    """
+    scene_json = json.dumps(scene_data) if isinstance(scene_data, dict) else scene_data
 
     args = ["bun", "run", "--conditions", "source", str(CLI_PATH)]
     if output_ids:
-        args.append("--output-ids")
+        args.append("--ids")
     if output_end_state:
-        args.append("--output-end-state")
+        args.append("--end-state")
 
     result = subprocess.run(
         args,
@@ -80,27 +79,24 @@ def run_cli(
         # Run from the js/ dir so bun picks up bunfig.toml (typia transform).
         cwd=str(CLI_PATH.parent.parent),
     )
-    return result.returncode, result.stdout, result.stderr
-
-
-def parse_section_ids(stdout: str) -> list[dict]:
-    marker = "=== Section Mobject IDs ==="
-    idx = stdout.find(marker)
-    if idx == -1:
-        return []
-    json_str = stdout[idx + len(marker) :].strip()
-    data = json.loads(json_str)
-    return data.get("sections", [])
-
-
-def parse_section_end_state(stdout: str) -> list[dict]:
-    marker = "=== Section End State ==="
-    idx = stdout.find(marker)
-    if idx == -1:
-        return []
-    json_str = stdout[idx + len(marker) :].strip()
-    data = json.loads(json_str)
-    return data.get("sections", [])
+    # Strip any non-JSON preamble (e.g. bun/typia banners written to stdout).
+    json_start = result.stdout.find("{")
+    try:
+        report = json.loads(result.stdout[json_start:]) if json_start >= 0 else {}
+        assert "sections" in report
+    except (json.JSONDecodeError, AssertionError):
+        report = {
+            "success": False,
+            "errors": [
+                {
+                    "error": "unparseable_output",
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                }
+            ],
+            "sections": [],
+        }
+    return result.returncode, report
 
 
 class TestCLIIntegration:
@@ -303,29 +299,39 @@ class TestCLIIntegration:
         return scene.scene_data
 
     def test_simple_scene(self, simple_scene_data):
-        returncode, stdout, stderr = run_cli(simple_scene_data, output_ids=True)
-        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
-        sections = parse_section_ids(stdout)
+        returncode, report = run_cli(simple_scene_data, output_ids=True)
+        assert returncode == 0, f"CLI failed:\n{json.dumps(report, indent=2)}"
+        sections = report["sections"]
         assert len(sections) == 1
         assert sections[0]["name"] == "initial"
         assert len(sections[0]["ids"]) == 1
 
     def test_fadein_image(self, fadein_image_data):
-        section = fadein_image_data["sections"][0]
-        assert section["states"][0]["kind"] == "ImageMobject"
+        data = fadein_image_data
+        # Content state (kind+source) is global
+        content_state = next(
+            s for s in data["states"] if s.get("kind") == "ImageMobject"
+        )
+        assert content_state["kind"] == "ImageMobject"
+        assert "source" in content_state
 
-        register_cmd = section["construct"][0]
-        animate_cmd = section["construct"][1]
-        assert register_cmd["cmd"] == "register"
-        assert register_cmd["state_ref"] == 0
+        section = data["sections"][0]
+        register_cmd = next(c for c in section["construct"] if c["cmd"] == "register")
+        animate_cmd = next(c for c in section["construct"] if c["cmd"] == "animate")
 
-        assert animate_cmd["cmd"] == "animate"
+        # state_ref may be a derived state; check that chain resolves to ImageMobject
+        def resolve(ref):
+            s = data["states"][ref]
+            return {**resolve(s["from"]), **s} if "from" in s else s
+
+        assert resolve(register_cmd["state_ref"])["kind"] == "ImageMobject"
+
         assert animate_cmd["animations"][0]["kind"] == "FadeIn"
         assert animate_cmd["animations"][0]["id"] == register_cmd["id"]
 
-        returncode, stdout, stderr = run_cli(fadein_image_data, output_ids=True)
-        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
-        sections = parse_section_ids(stdout)
+        returncode, report = run_cli(fadein_image_data, output_ids=True)
+        assert returncode == 0, f"CLI failed:\n{json.dumps(report, indent=2)}"
+        sections = report["sections"]
         assert len(sections) == 1
         assert len(sections[0]["ids"]) == 1
 
@@ -337,16 +343,16 @@ class TestCLIIntegration:
         # not need injected Add.
         assert not any(a["kind"] == "Add" for a in animate_cmds[1]["animations"])
 
-        returncode, stdout, stderr = run_cli(animate_shift_left_data, output_ids=True)
-        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
-        sections = parse_section_ids(stdout)
+        returncode, report = run_cli(animate_shift_left_data, output_ids=True)
+        assert returncode == 0, f"CLI failed:\n{json.dumps(report, indent=2)}"
+        sections = report["sections"]
         assert len(sections) == 1
         assert len(sections[0]["ids"]) == 1
 
     def test_multi_section_scene(self, multi_section_data):
-        returncode, stdout, stderr = run_cli(multi_section_data, output_ids=True)
-        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
-        sections = parse_section_ids(stdout)
+        returncode, report = run_cli(multi_section_data, output_ids=True)
+        assert returncode == 0, f"CLI failed:\n{json.dumps(report, indent=2)}"
+        sections = report["sections"]
         assert len(sections) == 2
         assert sections[0]["name"] == "initial"
         assert sections[1]["name"] == "second"
@@ -354,23 +360,23 @@ class TestCLIIntegration:
         assert len(sections[1]["ids"]) == 2
 
     def test_create_vgroup(self, vgroup_create_data):
-        returncode, stdout, stderr = run_cli(vgroup_create_data, output_ids=True)
-        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
-        sections = parse_section_ids(stdout)
+        returncode, report = run_cli(vgroup_create_data, output_ids=True)
+        assert returncode == 0, f"CLI failed:\n{json.dumps(report, indent=2)}"
+        sections = report["sections"]
         assert len(sections) == 1
         assert len(sections[0]["ids"]) == 1
 
     def test_vgroup_reordered(self, vgroup_reordered_data):
-        returncode, stdout, stderr = run_cli(vgroup_reordered_data, output_ids=True)
-        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
-        sections = parse_section_ids(stdout)
+        returncode, report = run_cli(vgroup_reordered_data, output_ids=True)
+        assert returncode == 0, f"CLI failed:\n{json.dumps(report, indent=2)}"
+        sections = report["sections"]
         assert len(sections) == 1
         assert len(sections[0]["ids"]) == 1
 
     def test_vgroup_scale_section(self, vgroup_scale_section_data):
-        returncode, stdout, stderr = run_cli(vgroup_scale_section_data, output_ids=True)
-        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
-        sections = parse_section_ids(stdout)
+        returncode, report = run_cli(vgroup_scale_section_data, output_ids=True)
+        assert returncode == 0, f"CLI failed:\n{json.dumps(report, indent=2)}"
+        sections = report["sections"]
         assert len(sections) == 2
         assert sections[0]["name"] == "initial"
         assert sections[1]["name"] == "scale"
@@ -378,17 +384,17 @@ class TestCLIIntegration:
         assert len(sections[1]["ids"]) == 1
 
     def test_vgroup_shift(self, vgroup_shift_data):
-        returncode, stdout, stderr = run_cli(vgroup_shift_data, output_ids=True)
-        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
-        sections = parse_section_ids(stdout)
+        returncode, report = run_cli(vgroup_shift_data, output_ids=True)
+        assert returncode == 0, f"CLI failed:\n{json.dumps(report, indent=2)}"
+        sections = report["sections"]
         assert len(sections) == 1
         assert sections[0]["name"] == "initial"
         assert len(sections[0]["ids"]) == 1
 
     def test_boolean_operations(self, boolean_operations_data):
-        returncode, stdout, stderr = run_cli(boolean_operations_data, output_ids=True)
-        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
-        sections = parse_section_ids(stdout)
+        returncode, report = run_cli(boolean_operations_data, output_ids=True)
+        assert returncode == 0, f"CLI failed:\n{json.dumps(report, indent=2)}"
+        sections = report["sections"]
         assert len(sections) == 1
         assert len(sections[0]["ids"]) == 2
 
@@ -405,59 +411,59 @@ class TestCLIIntegration:
             f"VMobject should have 2 subpaths, got {len(subpaths)}"
         )
 
-        returncode, stdout, stderr = run_cli(multi_subpath_data, output_ids=True)
-        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
-        sections = parse_section_ids(stdout)
+        returncode, report = run_cli(multi_subpath_data, output_ids=True)
+        assert returncode == 0, f"CLI failed:\n{json.dumps(report, indent=2)}"
+        sections = report["sections"]
         assert len(sections) == 1
         assert len(sections[0]["ids"]) == 1
 
     def test_arrow_with_tip(self, arrow_with_tip_data):
-        returncode, stdout, stderr = run_cli(arrow_with_tip_data, output_ids=True)
-        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
-        assert "Errors: 0" in stdout, f"Expected no errors. stdout:\n{stdout}"
-        sections = parse_section_ids(stdout)
+        returncode, report = run_cli(arrow_with_tip_data, output_ids=True)
+        assert returncode == 0, f"CLI failed:\n{json.dumps(report, indent=2)}"
+        assert report["success"], f"Expected no errors: {report['errors']}"
+        sections = report["sections"]
         assert len(sections) == 1
         assert len(sections[0]["ids"]) >= 1
 
     def test_invalid_points_raises_error(self):
         invalid_scene_data = {
-            "version": 2,
+            "version": 1,
             "fps": 10,
+            "states": [
+                {
+                    "kind": "Circle",
+                    "points": [
+                        [0, 0, 0],
+                        [1, 1, 1],
+                        [2, 0, 0],
+                        [3, 1, 1],
+                        [4, 0, 0],
+                        [5, 1, 1],
+                        [6, 0, 0],
+                        [7, 1, 1],
+                        [8, 0, 0],
+                    ],
+                }
+            ],
             "sections": [
                 {
                     "name": "intro",
-                    "snapshot": {},
-                    "states": [
-                        {
-                            "kind": "Circle",
-                            "points": [
-                                [0, 0, 0],
-                                [1, 1, 1],
-                                [2, 0, 0],
-                                [3, 1, 1],
-                                [4, 0, 0],
-                                [5, 1, 1],
-                                [6, 0, 0],
-                                [7, 1, 1],
-                                [8, 0, 0],
-                            ],
-                        }
-                    ],
+                    "setup": [],
                     "construct": [{"cmd": "register", "id": "circle1", "state_ref": 0}],
                 }
             ],
         }
 
-        returncode, stdout, stderr = run_cli(invalid_scene_data)
+        returncode, report = run_cli(invalid_scene_data)
         assert returncode != 0, "Expected CLI to fail for invalid points"
-        assert "3n+1" in stderr or "3n+1" in stdout, (
-            f"Expected '3n+1' in output. stderr:\n{stderr}\nstdout:\n{stdout}"
+        assert any("3n+1" in str(e) for e in report.get("errors", [])), (
+            f"Expected 3n+1 error in report: {report}"
         )
 
     def test_boolean_operation(self, bool_operations_data):
-        returncode, stdout, stderr = run_cli(bool_operations_data, output_ids=True)
-        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
-        sections = parse_section_ids(stdout)
+        returncode, report = run_cli(bool_operations_data, output_ids=True)
+        assert returncode == 0, f"CLI failed:\n{json.dumps(report, indent=2)}"
+        sections = report["sections"]
         assert len(sections) == 1
         assert len(sections[0]["ids"]) >= 3
 
@@ -483,11 +489,9 @@ class TestCLIIntegration:
         return scene.scene_data
 
     def test_point_moving_on_shapes(self, point_moving_on_shapes_data):
-        returncode, stdout, stderr = run_cli(
-            point_moving_on_shapes_data, output_ids=True
-        )
-        sections = parse_section_ids(stdout)
-        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
+        returncode, report = run_cli(point_moving_on_shapes_data, output_ids=True)
+        sections = report["sections"]
+        assert returncode == 0, f"CLI failed:\n{json.dumps(report, indent=2)}"
         assert len(sections) == 1
         assert sections[0]["name"] == "initial"
 
@@ -502,12 +506,10 @@ class TestCLIIntegration:
         return scene.scene_data
 
     def test_cli_outputs_end_state_with_stroke(self, stroke_color_scene_data):
-        returncode, stdout, stderr = run_cli(
-            stroke_color_scene_data, output_end_state=True
-        )
-        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
+        returncode, report = run_cli(stroke_color_scene_data, output_end_state=True)
+        assert returncode == 0, f"CLI failed:\n{json.dumps(report, indent=2)}"
 
-        sections = parse_section_end_state(stdout)
+        sections = report["sections"]
         assert len(sections) == 1
 
         end_state = sections[0]["end_state"]
@@ -533,10 +535,10 @@ class TestCLIIntegration:
         return scene.scene_data
 
     def test_group_two_objects(self, group_two_objects_data):
-        returncode, stdout, stderr = run_cli(group_two_objects_data, output_ids=True)
-        assert returncode == 0, f"CLI failed. stderr:\n{stderr}"
+        returncode, report = run_cli(group_two_objects_data, output_ids=True)
+        assert returncode == 0, f"CLI failed:\n{json.dumps(report, indent=2)}"
         data = group_two_objects_data
-        states = data["sections"][0]["states"]
+        states = data["states"]
         construct = data["sections"][0]["construct"]
 
         assert len(states) == 3, (
@@ -575,16 +577,16 @@ class TestCLIIntegration:
         return scene.scene_data
 
     def test_swap_animation(self, swap_animation_data):
-        returncode, stdout, stderr = run_cli(swap_animation_data, output_ids=True)
-        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
-        sections = parse_section_ids(stdout)
+        returncode, report = run_cli(swap_animation_data, output_ids=True)
+        assert returncode == 0, f"CLI failed:\n{json.dumps(report, indent=2)}"
+        sections = report["sections"]
         assert len(sections) == 1
         # After swap, both original objects should be in the scene
         assert len(sections[0]["ids"]) == 2
 
     @pytest.fixture
     def cyclic_replace_animation_data(self) -> str:
-        from manim import CyclicReplace, Triangle, UP
+        from manim import UP, CyclicReplace, Triangle
 
         class CyclicReplaceScene(ManimWidget):
             def construct(self):
@@ -598,14 +600,47 @@ class TestCLIIntegration:
         return scene.scene_data
 
     def test_cyclic_replace_animation(self, cyclic_replace_animation_data):
-        returncode, stdout, stderr = run_cli(
-            cyclic_replace_animation_data, output_ids=True
-        )
-        assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
-        sections = parse_section_ids(stdout)
+        returncode, report = run_cli(cyclic_replace_animation_data, output_ids=True)
+        assert returncode == 0, f"CLI failed:\n{json.dumps(report, indent=2)}"
+        sections = report["sections"]
         assert len(sections) == 1
         # After cyclic replace, all three objects should still be in the scene
         assert len(sections[0]["ids"]) == 3
+
+    @pytest.fixture
+    def multi_section_vgroup_arrow_data(self):
+        from manim import GrowArrow, Rectangle
+
+        class MultiSectionScene(ManimWidget):
+            def construct(self):
+                block = VGroup(Rectangle(), Rectangle().shift(RIGHT))
+                a = Arrow(LEFT * 2, RIGHT * 2)
+                self.play(Create(block), GrowArrow(a))
+                self.next_section("s2")
+                self.play(block.animate.shift(UP))
+
+        return MultiSectionScene(fps=10).scene_data
+
+    def test_vgroup_and_arrow_persist_in_section2(
+        self, multi_section_vgroup_arrow_data
+    ):
+        """VGroup and Arrow registered in section 1 must still be present in section 2."""
+        returncode, report = run_cli(multi_section_vgroup_arrow_data, output_ids=True)
+        assert returncode == 0, f"CLI failed:\n{json.dumps(report, indent=2)}"
+        sections = report["sections"]
+        assert len(sections) == 2, f"Expected 2 sections, got {len(sections)}"
+        # Section 1: block + arrow registered during construct
+        assert len(sections[0]["ids"]) == 2, (
+            f"Section 1 should have 2 mobs, got {sections[0]['ids']}"
+        )
+        # Section 2: both mobs must survive the scene.clear() + setup re-registration
+        assert len(sections[1]["ids"]) == 2, (
+            f"Section 2 should still have 2 mobs after setup, got {sections[1]['ids']}"
+        )
+        # Same IDs in both sections
+        assert set(sections[0]["ids"]) == set(sections[1]["ids"]), (
+            f"Mob IDs changed between sections: {sections[0]['ids']} vs {sections[1]['ids']}"
+        )
 
 
 def test_swap_with_world_coordinate_points():
@@ -618,86 +653,86 @@ def test_swap_with_world_coordinate_points():
     # Two circles at different x positions
     # Circle 0: center at x=-1, Circle 1: center at x=+1
     scene_data = {
-        "version": 2,
+        "version": 1,
         "fps": 10,
+        "states": [
+            {
+                "kind": "VMobject",
+                "stroke_color": "#FC6255",
+                "stroke_width": 4,
+                "stroke_opacity": 1.0,
+                "fill_opacity": 0.0,
+                "z_index": 0,
+                # Circle centered at x=-1 (radius 1)
+                "points": [
+                    [-2, 0, 0],
+                    [-2, 0.26, 0],
+                    [-1.89, 0.52, 0],
+                    [-1.71, 0.71, 0],
+                    [-1.52, 0.89, 0],
+                    [-1.26, 1.0, 0],
+                    [-1.0, 1.0, 0],
+                    [-0.74, 1.0, 0],
+                    [-0.48, 0.89, 0],
+                    [-0.29, 0.71, 0],
+                    [-0.11, 0.52, 0],
+                    [0, 0.26, 0],
+                    [0, 0, 0],
+                    [0, -0.26, 0],
+                    [-0.11, -0.52, 0],
+                    [-0.29, -0.71, 0],
+                    [-0.48, -0.89, 0],
+                    [-0.74, -1.0, 0],
+                    [-1.0, -1.0, 0],
+                    [-1.26, -1.0, 0],
+                    [-1.52, -0.89, 0],
+                    [-1.71, -0.71, 0],
+                    [-1.89, -0.52, 0],
+                    [-2, -0.26, 0],
+                    [-2, 0, 0],
+                ],
+            },
+            {
+                "kind": "VMobject",
+                "stroke_color": "#58C4DD",
+                "stroke_width": 4,
+                "stroke_opacity": 1.0,
+                "fill_opacity": 0.0,
+                "z_index": 0,
+                # Circle centered at x=+1 (radius 1)
+                "points": [
+                    [0, 0, 0],
+                    [0, 0.26, 0],
+                    [0.11, 0.52, 0],
+                    [0.29, 0.71, 0],
+                    [0.48, 0.89, 0],
+                    [0.74, 1.0, 0],
+                    [1.0, 1.0, 0],
+                    [1.26, 1.0, 0],
+                    [1.52, 0.89, 0],
+                    [1.71, 0.71, 0],
+                    [1.89, 0.52, 0],
+                    [2, 0.26, 0],
+                    [2, 0, 0],
+                    [2, -0.26, 0],
+                    [1.89, -0.52, 0],
+                    [1.71, -0.71, 0],
+                    [1.52, -0.89, 0],
+                    [1.26, -1.0, 0],
+                    [1.0, -1.0, 0],
+                    [0.74, -1.0, 0],
+                    [0.48, -0.89, 0],
+                    [0.29, -0.71, 0],
+                    [0.11, -0.52, 0],
+                    [0, -0.26, 0],
+                    [0, 0, 0],
+                ],
+            },
+        ],
         "sections": [
             {
                 "name": "test",
-                "snapshot": {},
-                "states": [
-                    {
-                        "kind": "VMobject",
-                        "stroke_color": "#FC6255",
-                        "stroke_width": 4,
-                        "stroke_opacity": 1.0,
-                        "fill_opacity": 0.0,
-                        "z_index": 0,
-                        # Circle centered at x=-1 (radius 1)
-                        "points": [
-                            [-2, 0, 0],
-                            [-2, 0.26, 0],
-                            [-1.89, 0.52, 0],
-                            [-1.71, 0.71, 0],
-                            [-1.52, 0.89, 0],
-                            [-1.26, 1.0, 0],
-                            [-1.0, 1.0, 0],
-                            [-0.74, 1.0, 0],
-                            [-0.48, 0.89, 0],
-                            [-0.29, 0.71, 0],
-                            [-0.11, 0.52, 0],
-                            [0, 0.26, 0],
-                            [0, 0, 0],
-                            [0, -0.26, 0],
-                            [-0.11, -0.52, 0],
-                            [-0.29, -0.71, 0],
-                            [-0.48, -0.89, 0],
-                            [-0.74, -1.0, 0],
-                            [-1.0, -1.0, 0],
-                            [-1.26, -1.0, 0],
-                            [-1.52, -0.89, 0],
-                            [-1.71, -0.71, 0],
-                            [-1.89, -0.52, 0],
-                            [-2, -0.26, 0],
-                            [-2, 0, 0],
-                        ],
-                    },
-                    {
-                        "kind": "VMobject",
-                        "stroke_color": "#58C4DD",
-                        "stroke_width": 4,
-                        "stroke_opacity": 1.0,
-                        "fill_opacity": 0.0,
-                        "z_index": 0,
-                        # Circle centered at x=+1 (radius 1)
-                        "points": [
-                            [0, 0, 0],
-                            [0, 0.26, 0],
-                            [0.11, 0.52, 0],
-                            [0.29, 0.71, 0],
-                            [0.48, 0.89, 0],
-                            [0.74, 1.0, 0],
-                            [1.0, 1.0, 0],
-                            [1.26, 1.0, 0],
-                            [1.52, 0.89, 0],
-                            [1.71, 0.71, 0],
-                            [1.89, 0.52, 0],
-                            [2, 0.26, 0],
-                            [2, 0, 0],
-                            [2, -0.26, 0],
-                            [1.89, -0.52, 0],
-                            [1.71, -0.71, 0],
-                            [1.52, -0.89, 0],
-                            [1.26, -1.0, 0],
-                            [1.0, -1.0, 0],
-                            [0.74, -1.0, 0],
-                            [0.48, -0.89, 0],
-                            [0.29, -0.71, 0],
-                            [0.11, -0.52, 0],
-                            [0, -0.26, 0],
-                            [0, 0, 0],
-                        ],
-                    },
-                ],
+                "setup": [],
                 "construct": [
                     {"cmd": "register", "id": "0", "state_ref": 0},
                     {"cmd": "register", "id": "1", "state_ref": 1},
@@ -718,16 +753,12 @@ def test_swap_with_world_coordinate_points():
         ],
     }
 
-    returncode, stdout, stderr = run_cli(scene_data, output_end_state=True)
-    assert returncode == 0, f"CLI failed: {stderr}"
+    returncode, report = run_cli(scene_data, output_end_state=True)
+    assert returncode == 0, f"CLI failed:\n{json.dumps(report, indent=2)}"
 
     # Extract JSON from output (after the === Section End State === marker)
     # JSON is pretty-printed, so find the opening brace
-    json_start = stdout.find('{\n  "sections"')
-    if json_start < 0:
-        json_start = stdout.find('{"sections"')
-    assert json_start >= 0, f"Could not find JSON in output: {stdout}"
-    end_state = json.loads(stdout[json_start:])
+    end_state = report
 
     # After swap, circle 0 should be at x=+1, circle 1 at x=-1
     states = end_state["sections"][0]["end_state"]["states"]
@@ -761,84 +792,81 @@ def test_js_create_without_explicit_add_has_no_injected_add():
     assert not any(a["kind"] == "Add" for a in animate_cmd["animations"])
     assert any(a["kind"] == "Create" for a in animate_cmd["animations"])
 
-    returncode, stdout, stderr = run_cli(data, output_ids=True)
-    assert returncode == 0, f"CLI failed with stderr:\n{stderr}\nstdout:\n{stdout}"
+    returncode, report = run_cli(data, output_ids=True)
+    assert returncode == 0, f"CLI failed:\n{json.dumps(report, indent=2)}"
 
 
 def test_js_static_mathtex_creates_and_transforms():
     scene_data = {
-        "version": 2,
+        "version": 1,
         "fps": 10,
+        "states": [
+            {
+                "kind": "StaticMathTex",
+                "latex": "x^2",
+                "points": [[-2, 1, 0], [2, 1, 0], [2, -1, 0], [-2, -1, 0]],
+                "stroke_opacity": 1.0,
+                "color": "#83C167",
+            }
+        ],
         "sections": [
             {
                 "name": "test_tex",
-                "snapshot": {},
-                "states": [
-                    {
-                        "kind": "StaticMathTex",
-                        "latex": "x^2",
-                        "points": [[-2, 1, 0], [2, 1, 0], [2, -1, 0], [-2, -1, 0]],
-                        "stroke_opacity": 1.0,
-                        "color": "#83C167",
-                    }
-                ],
+                "setup": [],
                 "construct": [{"cmd": "register", "id": "tex1", "state_ref": 0}],
             }
         ],
     }
 
-    returncode, stdout, stderr = run_cli(scene_data, output_ids=True)
-    assert returncode == 0, f"CLI failed: {stderr}"
-    assert "error" not in stderr.lower(), f"Errors in stderr: {stderr}"
+    returncode, report = run_cli(scene_data, output_ids=True)
+    assert returncode == 0, f"CLI failed:\n{json.dumps(report, indent=2)}"
+    assert report["success"], f"Unexpected errors: {report['errors']}"
 
-    sections = parse_section_ids(stdout)
+    sections = report["sections"]
     assert len(sections) == 1
     assert "tex1" in sections[0]["ids"]
 
 
 def test_js_static_mathtex_with_scaled_transform():
     scene_data = {
-        "version": 2,
+        "version": 1,
         "fps": 10,
+        "states": [
+            {
+                "kind": "StaticMathTex",
+                "latex": "\\frac{a}{b}",
+                "points": [[-8, 4, 0], [8, 4, 0], [8, -4, 0], [-8, -4, 0]],
+                "stroke_opacity": 1.0,
+            }
+        ],
         "sections": [
             {
                 "name": "scaled_tex",
-                "snapshot": {},
-                "states": [
-                    {
-                        "kind": "StaticMathTex",
-                        "latex": "\\frac{a}{b}",
-                        "points": [[-8, 4, 0], [8, 4, 0], [8, -4, 0], [-8, -4, 0]],
-                        "stroke_opacity": 1.0,
-                    }
-                ],
+                "setup": [],
                 "construct": [{"cmd": "register", "id": "frac", "state_ref": 0}],
             }
         ],
     }
 
-    returncode, stdout, stderr = run_cli(scene_data, output_ids=True)
-    assert returncode == 0, f"CLI failed: {stderr}"
-    sections = parse_section_ids(stdout)
+    returncode, report = run_cli(scene_data, output_ids=True)
+    assert returncode == 0, f"CLI failed:\n{json.dumps(report, indent=2)}"
+    sections = report["sections"]
     assert len(sections) == 1
 
 
 def test_arrow_vgroup_body_points_applied_in_end_state():
     """Regression: Arrow restores as a VGroup whose shaft child keeps its points."""
-    from manim import Arrow, ORIGIN, RIGHT
+    from manim import ORIGIN, RIGHT, Arrow
 
     class ArrowScene(ManimWidget):
         def construct(self):
             self.add(Arrow(ORIGIN, RIGHT))
 
     scene = ArrowScene()
-    returncode, stdout, stderr = run_cli(scene.scene_data, output_end_state=True)
-    assert returncode == 0, f"CLI failed: {stderr}\n{stdout}"
+    returncode, report = run_cli(scene.scene_data, output_end_state=True)
+    assert returncode == 0, f"CLI failed:\n{json.dumps(report, indent=2)}"
 
-    json_start = stdout.find('{\n  "sections"')
-    if json_start < 0:
-        json_start = stdout.find('{"sections"')
-    end_state = json.loads(stdout[json_start:])
+    end_state = report
 
     states = end_state["sections"][0]["end_state"]["states"]
     snapshot = end_state["sections"][0]["end_state"]["snapshot"]

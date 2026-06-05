@@ -44,55 +44,56 @@ def _():
     return (manim_logo,)
 
 
-# grad1, grad2, manim_logo are defined in marimo cells above and injected into
-# this class body at runtime. Ruff cannot see cell-scoped names statically, so
-# we suppress F821 ("undefined name") on each reference.
-@app.class_definition
-class ImageTransformDemo(ManimWidget):
-    def construct(self):
-        # 1. Fade in small white-to-blue gradient
-        image = ImageMobject(grad1)  # noqa: F821
-        image.height = 1.5
-        self.play(FadeIn(image))
-        self.wait(0.3)
-
-        # 2. Morph to red-to-green gradient, 2× bigger
-        image2 = ImageMobject(grad2)  # noqa: F821
-        image2.height = 3
-        self.play(Transform(image, image2))
-        self.wait(0.3)
-
-        # 3. Rotate 180° + scale down
-        image3 = ImageMobject(grad2)  # noqa: F821
-        image3.height = 3
-        image3.rotate(np.pi)
-        image3.scale(0.5)
-        self.play(Transform(image, image3))
-        self.wait(0.3)
-
-        # 4. Morph to manim logo
-        logo = ImageMobject(manim_logo)  # noqa: F821
-        logo.width = 6
-        self.play(Transform(image, logo))
-        self.wait(0.5)
-
-        # 5. Pure translation: same logo shifted right by 3 units
-        logo2 = ImageMobject(manim_logo)  # noqa: F821
-        logo2.width = 6
-        logo2.shift((3, 0, 0))
-        self.play(Transform(image, logo2))
-        self.wait(0.5)
-
-
 @app.cell
 def _(grad1, grad2, manim_logo):
-    scene = ImageTransformDemo()
-    scene
-    return
+    class ImageTransformDemo(ManimWidget):
+        def construct(self):
+            # 1. Fade in small white-to-blue gradient
+            image = ImageMobject(grad1)  # noqa: F821
+            image.height = 1.5
+            self.play(FadeIn(image))
+            self.wait(0.3)
+
+            # 2. Morph to red-to-green gradient, 2× bigger
+            image2 = ImageMobject(grad2)  # noqa: F821
+            image2.height = 3
+            self.play(Transform(image, image2))
+            self.wait(0.3)
+
+            # 3. Rotate 180° + scale down
+            image3 = ImageMobject(grad2)  # noqa: F821
+            image3.height = 3
+            image3.rotate(np.pi)
+            image3.scale(0.5)
+            self.play(Transform(image, image3))
+            self.wait(0.3)
+
+            # 4. Morph to manim logo
+            logo = ImageMobject(manim_logo)  # noqa: F821
+            logo.width = 6
+            self.play(Transform(image, logo))
+            self.wait(0.5)
+
+            # 5. Pure translation: same logo shifted right by 3 units
+            logo2 = ImageMobject(manim_logo)  # noqa: F821
+            logo2.width = 6
+            logo2.shift((3, 0, 0))
+            self.play(Transform(image, logo2))
+            self.wait(0.5)
+
+    return (ImageTransformDemo,)
 
 
 @app.cell
-def _():
+def _(ImageTransformDemo):
+    scene = ImageTransformDemo()
+    scene
+    return (scene,)
+
+
+@app.cell
+def _(scene):
+    scene.scene_data
     return
 
 

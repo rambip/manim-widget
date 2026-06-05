@@ -8,37 +8,37 @@ import os
 
 import numpy as np
 import pytest
-from PIL import Image
-
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 from jsonschema import validate
 from manim import (
     GREEN,
-    Scene,
+    LEFT,
+    RIGHT,
     Circle,
     Create,
     Dot,
-    LEFT,
-    RIGHT,
-    Square,
-    ValueTracker,
+    FadeIn,
     ImageMobject,
+    Scene,
+    Square,
+    Transform,
+    ValueTracker,
 )
+from PIL import Image
 
-from manim_widget.widget import ManimWidget
 from manim_widget.renderer import CaptureRenderer, _needs_camera_frame_loop
+from manim_widget.states import (
+    ValueTrackerState,
+    VGroupState,
+    VMobjectState,
+)
+from manim_widget.widget import ManimWidget
 from tests.scene_strategies import (
+    UpdaterCmd,
     construct_script,
     run_generated_scene,
-    UpdaterCmd,
 )
-from manim_widget.states import (
-    VMobjectState,
-    VGroupState,
-    ValueTrackerState,
-)
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -172,47 +172,29 @@ def test_value_tracker_state_has_no_kind(state):
 
 
 # ---------------------------------------------------------------------------
-# Property tests: _intern_state (deduplication, bounds, idempotency)
+# Property tests: StateRegistry via renderer
 # ---------------------------------------------------------------------------
 
 
 @given(vmobject_state())
-def test_intern_state_returns_valid_ref(state):
+def test_insert_raw_returns_valid_ref(state):
     r = _fresh_renderer()
-    ref = r._intern_state(state)
-    assert 0 <= ref < len(r._current.states)
-
-
-@given(vmobject_state())
-def test_intern_state_is_idempotent(state):
-    r = _fresh_renderer()
-    ref1 = r._intern_state(state)
-    ref2 = r._intern_state(state)
-    assert ref1 == ref2
-    assert len(r._current.states) == 1
+    d = state.model_dump(exclude_none=True)
+    ref = r._state_registry.insert_raw(d)
+    assert 0 <= ref < len(r._state_registry)
+    assert r._state_registry.get_by_id(ref) == d
 
 
 @given(vmobject_state(), vmobject_state())
-def test_intern_state_distinct_states_get_distinct_refs(s1, s2):
+def test_insert_raw_distinct_values_get_distinct_refs(s1, s2):
     d1 = s1.model_dump(exclude_none=True)
     d2 = s2.model_dump(exclude_none=True)
     assume(d1 != d2)
     r = _fresh_renderer()
-    ref1 = r._intern_state(s1)
-    ref2 = r._intern_state(s2)
+    ref1 = r._state_registry.insert_raw(d1)
+    ref2 = r._state_registry.insert_raw(d2)
     assert ref1 != ref2
-    assert len(r._current.states) == 2
-
-
-@given(st.lists(vmobject_state(), min_size=1, max_size=8))
-def test_intern_state_bank_length_never_exceeds_unique_count(states):
-    r = _fresh_renderer()
-    for s in states:
-        r._intern_state(s)
-    unique = len(
-        {json.dumps(s.model_dump(exclude_none=True), sort_keys=True) for s in states}
-    )
-    assert len(r._current.states) == unique
+    assert len(r._state_registry) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -263,7 +245,7 @@ def test_serialize_value_tracker(value):
 # ---------------------------------------------------------------------------
 
 
-def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
+def test_v3_updater_command_uses_state_refs_and_dedup_is_deterministic():
     class DataScene(ManimWidget):
         def construct(self):
             vt = ValueTracker(0)
@@ -275,75 +257,42 @@ def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
     scene = DataScene(fps=10)
     data = scene.scene_data
 
+    _vmob = {
+        "kind": "VMobject",
+        "fill_color": "#FFFFFF",
+        "fill_opacity": 1.0,
+        "stroke_color": "#FFFFFF",
+        "stroke_width": 0.0,
+        "stroke_opacity": 1.0,
+        "z_index": 0.0,
+    }
     expected = {
-        "version": 2,
+        "version": 1,
         "fps": 10,
+        "states": [
+            {"value": 0.0},
+            _vmob,
+            {"value": 0.12385697935738824},
+            _vmob,
+            {"value": 0.7974197341465827},
+            _vmob,
+            {"value": 2.2025802658534173},
+            _vmob,
+            {"value": 2.8761430206426124},
+            _vmob,
+            {"value": 3.0},
+            _vmob,
+        ],
         "sections": [
             {
                 "name": "initial",
-                "snapshot": {},
+                "setup": [],
                 "camera": {
                     "phi": 0.0,
                     "theta": -1.5707963267948966,
                     "distance": 5.0,
                     "fov": 77.31961650818019,
                 },
-                "states": [
-                    {"value": 0.0},
-                    {
-                        "kind": "VMobject",
-                        "fill_color": "#FFFFFF",
-                        "fill_opacity": 1.0,
-                        "stroke_color": "#FFFFFF",
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    },
-                    {"value": 0.12385697935738824},
-                    {
-                        "kind": "VMobject",
-                        "fill_color": "#FFFFFF",
-                        "fill_opacity": 1.0,
-                        "stroke_color": "#FFFFFF",
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    },
-                    {"value": 0.7974197341465827},
-                    {
-                        "kind": "VMobject",
-                        "fill_color": "#FFFFFF",
-                        "fill_opacity": 1.0,
-                        "stroke_color": "#FFFFFF",
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    },
-                    {"value": 2.2025802658534173},
-                    {
-                        "kind": "VMobject",
-                        "fill_color": "#FFFFFF",
-                        "fill_opacity": 1.0,
-                        "stroke_color": "#FFFFFF",
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    },
-                    {"value": 2.8761430206426124},
-                    {
-                        "kind": "VMobject",
-                        "fill_color": "#FFFFFF",
-                        "fill_opacity": 1.0,
-                        "stroke_color": "#FFFFFF",
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    },
-                    {"value": 3.0},
-                    {
-                        "kind": "VMobject",
-                        "fill_color": "#FFFFFF",
-                        "fill_opacity": 1.0,
-                        "stroke_color": "#FFFFFF",
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    },
-                ],
                 "construct": [
                     {"cmd": "register", "id": "0", "state_ref": 0},
                     {"cmd": "register", "id": "1", "state_ref": 1},
@@ -366,7 +315,7 @@ def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
     assert_close(strip_points(data), strip_points(expected))
 
 
-def test_v2_create_then_next_section_snapshot_only_second_section():
+def test_v3_create_then_next_section_setup_reuses_state_ref():
     class Move(ManimWidget):
         def construct(self):
             circle = Circle(1, color=GREEN, fill_opacity=1, stroke_opacity=1)
@@ -376,59 +325,43 @@ def test_v2_create_then_next_section_snapshot_only_second_section():
     scene = Move()
     data = scene.scene_data
 
+    _circle = {
+        "kind": "VMobject",
+        "fill_color": "#83C167",
+        "fill_opacity": 1.0,
+        "stroke_color": "#83C167",
+        "stroke_width": 4.0,
+        "stroke_opacity": 1.0,
+        "z_index": 0.0,
+    }
     expected = {
-        "version": 2,
+        "version": 1,
         "fps": 10,
+        "states": [_circle],
         "sections": [
             {
                 "name": "initial",
-                "snapshot": {},
+                "setup": [],
                 "camera": {
                     "phi": 0.0,
                     "theta": -1.5707963267948966,
                     "distance": 5.0,
                     "fov": 77.31961650818019,
                 },
-                "states": [
-                    {
-                        "kind": "VMobject",
-                        "fill_color": "#83C167",
-                        "fill_opacity": 1.0,
-                        "stroke_color": "#83C167",
-                        "stroke_width": 4,
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    }
-                ],
                 "construct": [
                     {"cmd": "register", "id": "0", "state_ref": 0},
                     {
                         "cmd": "animate",
                         "duration": 1.0,
                         "animations": [
-                            {
-                                "id": "0",
-                                "rate_func": "smooth",
-                                "kind": "Create",
-                            }
+                            {"id": "0", "rate_func": "smooth", "kind": "Create"}
                         ],
                     },
                 ],
             },
             {
                 "name": "a",
-                "snapshot": {"0": 0},
-                "states": [
-                    {
-                        "kind": "VMobject",
-                        "fill_color": "#83C167",
-                        "fill_opacity": 1.0,
-                        "stroke_color": "#83C167",
-                        "stroke_width": 4,
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    }
-                ],
+                "setup": [{"cmd": "register", "id": "0", "state_ref": 0}],
                 "construct": [],
             },
         ],
@@ -450,7 +383,7 @@ def test_wait_with_vmobject():
     schema = load_schema()
     validate(data, schema)
 
-    assert data["version"] == 2
+    assert data["version"] == 1
     assert len(data["sections"]) == 1
     assert len(data["sections"][0]["construct"]) == 3
 
@@ -464,11 +397,10 @@ def test_v2_method_animation_uses_move_to_target():
 
     scene = ShiftScene()
     data = scene.scene_data
+
+    assert data["version"] == 1
+    assert len(data["states"]) >= 2
     section = data["sections"][0]
-
-    assert data["version"] == 2
-    assert len(section["states"]) >= 2
-
     anim_cmd = section["construct"][1]
     assert anim_cmd["cmd"] == "animate"
 
@@ -477,7 +409,7 @@ def test_v2_method_animation_uses_move_to_target():
     assert "state_ref" in anim
     assert anim["kind"] == "MoveToTarget"
 
-    target_state = section["states"][anim["state_ref"]]
+    target_state = data["states"][anim["state_ref"]]
     assert target_state["kind"] == "VMobject"
 
 
@@ -499,7 +431,7 @@ def test_v2_multiple_sections_with_move_to_target():
     scene = MultiSectionMoveToTarget()
     data = scene.scene_data
 
-    assert data["version"] == 2
+    assert data["version"] == 1
     assert len(data["sections"]) == 3
     for section in data["sections"]:
         anim = next(
@@ -559,15 +491,16 @@ def test_create_without_explicit_add_does_not_emit_add_animation():
 
 
 def test_mathtex_add_only_emits_add_animation():
-    from manim_widget import patch_tex
     import manim
+
+    from manim_widget import patch_tex
 
     original_math_tex = manim.MathTex
     original_tex = manim.Tex
 
     patch_tex()
     try:
-        from manim import MathTex, WHITE
+        from manim import WHITE, MathTex
 
         class MathTexAddOnlyScene(ManimWidget):
             def construct(self):
@@ -605,11 +538,19 @@ def test_image_mobject_serializes_source_and_pixels():
     data = scene.scene_data
     schema = load_schema()
     validate(data, schema)
-
     section = data["sections"][0]
-    assert section["construct"][0] == {"cmd": "register", "id": "0", "state_ref": 0}
+    reg_cmd = section["construct"][0]
+    assert reg_cmd["cmd"] == "register"
+    assert reg_cmd["id"] == "0"
 
-    state = section["states"][0]
+    # The construct command's state_ref may be a derived state; resolve the chain.
+    def resolve(ref):
+        s = data["states"][ref]
+        if "from" in s:
+            return {**resolve(s["from"]), **s}
+        return s
+
+    state = resolve(reg_cmd["state_ref"])
     assert state["kind"] == "ImageMobject"
     assert state["source"].startswith("data:image/png;base64,")
     assert "points" in state
@@ -620,6 +561,168 @@ def test_image_mobject_serializes_source_and_pixels():
     decoded = np.array(Image.open(io.BytesIO(base64.b64decode(encoded))))
     assert decoded.shape == pixels.shape
     assert np.array_equal(decoded, pixels)
+
+
+def test_same_image_content_encoded_once():
+    """The same pixel data used multiple times must produce exactly one source entry
+    in the global states list — PNG encoding must not repeat."""
+    pixels = np.zeros((4, 4, 4), dtype=np.uint8)
+
+    class MultiUseImage(ManimWidget):
+        def construct(self):
+            img1 = ImageMobject(pixels)
+            img2 = ImageMobject(pixels)
+            img2.shift((2, 0, 0))
+            self.play(FadeIn(img1))
+            self.play(Transform(img1, img2))
+
+    scene = MultiUseImage()
+    sources = [s["source"] for s in scene.scene_data["states"] if "source" in s]
+    assert len(sources) == 1, (
+        f"Expected 1 source entry for one unique image, got {len(sources)}"
+    )
+
+
+def test_two_distinct_images_produce_two_source_entries():
+    """Two images with different pixel data must each have their own source entry."""
+    pixels_a = np.zeros((4, 4, 4), dtype=np.uint8)
+    pixels_b = np.full((4, 4, 4), 128, dtype=np.uint8)
+
+    class TwoImageScene(ManimWidget):
+        def construct(self):
+            img_a = ImageMobject(pixels_a)
+            img_b = ImageMobject(pixels_b)
+            img_b.shift((2, 0, 0))
+            self.play(FadeIn(img_a))
+            self.play(Transform(img_a, img_b))
+
+    scene = TwoImageScene()
+    sources = [s["source"] for s in scene.scene_data["states"] if "source" in s]
+    assert len(set(sources)) == 2, (
+        f"Expected 2 unique sources for 2 distinct images, got {len(set(sources))}"
+    )
+
+
+def collect_all_state_refs(data: dict) -> set[int]:
+    """Walk every command in every section and collect all referenced state indices.
+
+    Follows 'from' chains in DerivedState entries so content states implicitly
+    referenced by derived states are counted as reachable.
+    Also asserts that the DAG is in topological order: every 'from' index is
+    strictly less than the index of the state that references it.
+    """
+    states = data.get("states", [])
+    direct_refs: set[int] = set()
+
+    def _walk_cmd(cmd: dict) -> None:
+        if "state_ref" in cmd:
+            direct_refs.add(cmd["state_ref"])
+        for anim in cmd.get("animations", []):
+            if "state_ref" in anim:
+                direct_refs.add(anim["state_ref"])
+        for frame in cmd.get("frames", []):
+            for entry in frame.values():
+                if "state_ref" in entry:
+                    direct_refs.add(entry["state_ref"])
+
+    for section in data.get("sections", []):
+        for cmd in section.get("setup", []):
+            _walk_cmd(cmd)
+        for cmd in section.get("construct", []):
+            _walk_cmd(cmd)
+
+    # Verify topological order and expand via 'from' chains.
+    all_refs: set[int] = set()
+    queue = list(direct_refs)
+    while queue:
+        ref = queue.pop()
+        if ref in all_refs:
+            continue
+        all_refs.add(ref)
+        from_ref = states[ref].get("from")
+        if from_ref is not None:
+            assert from_ref < ref, (
+                f"DAG not in topological order: state[{ref}].from={from_ref} >= {ref}"
+            )
+            if from_ref not in all_refs:
+                queue.append(from_ref)
+
+    return all_refs
+
+
+def test_all_states_referenced_simple():
+    """Every entry in the global states list must be referenced by at least one command."""
+    pixels = np.zeros((4, 4, 4), dtype=np.uint8)
+
+    class S(ManimWidget):
+        def construct(self):
+            img = ImageMobject(pixels)
+            self.play(FadeIn(img))
+
+    data = S().scene_data
+    refs = collect_all_state_refs(data)
+    n = len(data["states"])
+    unreferenced = [i for i in range(n) if i not in refs]
+    assert unreferenced == [], f"States at indices {unreferenced} are never referenced"
+
+
+def test_sources_not_duplicated_same_content_multiple_positions():
+    """Same pixel data used at multiple positions must produce exactly one source entry."""
+    pixels = np.zeros((4, 4, 4), dtype=np.uint8)
+
+    class S(ManimWidget):
+        def construct(self):
+            img1 = ImageMobject(pixels)
+            img2 = ImageMobject(pixels)
+            img2.shift((2, 0, 0))
+            img3 = ImageMobject(pixels)
+            img3.shift((-2, 0, 0))
+            img3.scale(0.5)
+            self.play(FadeIn(img1))
+            self.play(Transform(img1, img2))
+            self.play(Transform(img1, img3))
+
+    data = S().scene_data
+    sources = [s["source"] for s in data["states"] if "source" in s]
+    assert len(sources) == 1, f"Expected 1 source, got {len(sources)}"
+    refs = collect_all_state_refs(data)
+    unreferenced = [i for i in range(len(data["states"])) if i not in refs]
+    assert unreferenced == [], f"Unreferenced states: {unreferenced}"
+
+
+def test_image_transform_state_resolves_to_full_state():
+    """Every Transform targeting an image must resolve (via DAG) to a state with points."""
+    pixels_a = np.zeros((4, 4, 4), dtype=np.uint8)
+    pixels_b = np.full((4, 4, 4), 128, dtype=np.uint8)
+
+    def resolve(states, ref):
+        s = states[ref]
+        if "from" in s:
+            return {**resolve(states, s["from"]), **s}
+        return s
+
+    class S(ManimWidget):
+        def construct(self):
+            img = ImageMobject(pixels_a)
+            self.play(FadeIn(img))
+            img2 = ImageMobject(pixels_a)
+            img2.shift((2, 0, 0))
+            self.play(Transform(img, img2))
+            img3 = ImageMobject(pixels_b)
+            img3.shift((-1, 0, 0))
+            self.play(Transform(img, img3))
+
+    data = S().scene_data
+    states = data["states"]
+    for section in data["sections"]:
+        for cmd in section.get("construct", []):
+            for anim in cmd.get("animations", []):
+                if anim.get("kind") == "Transform":
+                    full = resolve(states, anim["state_ref"])
+                    if full.get("kind") == "ImageMobject":
+                        assert "points" in full, (
+                            f"Resolved Transform state for ImageMobject missing points: {full}"
+                        )
 
 
 def test_static_mathtex_serialization():
@@ -635,8 +738,7 @@ def test_static_mathtex_serialization():
     schema = load_schema()
     validate(data, schema)
 
-    section = data["sections"][0]
-    state = section["states"][0]
+    state = data["states"][0]
 
     assert state["kind"] == "MathTexSource"
     assert state["latex"] == "x^2"
@@ -663,9 +765,7 @@ def test_swap_animation_emits_group_animation():
             self.play(Swap(s1, s2))
 
     scene = SwapScene()
-    data = scene.scene_data
-    section = data["sections"][0]
-
+    section = scene.scene_data["sections"][0]
     animate_cmd = next(cmd for cmd in section["construct"] if cmd["cmd"] == "animate")
     anim = next(a for a in animate_cmd["animations"] if a["kind"] != "Add")
     assert anim["kind"] == "Swap"
@@ -675,7 +775,7 @@ def test_swap_animation_emits_group_animation():
 def test_cyclic_replace_animation_emits_group_animation():
     class CyclicReplaceScene(ManimWidget):
         def construct(self):
-            from manim import CyclicReplace, Triangle, UP
+            from manim import UP, CyclicReplace, Triangle
 
             s1 = Square().shift(LEFT)
             s2 = Circle().shift(RIGHT)
@@ -684,9 +784,7 @@ def test_cyclic_replace_animation_emits_group_animation():
             self.play(CyclicReplace(s1, s2, s3))
 
     scene = CyclicReplaceScene()
-    data = scene.scene_data
-    section = data["sections"][0]
-
+    section = scene.scene_data["sections"][0]
     animate_cmd = next(cmd for cmd in section["construct"] if cmd["cmd"] == "animate")
     anim = next(a for a in animate_cmd["animations"] if a["kind"] != "Add")
     assert anim["kind"] == "CyclicReplace"
@@ -763,16 +861,16 @@ def test_camera_set_before_next_section_appears_in_both_sections():
 
 
 def test_arrow_serializes_as_vgroup_container():
-    """Arrow: pure VGroup container, no points on container, 2 VMobject children."""
-    from manim import Arrow
+    """Arrow: VGroup with 2 VMobject children (shaft + tip), no points on container."""
+    from manim import Arrow, GrowArrow
 
     class ArrowScene(ManimWidget):
         def construct(self):
             a = Arrow(start=LEFT, end=RIGHT)
-            self.play(Create(a))
+            self.play(GrowArrow(a))
 
     scene = ArrowScene(fps=10)
-    states = scene.scene_data["sections"][0]["states"]
+    states = scene.scene_data["states"]
 
     arrow_state = next(
         (
@@ -787,25 +885,57 @@ def test_arrow_serializes_as_vgroup_container():
         None,
     )
 
-    assert arrow_state is not None
+    assert arrow_state is not None, (
+        "No VGroup with 2 VMobject children found — shaft missing?"
+    )
     assert "points" not in arrow_state
-    assert len(arrow_state["children"]) == 2
+    assert len(arrow_state["children"]) == 2, (
+        f"Expected 2 children (shaft + tip), got {len(arrow_state['children'])}"
+    )
+
+
+def test_vgroup_persists_across_sections():
+    """VGroups and arrows in section N must appear in section N+1's setup."""
+    from manim import UP, Arrow, GrowArrow, Rectangle, VGroup
+
+    class MultiSectionScene(ManimWidget):
+        def construct(self):
+            block = VGroup(Rectangle(), Rectangle().shift(RIGHT))
+            a = Arrow(LEFT, RIGHT)
+            self.play(Create(block), GrowArrow(a))
+            self.next_section("s2")
+            self.play(block.animate.shift(UP))
+
+    data = MultiSectionScene(fps=10).scene_data
+    states = data["states"]
+
+    s2_setup = data["sections"][1]["setup"]
+    assert len(s2_setup) == 2, (
+        f"Expected 2 register cmds in s2 setup, got {len(s2_setup)}"
+    )
+
+    # Both registered state_refs must be VGroups with VMobject children
+    for cmd in s2_setup:
+        state = states[cmd["state_ref"]]
+        assert state["kind"] == "VGroup", f"Setup state is not VGroup: {state}"
+        assert len(state["children"]) >= 1
+        for child_ref in state["children"]:
+            assert states[child_ref].get("kind") == "VMobject", (
+                f"VGroup child {child_ref} is not VMobject: {states[child_ref]}"
+            )
 
 
 @given(
     st.lists(vmobject_state(), min_size=2, max_size=6),
-    st.integers(min_value=0, max_value=5),
 )
-def test_intern_state_ref_always_in_bounds_after_mixed_inserts(states, extra_repeats):
-    """Repeating intern calls never push ref out of bounds."""
+def test_insert_raw_refs_always_in_bounds(states):
+    """Every insert_raw ref must be a valid index into the registry."""
     r = _fresh_renderer()
-    refs = [r._intern_state(s) for s in states]
-    # Re-intern a subset to exercise deduplication path
-    for s in states[:extra_repeats]:
-        ref = r._intern_state(s)
-        assert 0 <= ref < len(r._current.states)
+    refs = [
+        r._state_registry.insert_raw(s.model_dump(exclude_none=True)) for s in states
+    ]
     for ref in refs:
-        assert 0 <= ref < len(r._current.states)
+        assert 0 <= ref < len(r._state_registry)
 
 
 @given(bezier_points_3n1(min_segments=1, max_segments=3))
@@ -814,8 +944,9 @@ def test_state_bank_stores_dict_not_pydantic_model(pts):
     """States in the bank must be plain dicts (for JSON serialization)."""
     r = _fresh_renderer()
     state = VMobjectState(points=pts)
-    ref = r._intern_state(state)
-    stored = r._current.states[ref]
+    d = state.model_dump(exclude_none=True)
+    ref = r._state_registry.insert_raw(d)
+    stored = r._state_registry.get_by_id(ref)
     assert isinstance(stored, dict)
     assert stored.get("kind") == "VMobject"
 
@@ -832,7 +963,10 @@ def test_serialize_mobject_never_produces_arrow_kind(state):
 )
 def test_vgroup_state_children_are_all_ints(child_states):
     r = _fresh_renderer()
-    children = [r._intern_state(s) for s in child_states]
+    children = [
+        r._state_registry.insert_raw(s.model_dump(exclude_none=True))
+        for s in child_states
+    ]
     vg = VGroupState(children=children)
     assert all(isinstance(c, int) for c in vg.children)
     d = vg.model_dump(exclude_none=True)
@@ -941,10 +1075,11 @@ def test_generated_scene_all_state_refs_in_bounds(args):
     mob_specs, commands = args
     data = run_generated_scene(mob_specs, commands, fps=5)
 
+    n_states = len(data["states"])
     for section in data["sections"]:
-        n_states = len(section["states"])
-        for ref in section.get("snapshot", {}).values():
-            assert 0 <= ref < n_states
+        for setup_cmd in section.get("setup", []):
+            if "state_ref" in setup_cmd:
+                assert 0 <= setup_cmd["state_ref"] < n_states
         for cmd in section["construct"]:
             if "state_ref" in cmd:
                 assert 0 <= cmd["state_ref"] < n_states
@@ -976,8 +1111,8 @@ def test_generated_scene_with_transforms_fadeouts_groups_is_valid(args):
     data = run_generated_scene(mob_specs, commands, fps=5)
     validate(data, schema)
 
+    n_states = len(data["states"])
     for section in data["sections"]:
-        n_states = len(section["states"])
         for cmd in section["construct"]:
             for anim in cmd.get("animations", []):
                 if "state_ref" in anim:
