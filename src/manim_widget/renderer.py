@@ -373,6 +373,12 @@ class CaptureRenderer:
                 return self._state_registry.insert_raw(
                     vgroup_state.model_dump(exclude_none=True)
                 )
+            # Empty VMobject (e.g. boolean op with no geometric intersection): treat as invisible.
+            if not mob.submobjects:
+                style = self._vmob_style(mob)
+                return self._state_registry.insert_raw(
+                    {"kind": "VMobject", "points": [], **style}
+                )
 
         msg = f"Cannot compute state_ref for {mob!r}"
         raise ValueError(msg)

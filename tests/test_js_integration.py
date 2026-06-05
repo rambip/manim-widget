@@ -183,7 +183,7 @@ class TestCLIIntegration:
         class BooleanOperations(ManimWidget):
             def construct(self):
                 ellipse1 = Ellipse(
-                    width=2, height=3, fill_opacity=0.5, color=BLUE
+                    width=4, height=3, fill_opacity=0.5, color=BLUE
                 ).move_to(LEFT)
                 ellipse2 = ellipse1.copy().set_color(RED).move_to(RIGHT)
                 self.play(FadeIn(VGroup(ellipse1, ellipse2)))
