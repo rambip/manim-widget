@@ -1,0 +1,2 @@
+[run]
+preload = ["./js/src/preload-typia.ts"]

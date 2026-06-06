@@ -56,6 +56,7 @@ def _create_logo_group() -> VGroup:
 
 
 CLI_PATH = Path(__file__).parent.parent / "js" / "src" / "test_cli.js"
+TYPIA_PRELOAD = Path(__file__).parent.parent / "js" / "src" / "preload-typia.ts"
 
 
 def run_cli(
@@ -66,7 +67,15 @@ def run_cli(
     else:
         scene_json = scene_data
 
-    args = ["bun", "run", "--conditions", "source", str(CLI_PATH)]
+    args = [
+        "bun",
+        "run",
+        "--preload",
+        str(TYPIA_PRELOAD),
+        "--conditions",
+        "source",
+        str(CLI_PATH),
+    ]
     if output_ids:
         args.append("--output-ids")
     if output_end_state:
