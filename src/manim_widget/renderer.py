@@ -22,6 +22,7 @@ from manim import (
     ValueTracker,
     VGroup,
 )
+from manim.animation.composition import AnimationGroup
 from manim.mobject.geometry.line import Arrow
 from manim.animation.animation import Animation
 from manim.mobject.mobject import Mobject
@@ -412,17 +413,16 @@ class CaptureRenderer:
                 animate_descriptors.append({"kind": "Add", "id": self.short_id(mob)})
                 self._introduced_by_animation[id(mob)] = True
 
-        for anim in animations:
-            desc = self._descriptor_from_animation(anim)
-            animate_descriptors.append(desc)
-
+        def _process_leaf_anim(
+            anim: Animation,
+            desc: dict,
+        ) -> None:
+            """Register mobject and emit post-commands for a single leaf animation."""
             mob = anim.mobject
-            # Skip registration for group animation internal Groups
             if isinstance(anim, Swap | CyclicReplace):
-                continue
+                return
             if isinstance(mob, Mobject) and not _is_supported(mob):
-                continue
-
+                return
             if not self.is_active(mob):
                 self.register_mobject(mob)
                 pre_commands.append(
@@ -432,27 +432,45 @@ class CaptureRenderer:
                         "state_ref": self.state_ref_for(mob),
                     }
                 )
-
             if anim.is_introducer():
                 self._introduced_by_animation[id(mob)] = True
-
             if isinstance(anim, ReplacementTransform):
                 target = anim.target_mobject
                 if not self.is_active(target):
                     self.register_mobject(target)
-                source = anim.mobject
                 post_commands.append(
                     {
                         "cmd": "rebind",
-                        "source_id": self.short_id(source),
+                        "source_id": self.short_id(anim.mobject),
                         "target_id": self.short_id(target),
                     }
                 )
-
             elif isinstance(anim, FadeOut):
                 post_commands.append(
                     {"cmd": "remove", "id": self.short_id(anim.mobject)}
                 )
+
+        for anim in animations:
+            if isinstance(anim, AnimationGroup):
+                # Flatten into sub-descriptors with explicit start/end timestamps.
+                # anims_with_timings is built by AnimationGroup.__init__ in the
+                # max_end_time space; scale to actual wall-clock seconds.
+                scale = (
+                    anim.run_time / anim.max_end_time if anim.max_end_time > 0 else 1.0
+                )
+                for row in anim.anims_with_timings:
+                    sub: Animation = row["anim"]
+                    start_s = float(row["start"]) * scale
+                    end_s = float(row["end"]) * scale
+                    desc = self._descriptor_from_animation(sub)
+                    desc["start"] = round(start_s, 6)
+                    desc["end"] = round(end_s, 6)
+                    animate_descriptors.append(desc)
+                    _process_leaf_anim(sub, desc)
+            else:
+                desc = self._descriptor_from_animation(anim)
+                animate_descriptors.append(desc)
+                _process_leaf_anim(anim, desc)
 
         if pre_commands:
             current.commands.extend(pre_commands)

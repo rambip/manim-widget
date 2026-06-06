@@ -640,8 +640,33 @@ export class Player {
 
   async _playAnimate(cmd, section) {
     const descriptors = Array.isArray(cmd.animations) ? cmd.animations : [];
-    const animations = [];
+    const cmdDuration = typeof cmd.duration === "number" ? cmd.duration : 1;
 
+    // Check if any descriptor carries explicit start/end timestamps.
+    const hasTimestamps = descriptors.some(
+      (d) => d.start !== undefined || d.end !== undefined,
+    );
+
+    if (hasTimestamps) {
+      const entries = [];
+      for (const desc of descriptors) {
+        if (desc.kind === "Wait") continue;
+        const animation = await this._buildAnimation(desc, section);
+        if (animation) {
+          entries.push({
+            animation,
+            start: desc.start ?? 0,
+            end: desc.end ?? cmdDuration,
+          });
+        }
+      }
+      if (entries.length > 0) {
+        await this._scene.playWithTimestamps(entries);
+      }
+      return;
+    }
+
+    const animations = [];
     for (const desc of descriptors) {
       if (desc.kind === "Wait") {
         // Wait needs to be handled separately - play accumulated animations first
@@ -649,7 +674,7 @@ export class Player {
           await this._scene.play(...animations);
           animations.length = 0;
         }
-        await this._scene.wait(cmd.duration);
+        await this._scene.wait(cmdDuration);
         continue;
       }
       const animation = await this._buildAnimation(desc, section);

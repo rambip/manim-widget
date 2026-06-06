@@ -4,7 +4,10 @@
   "title": "ManimWidgetScene",
   "description": "Complete serialized Manim scene for client-side playback.",
   "type": "object",
-  "required": ["version", "sections"],
+  "required": [
+    "version",
+    "sections"
+  ],
   "additionalProperties": false,
   "properties": {
     "fps": {
@@ -23,17 +26,25 @@
     },
     "sections": {
       "type": "array",
-      "items": { "$ref": "#/definitions/Section" }
+      "items": {
+        "$ref": "#/definitions/Section"
+      }
     }
   },
-
   "definitions": {
     "Section": {
       "type": "object",
-      "required": ["name", "snapshot", "states", "construct"],
+      "required": [
+        "name",
+        "snapshot",
+        "states",
+        "construct"
+      ],
       "additionalProperties": false,
       "properties": {
-        "name": { "type": "string" },
+        "name": {
+          "type": "string"
+        },
         "background_color": {
           "$ref": "#/definitions/Color"
         },
@@ -46,17 +57,28 @@
           "description": "Human-readable explanation of why the section is unsupported."
         },
         "snapshot": {
-          "oneOf": [{ "$ref": "#/definitions/Snapshot" }, { "type": "null" }],
+          "oneOf": [
+            {
+              "$ref": "#/definitions/Snapshot"
+            },
+            {
+              "type": "null"
+            }
+          ],
           "description": "Full scene state at section entry. Null only when unsupported=true. Maps mob_id to state_ref index into section.states."
         },
         "states": {
           "type": "array",
           "description": "List of all serialized Geometrical data that will be used in this section (excluding updaters). Other commands and animations acces it using integer indices.",
-          "items": { "$ref": "#/definitions/MobjectState" }
+          "items": {
+            "$ref": "#/definitions/MobjectState"
+          }
         },
         "construct": {
           "type": "array",
-          "items": { "$ref": "#/definitions/Command" },
+          "items": {
+            "$ref": "#/definitions/Command"
+          },
           "description": "Ordered list of commands to execute. Empty when unsupported=true."
         },
         "camera": {
@@ -65,27 +87,40 @@
         }
       }
     },
-
     "Snapshot": {
       "type": "object",
       "description": "Scene state at the start of this section. It is a map of object_id -> index in section.states. Note that for groups, VGroup children are NOT included - the player must restore the children from VGroupState.children.",
-      "additionalProperties": { "type": "integer", "minimum": 0 }
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
     },
-
     "MobjectState": {
       "description": "State variant holding geometrical or textual data. Nature of data is determined by the 'kind' field: either 'VMobject', 'VGroup', 'MathTexSource'",
       "oneOf": [
-        { "$ref": "#/definitions/VMobjectState" },
-        { "$ref": "#/definitions/VGroupState" },
-        { "$ref": "#/definitions/MathTexSourceState" },
-        { "$ref": "#/definitions/ImageMobjectState" },
-        { "$ref": "#/definitions/ValueTrackerState" }
+        {
+          "$ref": "#/definitions/VMobjectState"
+        },
+        {
+          "$ref": "#/definitions/VGroupState"
+        },
+        {
+          "$ref": "#/definitions/MathTexSourceState"
+        },
+        {
+          "$ref": "#/definitions/ImageMobjectState"
+        },
+        {
+          "$ref": "#/definitions/ValueTrackerState"
+        }
       ]
     },
-
     "VMobjectState": {
       "type": "object",
-      "required": ["kind", "points"],
+      "required": [
+        "kind",
+        "points"
+      ],
       "additionalProperties": false,
       "properties": {
         "kind": {
@@ -97,18 +132,37 @@
           "type": "array",
           "items": {
             "type": "array",
-            "items": { "type": "number" },
+            "items": {
+              "type": "number"
+            },
             "minItems": 3,
             "maxItems": 3
           },
           "description": "Bezier control points. Format: [p0, h0_a, h0_b, p1, h1_a, h1_b, p2, ...] where pi is a point and hi_a, hi_b are handles. Must have 3n+1 points (starting point + n cubic Bezier segments). Mobjects with multiple disconnected subpaths are serialized as VGroup with each subpath as a child."
         },
-        "fill_color": { "$ref": "#/definitions/Color" },
-        "fill_opacity": { "type": "number", "minimum": 0, "maximum": 1 },
-        "stroke_color": { "$ref": "#/definitions/Color" },
-        "stroke_width": { "type": "number", "minimum": 0 },
-        "stroke_opacity": { "type": "number", "minimum": 0, "maximum": 1 },
-        "z_index": { "type": "number" },
+        "fill_color": {
+          "$ref": "#/definitions/Color"
+        },
+        "fill_opacity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "stroke_color": {
+          "$ref": "#/definitions/Color"
+        },
+        "stroke_width": {
+          "type": "number",
+          "minimum": 0
+        },
+        "stroke_opacity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "z_index": {
+          "type": "number"
+        },
         "text": {
           "type": "string",
           "description": "Text content for Text/MarkupText mobjects."
@@ -119,29 +173,42 @@
         }
       }
     },
-
     "VGroupState": {
       "type": "object",
-      "required": ["kind", "children"],
+      "required": [
+        "kind",
+        "children"
+      ],
       "additionalProperties": false,
       "properties": {
         "kind": {
           "type": "string",
-          "enum": ["VGroup", "Arrow"],
+          "enum": [
+            "VGroup",
+            "Arrow"
+          ],
           "description": "Group of child mobjects. Arrow kind: points is the shaft VMobject, children[0] is the tip VMobject."
         },
         "children": {
           "type": "array",
-          "items": { "type": "integer", "minimum": 0 },
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          },
           "description": "Ordered list of child state_refs. Resolved through section.states to create child mobjects. VGroup children are NOT in the snapshot - only the VGroup root is."
         },
-        "z_index": { "type": "number" }
+        "z_index": {
+          "type": "number"
+        }
       }
     },
-
     "MathTexSourceState": {
       "type": "object",
-      "required": ["kind", "latex", "points"],
+      "required": [
+        "kind",
+        "latex",
+        "points"
+      ],
       "additionalProperties": false,
       "properties": {
         "kind": {
@@ -157,7 +224,9 @@
           "type": "array",
           "items": {
             "type": "array",
-            "items": { "type": "number" },
+            "items": {
+              "type": "number"
+            },
             "minItems": 3,
             "maxItems": 3
           },
@@ -165,15 +234,26 @@
           "maxItems": 4,
           "description": "Signed corners [top_left, top_right, bottom_right, bottom_left]. Base corners are [LEFT+UP, RIGHT+UP, RIGHT+DOWN, LEFT+DOWN] scaled by (font_size/48). Player computes center as midpoint(top_left, bottom_right), rightVec=(top_right-top_left)/2, upVec=(top_left-bottom_left)/2."
         },
-        "stroke_opacity": { "type": "number", "minimum": 0, "maximum": 1 },
-        "color": { "$ref": "#/definitions/Color" },
-        "z_index": { "type": "number" }
+        "stroke_opacity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "color": {
+          "$ref": "#/definitions/Color"
+        },
+        "z_index": {
+          "type": "number"
+        }
       }
     },
-
     "ImageMobjectState": {
       "type": "object",
-      "required": ["kind", "source", "points"],
+      "required": [
+        "kind",
+        "source",
+        "points"
+      ],
       "additionalProperties": false,
       "properties": {
         "kind": {
@@ -190,7 +270,9 @@
           "maxItems": 4,
           "items": {
             "type": "array",
-            "items": { "type": "number" },
+            "items": {
+              "type": "number"
+            },
             "minItems": 3,
             "maxItems": 3
           },
@@ -201,13 +283,17 @@
           "minimum": 0,
           "maximum": 1
         },
-        "z_index": { "type": "number" }
+        "z_index": {
+          "type": "number"
+        }
       }
     },
-
     "ValueTrackerState": {
       "type": "object",
-      "required": ["value", "kind"],
+      "required": [
+        "value",
+        "kind"
+      ],
       "additionalProperties": false,
       "properties": {
         "kind": {
@@ -220,24 +306,39 @@
         }
       }
     },
-
     "Command": {
       "oneOf": [
-        { "$ref": "#/definitions/RegisterCommand" },
-        { "$ref": "#/definitions/RemoveCommand" },
-        { "$ref": "#/definitions/RebindCommand" },
-        { "$ref": "#/definitions/AnimateCommand" }
+        {
+          "$ref": "#/definitions/RegisterCommand"
+        },
+        {
+          "$ref": "#/definitions/RemoveCommand"
+        },
+        {
+          "$ref": "#/definitions/RebindCommand"
+        },
+        {
+          "$ref": "#/definitions/AnimateCommand"
+        }
       ]
     },
-
     "RegisterCommand": {
       "type": "object",
       "description": "Bind or update a mobject in the JS scene graph by mapping id to a section-local state_ref, and add it to the visible scene.",
-      "required": ["cmd", "id", "state_ref"],
+      "required": [
+        "cmd",
+        "id",
+        "state_ref"
+      ],
       "additionalProperties": false,
       "properties": {
-        "cmd": { "type": "string", "const": "register" },
-        "id": { "type": "string" },
+        "cmd": {
+          "type": "string",
+          "const": "register"
+        },
+        "id": {
+          "type": "string"
+        },
         "state_ref": {
           "type": "integer",
           "minimum": 0,
@@ -245,25 +346,38 @@
         }
       }
     },
-
     "RemoveCommand": {
       "type": "object",
       "description": "Remove a mobject from the JS scene graph and free it from the registry. Always emitted after FadeOut/Uncreate/Unwrite animations and after ReplacementTransform (removes source).",
-      "required": ["cmd", "id"],
+      "required": [
+        "cmd",
+        "id"
+      ],
       "additionalProperties": false,
       "properties": {
-        "cmd": { "type": "string", "const": "remove" },
-        "id": { "type": "string" }
+        "cmd": {
+          "type": "string",
+          "const": "remove"
+        },
+        "id": {
+          "type": "string"
+        }
       }
     },
-
     "RebindCommand": {
       "type": "object",
       "description": "Rebind an existing runtime mobject identity from one id to another.",
-      "required": ["cmd", "source_id", "target_id"],
+      "required": [
+        "cmd",
+        "source_id",
+        "target_id"
+      ],
       "additionalProperties": false,
       "properties": {
-        "cmd": { "type": "string", "const": "rebind" },
+        "cmd": {
+          "type": "string",
+          "const": "rebind"
+        },
         "source_id": {
           "type": "string",
           "description": "Current registry id for the runtime object."
@@ -274,19 +388,30 @@
         }
       }
     },
-
     "AnimateCommand": {
       "type": "object",
       "description": "One scene.play() call. All animations run in parallel by default",
-      "required": ["cmd", "duration", "animations"],
+      "required": [
+        "cmd",
+        "duration",
+        "animations"
+      ],
       "additionalProperties": false,
       "properties": {
-        "cmd": { "type": "string", "const": "animate" },
-        "duration": { "type": "number", "minimum": 0 },
+        "cmd": {
+          "type": "string",
+          "const": "animate"
+        },
+        "duration": {
+          "type": "number",
+          "minimum": 0
+        },
         "animations": {
           "type": "array",
           "minItems": 1,
-          "items": { "$ref": "#/definitions/AnimationDescriptor" }
+          "items": {
+            "$ref": "#/definitions/AnimationDescriptor"
+          }
         },
         "updaters": {
           "type": "object",
@@ -301,31 +426,45 @@
         }
       }
     },
-
     "UpdaterDescriptor": {
       "type": "object",
       "description": "For objects using updaters, snapshots of the object properties at every frame.",
-      "required": ["cmd", "duration", "updates"],
+      "required": [
+        "cmd",
+        "duration",
+        "updates"
+      ],
       "additionalProperties": false,
       "properties": {
-        "cmd": { "type": "string", "const": "updater" },
+        "cmd": {
+          "type": "string",
+          "const": "updater"
+        },
         "updates": {
           "description": "Data to update object properties (points, color, opacity ...) at each frame. Data for all properties must contain the same number of values (one per frame)",
           "additionalProperties": {
             "description": "The data for each frame. Use the 'scheme' field to specify how it is encoded.",
             "oneOf": [
-              { "$ref": "#/definitions/RawUpdaterData" },
-              { "$ref": "#/definitions/ZLibUpdaterData" },
-              { "$ref": "#/definitions/DeltaPointUpdaterData" }
+              {
+                "$ref": "#/definitions/RawUpdaterData"
+              },
+              {
+                "$ref": "#/definitions/ZLibUpdaterData"
+              },
+              {
+                "$ref": "#/definitions/DeltaPointUpdaterData"
+              }
             ]
           }
         }
       }
     },
-
     "RawUpdaterData": {
       "description": "Properties passed as a json array (uncompressed)",
-      "required": ["scheme", "value"],
+      "required": [
+        "scheme",
+        "value"
+      ],
       "properties": {
         "scheme": {
           "type": "string",
@@ -338,7 +477,10 @@
     },
     "ZLibUpdaterData": {
       "description": "String properties encoded as a new-line separated string, encoded with zlib",
-      "required": ["scheme", "value"],
+      "required": [
+        "scheme",
+        "value"
+      ],
       "properties": {
         "scheme": {
           "type": "string",
@@ -351,7 +493,13 @@
     },
     "DeltaPointUpdaterData": {
       "description": "Encoding scheme for point arrays that vary across frames. Points are stored as three separate zlib-compressed base64 buffers, one per axis (x, y, z). Each buffer is a row-major float32 matrix of shape [F, W], where F is the number of frames and W is the length of the longest point array across all frames (the 'width' field). Each row corresponds to one frame; slots beyond the actual point count are set to NaN. Values are delta-encoded between frames: the stored value is the difference from the previous frame, or the absolute value if the previous frame was NaN.",
-      "required": ["width", "scheme", "x", "y", "z"],
+      "required": [
+        "width",
+        "scheme",
+        "x",
+        "y",
+        "z"
+      ],
       "additionalProperties": false,
       "properties": {
         "scheme": {
@@ -376,35 +524,62 @@
         }
       }
     },
-
     "AnimationDescriptor": {
       "oneOf": [
-        { "$ref": "#/definitions/SimpleAnimation" },
-        { "$ref": "#/definitions/WaitAnimation" },
-        { "$ref": "#/definitions/GroupAnimation" },
-        { "$ref": "#/definitions/TransformAnimation" }
+        {
+          "$ref": "#/definitions/SimpleAnimation"
+        },
+        {
+          "$ref": "#/definitions/WaitAnimation"
+        },
+        {
+          "$ref": "#/definitions/GroupAnimation"
+        },
+        {
+          "$ref": "#/definitions/TransformAnimation"
+        }
       ]
     },
-
     "WaitAnimation": {
       "type": "object",
       "description": "Wait animation - pauses without operating on any mobject.",
-      "required": ["kind"],
+      "required": [
+        "kind"
+      ],
       "additionalProperties": false,
       "properties": {
-        "kind": { "type": "string", "const": "Wait" },
-        "rate_func": { "$ref": "#/definitions/RateFunc" }
+        "kind": {
+          "type": "string",
+          "const": "Wait"
+        },
+        "rate_func": {
+          "$ref": "#/definitions/RateFunc"
+        },
+        "start": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Start time in seconds within the animate command window. Default 0."
+        },
+        "end": {
+          "type": "number",
+          "minimum": 0,
+          "description": "End time in seconds within the animate command window. Default: command duration."
+        }
       }
     },
-
     "SimpleAnimation": {
       "type": "object",
-      "required": ["kind", "id"],
+      "required": [
+        "kind",
+        "id"
+      ],
       "additionalProperties": false,
       "properties": {
         "kind": {
           "anyOf": [
-            { "type": "string" },
+            {
+              "type": "string"
+            },
             {
               "enum": [
                 "Create",
@@ -438,32 +613,54 @@
             }
           ]
         },
-
         "id": {
           "type": "string",
           "description": "mob_id of the target mobject."
         },
-        "rate_func": { "$ref": "#/definitions/RateFunc" },
-        "params": { "$ref": "#/definitions/SimpleAnimationParams" }
+        "rate_func": {
+          "$ref": "#/definitions/RateFunc"
+        },
+        "params": {
+          "$ref": "#/definitions/SimpleAnimationParams"
+        },
+        "start": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Start time in seconds within the animate command window. Default 0."
+        },
+        "end": {
+          "type": "number",
+          "minimum": 0,
+          "description": "End time in seconds within the animate command window. Default: command duration."
+        }
       }
     },
-
     "GroupAnimation": {
       "type": "object",
-      "required": ["kind", "ids"],
+      "required": [
+        "kind",
+        "ids"
+      ],
       "additionalProperties": false,
       "properties": {
         "kind": {
           "type": "string",
-          "enum": ["Swap", "CyclicReplace"]
+          "enum": [
+            "Swap",
+            "CyclicReplace"
+          ]
         },
         "ids": {
           "type": "array",
           "minItems": 2,
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "Ordered mob_ids participating in the group animation. For Swap, must be exactly 2. For CyclicReplace, each mobject moves to the next position in order."
         },
-        "rate_func": { "$ref": "#/definitions/RateFunc" },
+        "rate_func": {
+          "$ref": "#/definitions/RateFunc"
+        },
         "params": {
           "type": "object",
           "additionalProperties": false,
@@ -473,18 +670,34 @@
               "description": "Arc angle for the movement path in radians. Default is PI/2."
             }
           }
+        },
+        "start": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Start time in seconds within the animate command window. Default 0."
+        },
+        "end": {
+          "type": "number",
+          "minimum": 0,
+          "description": "End time in seconds within the animate command window. Default: command duration."
         }
       }
     },
-
     "TransformAnimation": {
       "type": "object",
-      "required": ["kind", "id", "state_ref"],
+      "required": [
+        "kind",
+        "id",
+        "state_ref"
+      ],
       "additionalProperties": false,
       "properties": {
         "kind": {
           "type": "string",
-          "enum": ["Transform", "MoveToTarget"]
+          "enum": [
+            "Transform",
+            "MoveToTarget"
+          ]
         },
         "id": {
           "type": "string",
@@ -495,11 +708,24 @@
           "minimum": 0,
           "description": "Index into section.states for destination state."
         },
-        "rate_func": { "$ref": "#/definitions/RateFunc" },
-        "params": { "$ref": "#/definitions/TransformAnimationParams" }
+        "rate_func": {
+          "$ref": "#/definitions/RateFunc"
+        },
+        "params": {
+          "$ref": "#/definitions/TransformAnimationParams"
+        },
+        "start": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Start time in seconds within the animate command window. Default 0."
+        },
+        "end": {
+          "type": "number",
+          "minimum": 0,
+          "description": "End time in seconds within the animate command window. Default: command duration."
+        }
       }
     },
-
     "SimpleAnimationParams": {
       "type": "object",
       "description": "Animation-specific parameters for simple animations.",
@@ -527,7 +753,6 @@
         }
       }
     },
-
     "TransformAnimationParams": {
       "type": "object",
       "description": "Animation-specific parameters for transform animations.",
@@ -543,7 +768,6 @@
         }
       }
     },
-
     "RateFunc": {
       "type": "string",
       "enum": [
@@ -586,19 +810,23 @@
         "ease_in_out_bounce"
       ]
     },
-
     "Vec3": {
       "type": "array",
-      "items": { "type": "number" },
+      "items": {
+        "type": "number"
+      },
       "minItems": 3,
       "maxItems": 3,
       "description": "[x, y, z]"
     },
-
     "CameraState": {
       "type": "object",
       "description": "3D camera spherical coordinates at section entry.",
-      "required": ["phi", "theta", "distance"],
+      "required": [
+        "phi",
+        "theta",
+        "distance"
+      ],
       "properties": {
         "phi": {
           "type": "number",
@@ -622,7 +850,6 @@
         }
       }
     },
-
     "CameraUpdaterData": {
       "type": "array",
       "description": "Per-frame camera state. Array of camera states, one per frame. Deduplicated - only includes frames where camera changed.",
@@ -630,19 +857,27 @@
         "$ref": "#/definitions/CameraFrame"
       }
     },
-
     "CameraFrame": {
       "type": "object",
       "description": "Single frame of camera state.",
       "properties": {
-        "phi": { "type": "number" },
-        "theta": { "type": "number" },
-        "distance": { "type": "number" },
-        "fov": { "type": "number" },
-        "look_at": { "$ref": "#/definitions/Vec3" }
+        "phi": {
+          "type": "number"
+        },
+        "theta": {
+          "type": "number"
+        },
+        "distance": {
+          "type": "number"
+        },
+        "fov": {
+          "type": "number"
+        },
+        "look_at": {
+          "$ref": "#/definitions/Vec3"
+        }
       }
     },
-
     "Color": {
       "oneOf": [
         {
@@ -660,13 +895,23 @@
           "minItems": 2,
           "items": {
             "oneOf": [
-              { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+              {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
               {
                 "type": "array",
                 "items": false,
                 "prefixItems": [
-                  { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
-                  { "type": "number", "minimum": 0, "maximum": 1 }
+                  {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$"
+                  },
+                  {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  }
                 ]
               }
             ]

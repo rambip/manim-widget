@@ -2,17 +2,14 @@ from __future__ import annotations
 
 import base64
 import io
-import json
-import os
 
 import numpy as np
 import pytest
 from PIL import Image
 
-from jsonschema import validate
+from manim_widget.models import SceneData
 from manim import (
     GREEN,
-    Scene,
     Circle,
     Create,
     Dot,
@@ -26,10 +23,8 @@ from manim import (
 from manim_widget.widget import ManimWidget
 
 
-def load_schema() -> dict:
-    schema_path = os.path.join(os.path.dirname(__file__), "..", "spec.json")
-    with open(schema_path) as f:
-        return json.load(f)
+def assert_valid_scene(data: dict) -> None:
+    SceneData.model_validate(data)
 
 
 def assert_close(actual: object, expected: object, tol: float = 1e-9) -> None:
@@ -250,8 +245,7 @@ def test_wait_with_vmobject():
 
     widget = SceneWithWait()
     data = widget.scene_data
-    schema = load_schema()
-    validate(data, schema)
+    assert_valid_scene(data)
 
     assert data["version"] == 2
     assert len(data["sections"]) == 1
@@ -484,8 +478,7 @@ def test_image_mobject_serializes_source_and_pixels():
 
     scene = ImageScene(fps=10)
     data = scene.scene_data
-    schema = load_schema()
-    validate(data, schema)
+    assert_valid_scene(data)
 
     section = data["sections"][0]
     assert section["construct"][0] == {"cmd": "register", "id": "0", "state_ref": 0}
@@ -513,8 +506,7 @@ def test_static_mathtex_serialization():
 
     scene = TexScene(fps=10)
     data = scene.scene_data
-    schema = load_schema()
-    validate(data, schema)
+    assert_valid_scene(data)
 
     section = data["sections"][0]
     state = section["states"][0]
@@ -547,8 +539,7 @@ def test_static_mathtex_transform_updates_points():
 
     scene = TexTransformScene(fps=10)
     data = scene.scene_data
-    schema = load_schema()
-    validate(data, schema)
+    assert_valid_scene(data)
 
     section = data["sections"][0]
 
@@ -637,8 +628,7 @@ def test_patch_tex_mathtex_add_serializes_as_mathtexsource():
 
         scene = MathTexScene(fps=10)
         data = scene.scene_data
-        schema = load_schema()
-        validate(data, schema)
+        assert_valid_scene(data)
 
         section = data["sections"][0]
         register_cmd = section["construct"][0]
@@ -724,12 +714,12 @@ def test_camera_fov_calculation():
     """Test that FOV is correctly computed from Manim camera parameters."""
     import math
 
-    class SimpleScene(Scene):
+    class SimpleScene(ManimWidget):
         def construct(self):
             s = Square()
             self.play(Create(s))
 
-    widget = ManimWidget(SimpleScene)
+    widget = SimpleScene(fps=10)
     data = widget.scene_data
 
     # Check camera state includes fov
@@ -750,8 +740,7 @@ def test_camera_theta_attr_assignment_is_serialized():
 
     scene = ZYImageCNN(fps=10)
     data = scene.scene_data
-    schema = load_schema()
-    validate(data, schema)
+    assert_valid_scene(data)
 
     camera = data["sections"][0]["camera"]
     assert abs(camera["theta"] - 0.2) < 1e-12
@@ -765,8 +754,7 @@ def test_camera_distance_and_fov_attr_assignment_is_serialized():
 
     scene = ZYImageCNN(fps=10)
     data = scene.scene_data
-    schema = load_schema()
-    validate(data, schema)
+    assert_valid_scene(data)
 
     camera = data["sections"][0]["camera"]
     assert abs(camera["distance"] - 7.5) < 1e-12

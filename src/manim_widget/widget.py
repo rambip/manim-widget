@@ -7,6 +7,7 @@ import anywidget
 import traitlets
 from manim import Mobject, ThreeDScene
 
+from .models import validate_scene_data
 from .renderer import CaptureRenderer, SectionRecord
 
 _ESM = Path(__file__).parent / "static" / "index.js"
@@ -84,6 +85,7 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
             snapshots=self._snapshots,
             cameras=self._cameras,
         )
+        validate_scene_data(data)
         self.scene_data = data
 
     def _resolve_camera_angle(
