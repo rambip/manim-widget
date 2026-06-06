@@ -207,23 +207,45 @@ class SceneData(BaseModel):
 _BUG_REPORT_URL = "https://github.com/rambip/manim-widget/issues"
 
 _WARNING_TEMPLATE = """\
-manim-widget produced invalid scene data.
-Please open an issue at {url} with your scene code attached.
+Warning: this scene created an invalid specification.
+This is a bug with manim-widget, please open a ticket at {url}
+with the exact code and the json data (.scene)
+Validation Error:
+{error}"""
 
-Error: {error}\
-"""
+
+def _emit_warning(error: Exception) -> None:
+    import sys
+
+    msg = _WARNING_TEMPLATE.format(url=_BUG_REPORT_URL, error=error)
+    print(msg, file=sys.stderr)
 
 
 def validate_scene_data(data: dict[str, Any]) -> SceneData | None:
-    """Validate scene data and return the parsed model, or None on failure.
+    """Validate scene data against the JSON schema and Pydantic model.
 
-    Emits a UserWarning with a bug-report prompt if validation fails.
+    Prints a bug-report prompt to stderr if either validation fails.
+    Returns the parsed Pydantic model on success, None on failure.
     """
-    import warnings
+    import json
+    from pathlib import Path
 
+    from jsonschema import ValidationError, validate
+
+    # JSON schema validation
+    try:
+        spec_path = Path(__file__).parent.parent.parent / "spec.json"
+        schema = json.loads(spec_path.read_text())
+        validate(data, schema)
+    except ValidationError as exc:
+        _emit_warning(exc)
+        return None
+    except Exception:
+        pass  # schema file unavailable (installed package) — skip, Pydantic still runs
+
+    # Pydantic structural validation (cross-field invariants)
     try:
         return SceneData.model_validate(data)
     except Exception as exc:
-        msg = _WARNING_TEMPLATE.format(url=_BUG_REPORT_URL, error=exc)
-        warnings.warn(msg, UserWarning, stacklevel=4)
+        _emit_warning(exc)
         return None

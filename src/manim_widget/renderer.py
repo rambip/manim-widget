@@ -242,17 +242,16 @@ class CaptureRenderer:
                 return self._serialize_multi_subpath(
                     mob, subpaths, style=style, for_snapshot=for_snapshot
                 )
+            points_3n1: list[list[float]] = []
             if subpaths:
                 raw_points = subpaths[0]
-                if len(raw_points) > 0:
-                    points_3n1: list[list[float]] = []
-                    for i in range(0, len(raw_points), 4):
-                        chunk = raw_points[i : i + 4]
-                        if i == 0:
-                            points_3n1.extend(chunk.tolist())
-                        else:
-                            points_3n1.extend(chunk[1:].tolist())
-                    style["points"] = points_3n1
+                for i in range(0, len(raw_points), 4):
+                    chunk = raw_points[i : i + 4]
+                    if i == 0:
+                        points_3n1.extend(chunk.tolist())
+                    else:
+                        points_3n1.extend(chunk[1:].tolist())
+            style["points"] = points_3n1
 
         if hasattr(mob, "submobjects") and mob.submobjects:
             return VGroupState(
@@ -343,6 +342,10 @@ class CaptureRenderer:
             msg = "No active section"
             raise RuntimeError(msg)
         d = state.model_dump(exclude_none=True)
+        # VMobjectState always emits points ([] for empty mobjects) so JS
+        # and schema validation can rely on the field always being present.
+        if d.get("kind") == "VMobject" and "points" not in d:
+            d["points"] = []
         key = json.dumps(d, sort_keys=True, separators=(",", ":"))
         existing = current._state_ref_map.get(key)
         if existing is not None:

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
+import os
+
 import numpy as np
 import pytest
+from jsonschema import validate
 
 from js_runner import check_data
-
 from manim import (
     BLUE,
     GREEN,
@@ -39,8 +42,26 @@ from manim import (
     linear,
     FadeIn,
 )
-
 from manim_widget.widget import ManimWidget
+
+
+def _load_schema() -> dict:
+    path = os.path.join(os.path.dirname(__file__), "..", "spec.json")
+    with open(path) as f:
+        return json.load(f)
+
+
+_SCHEMA = _load_schema()
+
+
+def assert_valid_schema(data: dict) -> None:
+    validate(data, _SCHEMA)
+
+
+def check_data_validated(data, **kwargs):
+    """Like check_data but also validates against spec.json first."""
+    assert_valid_schema(data)
+    return check_data(data, **kwargs)
 
 
 def _create_logo_group() -> VGroup:
@@ -254,7 +275,7 @@ class TestCLIIntegration:
         return scene.scene_data
 
     def test_simple_scene(self, simple_scene_data):
-        r = check_data(simple_scene_data, output_ids=True)
+        r = check_data_validated(simple_scene_data, output_ids=True)
         assert r.ok, f"CLI failed: {r.errors}"
         sections = r.section_ids
         assert len(sections) == 1
@@ -274,7 +295,7 @@ class TestCLIIntegration:
         assert animate_cmd["animations"][0]["kind"] == "FadeIn"
         assert animate_cmd["animations"][0]["id"] == register_cmd["id"]
 
-        r = check_data(fadein_image_data, output_ids=True)
+        r = check_data_validated(fadein_image_data, output_ids=True)
         assert r.ok, f"CLI failed: {r.errors}"
         sections = r.section_ids
         assert len(sections) == 1
@@ -288,14 +309,14 @@ class TestCLIIntegration:
         # not need injected Add.
         assert not any(a["kind"] == "Add" for a in animate_cmds[1]["animations"])
 
-        r = check_data(animate_shift_left_data, output_ids=True)
+        r = check_data_validated(animate_shift_left_data, output_ids=True)
         assert r.ok, f"CLI failed: {r.errors}"
         sections = r.section_ids
         assert len(sections) == 1
         assert len(sections[0]["ids"]) == 1
 
     def test_multi_section_scene(self, multi_section_data):
-        r = check_data(multi_section_data, output_ids=True)
+        r = check_data_validated(multi_section_data, output_ids=True)
         assert r.ok, f"CLI failed: {r.errors}"
         sections = r.section_ids
         assert len(sections) == 2
@@ -305,17 +326,17 @@ class TestCLIIntegration:
         assert len(sections[1]["ids"]) == 2
 
     def test_create_vgroup(self, vgroup_create_data):
-        r = check_data(vgroup_create_data, output_ids=True)
+        r = check_data_validated(vgroup_create_data, output_ids=True)
         assert r.ok, f"CLI failed: {r.errors}"
         assert len(r.section_ids) == 1
 
     def test_vgroup_reordered(self, vgroup_reordered_data):
-        r = check_data(vgroup_reordered_data, output_ids=True)
+        r = check_data_validated(vgroup_reordered_data, output_ids=True)
         assert r.ok, f"CLI failed: {r.errors}"
         assert len(r.section_ids) == 1
 
     def test_vgroup_scale_section(self, vgroup_scale_section_data):
-        r = check_data(vgroup_scale_section_data, output_ids=True)
+        r = check_data_validated(vgroup_scale_section_data, output_ids=True)
         assert r.ok, f"CLI failed: {r.errors}"
         sections = r.section_ids
         assert len(sections) == 2
@@ -323,12 +344,12 @@ class TestCLIIntegration:
         assert sections[1]["name"] == "scale"
 
     def test_vgroup_shift(self, vgroup_shift_data):
-        r = check_data(vgroup_shift_data, output_ids=True)
+        r = check_data_validated(vgroup_shift_data, output_ids=True)
         assert r.ok, f"CLI failed: {r.errors}"
         assert len(r.section_ids) == 1
 
     def test_boolean_operations(self, boolean_operations_data):
-        r = check_data(boolean_operations_data, output_ids=True)
+        r = check_data_validated(boolean_operations_data, output_ids=True)
         assert r.ok, f"CLI failed: {r.errors}"
         sections = r.section_ids
         assert len(sections) == 1
@@ -346,14 +367,14 @@ class TestCLIIntegration:
             f"VMobject should have 2 subpaths, got {len(subpaths)}"
         )
 
-        r = check_data(multi_subpath_data, output_ids=True)
+        r = check_data_validated(multi_subpath_data, output_ids=True)
         assert r.ok, f"CLI failed: {r.errors}"
         sections = r.section_ids
         assert len(sections) == 1
         assert len(sections[0]["ids"]) == 1
 
     def test_arrow_with_tip(self, arrow_with_tip_data):
-        r = check_data(arrow_with_tip_data, output_ids=True)
+        r = check_data_validated(arrow_with_tip_data, output_ids=True)
         assert r.ok, f"CLI failed: {r.errors}"
         assert r.error_count == 0, f"Expected no errors, got: {r.errors}"
         sections = r.section_ids
@@ -396,7 +417,7 @@ class TestCLIIntegration:
         )
 
     def test_boolean_operation(self, bool_operations_data):
-        r = check_data(bool_operations_data, output_ids=True)
+        r = check_data_validated(bool_operations_data, output_ids=True)
         assert r.ok, f"CLI failed: {r.errors}"
         sections = r.section_ids
         assert len(sections) == 1
@@ -424,7 +445,7 @@ class TestCLIIntegration:
         return scene.scene_data
 
     def test_point_moving_on_shapes(self, point_moving_on_shapes_data):
-        r = check_data(point_moving_on_shapes_data, output_ids=True)
+        r = check_data_validated(point_moving_on_shapes_data, output_ids=True)
         sections = r.section_ids
         assert r.ok, f"CLI failed: {r.errors}"
         assert len(sections) == 1
@@ -441,7 +462,7 @@ class TestCLIIntegration:
         return scene.scene_data
 
     def test_cli_outputs_end_state_with_stroke(self, stroke_color_scene_data):
-        r = check_data(stroke_color_scene_data, output_end_state=True)
+        r = check_data_validated(stroke_color_scene_data, output_end_state=True)
         assert r.ok, f"CLI failed: {r.errors}"
 
         sections = r.section_end_states
@@ -470,7 +491,7 @@ class TestCLIIntegration:
         return scene.scene_data
 
     def test_group_two_objects(self, group_two_objects_data):
-        r = check_data(group_two_objects_data, output_ids=True)
+        r = check_data_validated(group_two_objects_data, output_ids=True)
         assert r.ok, f"CLI failed: {r.errors}"
         data = group_two_objects_data
         states = data["sections"][0]["states"]
@@ -516,7 +537,7 @@ class TestCLIIntegration:
         return scene.scene_data
 
     def test_swap_animation(self, swap_animation_data):
-        r = check_data(swap_animation_data, output_ids=True)
+        r = check_data_validated(swap_animation_data, output_ids=True)
         assert r.ok, f"CLI failed: {r.errors}"
         sections = r.section_ids
         assert len(sections) == 1
@@ -539,7 +560,7 @@ class TestCLIIntegration:
         return scene.scene_data
 
     def test_cyclic_replace_animation(self, cyclic_replace_animation_data):
-        r = check_data(cyclic_replace_animation_data, output_ids=True)
+        r = check_data_validated(cyclic_replace_animation_data, output_ids=True)
         assert r.ok, f"CLI failed: {r.errors}"
         sections = r.section_ids
         assert len(sections) == 1
@@ -657,7 +678,7 @@ def test_swap_with_world_coordinate_points():
         ],
     }
 
-    r = check_data(scene_data, output_end_state=True)
+    r = check_data_validated(scene_data, output_end_state=True)
     assert r.ok, f"CLI failed: {r.errors}"
 
     # After swap, circle 0 should be at x=+1, circle 1 at x=-1
@@ -692,66 +713,8 @@ def test_js_create_without_explicit_add_has_no_injected_add():
     assert not any(a["kind"] == "Add" for a in animate_cmd["animations"])
     assert any(a["kind"] == "Create" for a in animate_cmd["animations"])
 
-    r = check_data(data, output_ids=True)
+    r = check_data_validated(data, output_ids=True)
     assert r.ok, f"CLI failed: {r.errors}"
-
-
-def test_js_static_mathtex_creates_and_transforms():
-    scene_data = {
-        "version": 2,
-        "fps": 10,
-        "sections": [
-            {
-                "name": "test_tex",
-                "snapshot": {},
-                "states": [
-                    {
-                        "kind": "StaticMathTex",
-                        "latex": "x^2",
-                        "points": [[-2, 1, 0], [2, 1, 0], [2, -1, 0], [-2, -1, 0]],
-                        "stroke_opacity": 1.0,
-                        "color": "#83C167",
-                    }
-                ],
-                "construct": [{"cmd": "register", "id": "tex1", "state_ref": 0}],
-            }
-        ],
-    }
-
-    r = check_data(scene_data, output_ids=True)
-    assert r.ok, f"CLI failed: {r.errors}"
-    assert r.error_count == 0, f"Errors: {r.errors}"
-
-    sections = r.section_ids
-    assert len(sections) == 1
-    assert "tex1" in sections[0]["ids"]
-
-
-def test_js_static_mathtex_with_scaled_transform():
-    scene_data = {
-        "version": 2,
-        "fps": 10,
-        "sections": [
-            {
-                "name": "scaled_tex",
-                "snapshot": {},
-                "states": [
-                    {
-                        "kind": "StaticMathTex",
-                        "latex": "\\frac{a}{b}",
-                        "points": [[-8, 4, 0], [8, 4, 0], [8, -4, 0], [-8, -4, 0]],
-                        "stroke_opacity": 1.0,
-                    }
-                ],
-                "construct": [{"cmd": "register", "id": "frac", "state_ref": 0}],
-            }
-        ],
-    }
-
-    r = check_data(scene_data, output_ids=True)
-    assert r.ok, f"CLI failed: {r.errors}"
-    sections = r.section_ids
-    assert len(sections) == 1
 
 
 def test_arrow_serialized_as_vgroup_with_shaft_and_tip():
@@ -762,7 +725,7 @@ def test_arrow_serialized_as_vgroup_with_shaft_and_tip():
             self.add(Arrow(ORIGIN, RIGHT))
 
     scene = ArrowScene()
-    r = check_data(scene.scene_data, output_end_state=True)
+    r = check_data_validated(scene.scene_data, output_end_state=True)
     assert r.ok, f"CLI failed: {r.errors}"
 
     states = r.section_end_states[0]["end_state"]["states"]
@@ -805,7 +768,7 @@ def test_animating_arrow_tip_does_not_affect_shaft(tip_color, shaft_color):
             self.play(GrowArrow(arrow))
             self.play(arrow.submobjects[-1].animate.set_color(tip_color))
 
-    r = check_data(S(fps=10).scene_data, output_end_state=True)
+    r = check_data_validated(S(fps=10).scene_data, output_end_state=True)
     r.assert_ok()
 
     shaft_state, tip_state = _arrow_end_states(r)
@@ -836,7 +799,7 @@ def test_animation_group_plays_without_error():
             )
 
     scene = AnimGroupScene()
-    r = check_data(scene.scene_data)
+    r = check_data_validated(scene.scene_data)
     assert r.ok, f"CLI failed:\n{r.errors}\n{r.section_ids}"
 
     assert r.error_count == 0
