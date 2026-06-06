@@ -22,6 +22,7 @@ from manim import (
     ValueTracker,
     VGroup,
 )
+from manim.mobject.svg.brace import Brace
 from manim.animation.composition import AnimationGroup
 from manim.mobject.geometry.line import Arrow
 from manim.animation.animation import Animation
@@ -120,6 +121,12 @@ class CaptureRenderer:
     def serialize_mobject(
         self, mob: Mobject, *, for_snapshot: bool
     ) -> dict[str, object]:
+        if isinstance(mob, Brace) and mob.updaters:
+            raise RuntimeError(
+                "Dynamic Brace (always_redraw) is not supported. "
+                "Construct the Brace at a fixed position instead."
+            )
+
         if isinstance(mob, ValueTracker):
             return {
                 "value": float(mob.get_value()),
