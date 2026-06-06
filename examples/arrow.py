@@ -36,6 +36,7 @@ def _(AnimationGroup, Arrow, GrowArrow, ManimWidget, Rotate, Transform, math, OR
         return Arrow(
             ORIGIN,
             [radius * math.cos(angle), radius * math.sin(angle), 0],
+            buff=0,
             color=COLOR,
             stroke_width=STROKE,
             tip_length=TIP_LENGTH,
@@ -59,6 +60,7 @@ def _(AnimationGroup, Arrow, GrowArrow, ManimWidget, Rotate, Transform, math, OR
                 t = Arrow(
                     [math.cos(angle), math.sin(angle), 0],
                     [(RADIUS + 1) * math.cos(angle), (RADIUS + 1) * math.sin(angle), 0],
+                    buff=0,
                     color=COLOR,
                     stroke_width=STROKE,
                     tip_length=TIP_LENGTH,
@@ -102,6 +104,7 @@ def _(AnimationGroup, Arrow, GrowArrow, ManimWidget, Rotate, Transform, math, OR
                 t = Arrow(
                     [cx - half * tx, cy - half * ty, 0],
                     [cx + half * tx, cy + half * ty, 0],
+                    buff=0,
                     color=COLOR,
                     stroke_width=STROKE,
                     tip_length=TIP_LENGTH,
