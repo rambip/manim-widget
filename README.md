@@ -31,6 +31,21 @@ If you want to dig deeper, I strongly recommend to use the deepwiki documentatio
 
 
 
+## Headless testing
+
+`tests/js_runner.py` lets you validate a scene through the JS renderer without a browser — useful for quick sanity-checks and CI.
+
+```bash
+# run a scene class from an example file
+uv run python tests/js_runner.py examples/arrow.py ArrowDance
+
+# pipe in pre-serialized JSON
+uv run python -c "from mymodule import MyScene; import json; print(json.dumps(MyScene().scene_data))" \
+  | uv run python tests/js_runner.py --json
+```
+
+Exit code is 0 on success, 1 on any JS playback error. Errors and warnings are printed to stdout.
+
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md)

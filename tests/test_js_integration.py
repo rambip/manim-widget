@@ -332,7 +332,6 @@ class TestCLIIntegration:
         assert r.ok, f"CLI failed: {r.errors}"
         sections = r.section_ids
         assert len(sections) == 1
-        assert len(sections[0]["ids"]) == 2
 
     def test_multi_subpath(self, multi_subpath_data):
         vmob = VMobject()
@@ -481,8 +480,12 @@ class TestCLIIntegration:
             f"Expected 3 states (2 children + Group), got {len(states)}"
         )
 
-        register_cmd = next((c for c in construct if c["cmd"] == "register"), None)
-        assert register_cmd is not None, "Expected a register command"
+        register_cmd = next(
+            (c for c in construct if c["cmd"] == "register" and "child_ids" in c), None
+        )
+        assert register_cmd is not None, (
+            "Expected a group register command with child_ids"
+        )
         group_ref = register_cmd["state_ref"]
 
         group_state = states[group_ref]

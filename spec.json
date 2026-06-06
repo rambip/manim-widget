@@ -343,6 +343,11 @@
           "type": "integer",
           "minimum": 0,
           "description": "Index into section.states."
+        },
+        "child_ids": {
+          "type": "array",
+          "description": "Flat ordered list of already-registered child IDs. JS wires these as the mob's submobjects in order. Only present when children are pre-registered for independent animation.",
+          "items": { "type": "string" }
         }
       }
     },

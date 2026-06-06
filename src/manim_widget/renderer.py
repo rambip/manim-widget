@@ -115,6 +115,15 @@ class CaptureRenderer:
         # Keyed by python object identity.
         self._introduced_by_animation: dict[int, bool] = {}
         self._id_counter = IdCounter()
+        # Python id()s for which a register command has been emitted this section.
+        self._js_registered: set[int] = set()
+        # Extra synthetic children prepended before real submobjects for a mob.
+        # Keyed by id(mob). Populated by serialize_mobject (e.g. Arrow shaft proxy).
+        # _emit_register reads this generically — no mob-type checks needed there.
+        self._synthetic_children: dict[int, list[object]] = {}
+        # Direct state-ref overrides: id(mob) → state bank index.
+        # Avoids re-serializing synthetic proxies that already have a known ref.
+        self._state_ref_overrides: dict[int, int] = {}
 
     def short_id(self, mob: object) -> str:
         return self._id_counter.short_id(mob)
@@ -146,14 +155,19 @@ class CaptureRenderer:
         self._current = SectionRecord(name=name, commands=[])
         self.sections.append(self._current)
         self._staged_adds = {}
+        self._js_registered = set()
+        self._state_ref_overrides = {}
 
-    def state_ref_for(self, mob: Mobject) -> int:
+    def state_ref_for(self, mob: object) -> int:
         """Return the state-bank index for mob in the current section.
 
         pre: self._current is not None
         post: 0 <= __return__ < len(self._current.states)
         post: self.state_ref_for(mob) == self.state_ref_for(mob)
         """
+        override = self._state_ref_overrides.get(id(mob))
+        if override is not None:
+            return override
         # For groups (VGroup, Group, etc.), ensure children are serialized first
         if hasattr(mob, "submobjects") and mob.submobjects:
             for child in mob.submobjects:
@@ -252,17 +266,11 @@ class CaptureRenderer:
 
         return VMobjectState(**style, **text_extras)
 
-    def _serialize_arrow(self, mob: Arrow) -> dict[str, object]:
-        """Serialize Arrow as a plain VGroup with shaft + tip children.
-
-        Python Arrow keeps shaft geometry on its own points (not a submobject).
-        We extract it into a synthetic VMobject child so JS sees a flat VGroup
-        with two children [shaft, tip] matching JS Arrow's submobject layout.
-        """
+    def _arrow_shaft_state(self, mob: Arrow) -> VMobjectState:
+        """Build the shaft VMobjectState from Arrow's own bezier points."""
         stroke_color = mob.get_stroke_color()
         stroke_width = mob.get_stroke_width()
         stroke_opacity = mob.get_stroke_opacity()
-
         points_3n1: list[list[float]] | None = None
         subpaths = mob.get_subpaths()
         if subpaths:
@@ -272,8 +280,7 @@ class CaptureRenderer:
                 chunk = raw[i : i + 4]
                 pts.extend(chunk.tolist() if i == 0 else chunk[1:].tolist())
             points_3n1 = pts or None
-
-        shaft_state = VMobjectState(
+        return VMobjectState(
             points=points_3n1,
             stroke_color=self._color_to_hex(stroke_color) if stroke_color else None,
             stroke_width=float(stroke_width) if stroke_width else None,
@@ -281,8 +288,23 @@ class CaptureRenderer:
             if stroke_opacity is not None
             else None,
         )
-        shaft_ref = self._intern_state(shaft_state)
 
+    def _serialize_arrow(self, mob: Arrow) -> VGroupState:
+        """Serialize Arrow as a plain VGroup with shaft + tip children.
+
+        The shaft lives on Arrow's own bezier points (not a Python submobject).
+        A VMobject proxy is stored in _synthetic_children so _emit_register
+        can serialize and pre-register it generically without knowing this is an Arrow.
+        """
+        # Ensure a stable VMobject proxy exists for the shaft (created once per Arrow).
+        existing = self._synthetic_children.get(id(mob))
+        if not existing:
+            shaft_proxy = VMobject()
+            self._synthetic_children[id(mob)] = [shaft_proxy]
+        shaft_proxy = self._synthetic_children[id(mob)][0]
+        shaft_ref = self._intern_state(self._arrow_shaft_state(mob))
+        # Register the override so state_ref_for(shaft_proxy) returns the same ref.
+        self._state_ref_overrides[id(shaft_proxy)] = shaft_ref
         children = [shaft_ref] + [
             self.state_ref_for(child) for child in mob.submobjects
         ]
@@ -357,12 +379,22 @@ class CaptureRenderer:
     def is_active(self, mob: Mobject) -> bool:
         return id(mob) in self._active_ids
 
-    def _collapsed_arrow_state_ref(self, mob: Arrow) -> int:
-        """State ref for an Arrow VGroup with both children collapsed to get_start()."""
+    def _collapsed_arrow_registers(self, mob: Arrow) -> list[dict]:
+        """Emit register commands for Arrow and all its JS children at collapsed state.
+
+        Returns a list of register commands: [shaft, tip, arrow_vgroup].
+        Children are collapsed to get_start() so GrowArrow animates from a point.
+        """
+        # Ensure shaft proxy exists (same logic as _serialize_arrow).
+        if id(mob) not in self._synthetic_children:
+            self._synthetic_children[id(mob)] = [VMobject()]
+        shaft_proxy = self._synthetic_children[id(mob)][0]
+        tip = mob.submobjects[-1] if mob.submobjects else None
+
         start = mob.get_start().tolist()
         collapsed_pt = [start, start, start, start]
 
-        def _make_stroke(m: Mobject) -> VMobjectState:
+        def _collapsed(m: Mobject) -> VMobjectState:
             c = m.get_stroke_color()
             w = m.get_stroke_width()
             o = m.get_stroke_opacity()
@@ -373,16 +405,78 @@ class CaptureRenderer:
                 stroke_opacity=float(o) if o is not None else None,
             )
 
-        tip = mob.submobjects[-1] if mob.submobjects else None
-        shaft_ref = self._intern_state(_make_stroke(mob))
+        shaft_ref = self._intern_state(_collapsed(mob))
+        self._state_ref_overrides[id(shaft_proxy)] = shaft_ref
         tip_ref = self._intern_state(
-            _make_stroke(tip) if tip else VMobjectState(points=collapsed_pt)
+            _collapsed(tip) if tip else VMobjectState(points=collapsed_pt)
         )
-        return self._intern_state(VGroupState(children=[shaft_ref, tip_ref]))
+        arrow_ref = self._intern_state(VGroupState(children=[shaft_ref, tip_ref]))
 
-    def _emit_register(self, mob: Mobject) -> dict:
+        cmds: list[dict] = []
+        if id(shaft_proxy) not in self._js_registered:
+            cmds.append(
+                {
+                    "cmd": "register",
+                    "id": self.short_id(shaft_proxy),
+                    "state_ref": shaft_ref,
+                }
+            )
+            self._js_registered.add(id(shaft_proxy))
+        if tip and id(tip) not in self._js_registered:
+            cmds.append(
+                {"cmd": "register", "id": self.short_id(tip), "state_ref": tip_ref}
+            )
+            self._js_registered.add(id(tip))
+        if id(mob) not in self._js_registered:
+            child_ids = [self.short_id(shaft_proxy)] + [
+                self.short_id(c) for c in mob.submobjects
+            ]
+            cmds.append(
+                {
+                    "cmd": "register",
+                    "id": self.short_id(mob),
+                    "state_ref": arrow_ref,
+                    "child_ids": child_ids,
+                }
+            )
+            self._js_registered.add(id(mob))
+        return cmds
+
+    def _emit_register(self, mob: object, *, force: bool = False) -> list[dict]:
+        """Return register commands for mob, preceded by child registers.
+
+        Children are always registered before their parent so any subsequent
+        animation targeting a child ID is guaranteed to find it in the JS registry.
+        The parent register carries a flat child_ids list so JS can wire its
+        already-registered submobjects in order.
+
+        force: re-emit even if already registered (for explicit re-adds after mutation).
+        """
+        if not force and id(mob) in self._js_registered:
+            return []
+
+        cmds: list[dict] = []
+
+        # state_ref_for populates _synthetic_children for special mobs (e.g. Arrow).
+        state_ref = self.state_ref_for(mob)
+
+        # Synthetic children (e.g. Arrow shaft proxy) prepend real submobjects.
+        synthetic = self._synthetic_children.get(id(mob), [])
+        real_subs = list(getattr(mob, "submobjects", None) or [])
+        all_js_children = synthetic + real_subs
+
+        child_ids: list[str] = []
+        for child in all_js_children:
+            cmds.extend(self._emit_register(child))
+            child_ids.append(self.short_id(child))
+
         sid = self.short_id(mob)
-        return {"cmd": "register", "id": sid, "state_ref": self.state_ref_for(mob)}
+        cmd: dict = {"cmd": "register", "id": sid, "state_ref": state_ref}
+        if child_ids:
+            cmd["child_ids"] = child_ids
+        cmds.append(cmd)
+        self._js_registered.add(id(mob))
+        return cmds
 
     def flush_staged_adds(self) -> None:
         """Emit staged pre-play register commands into the current section.
@@ -393,7 +487,7 @@ class CaptureRenderer:
         if current is None or not self._staged_adds:
             return
         for mob in self._staged_adds.values():
-            current.commands.append(self._emit_register(mob))
+            current.commands.extend(self._emit_register(mob, force=True))
         self._staged_adds = {}
 
     def emit_final_add_animations(self, scene: Scene) -> None:
@@ -495,7 +589,7 @@ class CaptureRenderer:
                 continue
             if not self.is_active(mob):
                 self.register_mobject(mob)
-                pre_commands.append(self._emit_register(mob))
+                pre_commands.extend(self._emit_register(mob))
             if not self._introduced_by_animation.get(id(mob), False):
                 animate_descriptors.append({"kind": "Add", "id": self.short_id(mob)})
                 self._introduced_by_animation[id(mob)] = True
@@ -515,17 +609,13 @@ class CaptureRenderer:
             if isinstance(anim, _GrowArrow) and isinstance(mob, Arrow):
                 if not self.is_active(mob):
                     self.register_mobject(mob)
-                collapsed_ref = self._collapsed_arrow_state_ref(mob)
-                sid = self.short_id(mob)
-                pre_commands.append(
-                    {"cmd": "register", "id": sid, "state_ref": collapsed_ref}
-                )
+                pre_commands.extend(self._collapsed_arrow_registers(mob))
                 self._introduced_by_animation[id(mob)] = True
                 return
 
             if not self.is_active(mob):
                 self.register_mobject(mob)
-                pre_commands.append(self._emit_register(mob))
+                pre_commands.extend(self._emit_register(mob))
             if anim.is_introducer():
                 self._introduced_by_animation[id(mob)] = True
             if isinstance(anim, ReplacementTransform):

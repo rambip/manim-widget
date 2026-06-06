@@ -1161,3 +1161,92 @@ def test_generated_scene_with_transforms_fadeouts_groups_is_valid(args):
             for anim in cmd.get("animations", []):
                 if "state_ref" in anim:
                     assert 0 <= anim["state_ref"] < n_states
+
+
+# ---------------------------------------------------------------------------
+# Group registration invariants
+# ---------------------------------------------------------------------------
+
+
+def _collect_register_invariants(section: dict) -> None:
+    """Assert group registration invariants for a single section's construct list.
+
+    1. For every register with child_ids, all those IDs appear in earlier registers.
+    2. child_ids length == len(VGroupState.children) for the referenced state.
+    3. Every animate descriptor ID appears in a prior register.
+    4. No duplicate register IDs within a section.
+    """
+    states = section["states"]
+    seen_register_ids: set[str] = set()
+    duplicate_ids: list[str] = []
+
+    for cmd in section["construct"]:
+        if cmd["cmd"] == "register":
+            rid = cmd["id"]
+            if rid in seen_register_ids:
+                duplicate_ids.append(rid)
+            else:
+                seen_register_ids.add(rid)
+
+            child_ids = cmd.get("child_ids", [])
+            for cid in child_ids:
+                assert cid in seen_register_ids, (
+                    f"child_id '{cid}' in register '{rid}' was not registered before its parent"
+                )
+
+            if child_ids:
+                state = states[cmd["state_ref"]]
+                assert state.get("kind") == "VGroup", (
+                    f"register '{rid}' has child_ids but state kind is {state.get('kind')!r}"
+                )
+                assert len(child_ids) == len(state.get("children", [])), (
+                    f"register '{rid}' child_ids length {len(child_ids)} != "
+                    f"VGroupState.children length {len(state.get('children', []))}"
+                )
+
+        elif cmd["cmd"] == "animate":
+            for anim in cmd.get("animations", []):
+                if "id" in anim and anim.get("kind") != "Add":
+                    assert anim["id"] in seen_register_ids, (
+                        f"animate descriptor id '{anim['id']}' not in prior registers"
+                    )
+
+    assert not duplicate_ids, f"Duplicate register IDs within section: {duplicate_ids}"
+
+
+@given(
+    construct_script(
+        min_mobs=1,
+        max_mobs=4,
+        min_plays=1,
+        max_plays=5,
+        allow_groups=True,
+    )
+)
+@settings(max_examples=40, deadline=None)
+def test_generated_scene_group_registration_invariants(args):
+    """For every generated scene with groups, all group registration invariants hold."""
+    mob_specs, commands = args
+    data = run_generated_scene(mob_specs, commands, fps=5)
+    for section in data["sections"]:
+        _collect_register_invariants(section)
+
+
+@given(
+    construct_script(
+        min_mobs=2,
+        max_mobs=5,
+        min_plays=2,
+        max_plays=7,
+        allow_transform=True,
+        allow_fadeout=True,
+        allow_groups=True,
+    )
+)
+@settings(max_examples=20, deadline=None)
+def test_generated_scene_child_ids_precede_parent_always(args):
+    """child_ids ordering invariant holds even with transforms and fadeouts."""
+    mob_specs, commands = args
+    data = run_generated_scene(mob_specs, commands, fps=5)
+    for section in data["sections"]:
+        _collect_register_invariants(section)

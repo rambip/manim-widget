@@ -32,9 +32,9 @@ class ArrowDance(ManimWidget):
         arrows = [make_arrow(RADIUS, 2 * math.pi * i / N) for i in range(N)]
 
         for arrow in arrows:
-            self.play(GrowArrow(arrow), run_time=0.32)
+            self.play(GrowArrow(arrow), run_time=0.16)
 
-        self.wait(0.25)
+        self.wait(0.125)
 
         targets = []
         for i, arrow in enumerate(arrows):
@@ -49,9 +49,9 @@ class ArrowDance(ManimWidget):
                 max_tip_length_to_length_ratio=1,
             )
             targets.append(t)
-        self.play(*[Transform(a, t, run_time=1.2) for a, t in zip(arrows, targets)])
+        self.play(*[Transform(a, t, run_time=0.6) for a, t in zip(arrows, targets)])
 
-        self.play(*[arrow.animate.scale(0.5) for arrow in arrows], run_time=0.9)
+        self.play(*[arrow.animate.scale(0.5) for arrow in arrows], run_time=0.45)
 
         self.play(
             AnimationGroup(
@@ -60,7 +60,7 @@ class ArrowDance(ManimWidget):
                     for arrow in arrows
                 ],
                 lag_ratio=0.33,
-                run_time=0.15 * N,
+                run_time=0.075 * N,
             )
         )
 
@@ -68,7 +68,7 @@ class ArrowDance(ManimWidget):
             AnimationGroup(
                 *[Rotate(arrow, math.pi) for arrow in arrows],
                 lag_ratio=0.33,
-                run_time=0.5 * N,
+                run_time=0.25 * N,
             )
         )
 
@@ -88,7 +88,7 @@ class ArrowDance(ManimWidget):
                 tip_length=TIP_LENGTH,
                 max_tip_length_to_length_ratio=1,
             )
-            pinwheel.append(Transform(arrow, t, run_time=0.6))
+            pinwheel.append(Transform(arrow, t, run_time=0.3))
         self.play(*pinwheel)
 
 

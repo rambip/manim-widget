@@ -493,7 +493,18 @@ export class Player {
     switch (cmd?.cmd) {
       case "register": {
         const state = this._stateFromRef(section, cmd.state_ref);
-        const mob = this._instantiateFromRef(section, cmd.state_ref);
+        let mob;
+        if (Array.isArray(cmd.child_ids) && cmd.child_ids.length > 0) {
+          // Children are already registered; create mob without adding state.children,
+          // then wire the pre-registered children in order.
+          mob = this._createMobjectFromState(state);
+          this._applyState(mob, state);
+          for (const cid of cmd.child_ids) {
+            mob.add(this._registry.get(cid));
+          }
+        } else {
+          mob = this._instantiateFromRef(section, cmd.state_ref);
+        }
         this._registry.set(cmd.id, mob);
         await this._finalizeMobject(mob, state);
         return;
