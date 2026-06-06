@@ -14,7 +14,6 @@ import { Player } from "./player.js";
 import { MobjectRegistry } from "./registry.js";
 
 const args = process.argv.slice(2);
-const verbose = args.includes("--verbose") || args.includes("-v");
 const outputIds = args.includes("--output-ids");
 const outputEndState = args.includes("--output-end-state");
 const filePathArg = args.find(arg => !arg.startsWith("-"));
@@ -275,7 +274,7 @@ function validateSceneGraph(scene, context) {
 
 const scene = Scene.createHeadless();
 const registry = new MobjectRegistry();
-const player = new Player(scene, registry, { debug: verbose });
+const player = new Player(scene, registry);
 
 player.setfps(spec.fps || 10);
 player.setSections(spec.sections || []);
@@ -333,44 +332,16 @@ for (let i = 0; i < spec.sections.length; i++) {
   }
 }
 
-console.log("=== Playback Complete ===");
-console.log(`Sections: ${spec.sections.length}`);
-console.log(`Operations: ${operations.length}`);
-console.log(`Warnings: ${warnings.length}`);
-console.log(`Errors: ${errors.length}`);
+const result = {
+  ok: errors.length === 0,
+  sectionCount: spec.sections.length,
+  warnings,
+  errors,
+  ...(outputIds ? { sectionIds } : {}),
+  ...(outputEndState ? { sectionEndStates } : {}),
+};
 
-if (warnings.length > 0) {
-  console.log("\n=== Warnings ===");
-  for (const w of warnings) {
-    console.log(`  Section ${w.section} (${w.name}): ${w.reason}`);
-  }
-}
-
-if (errors.length > 0) {
-  console.log("\n=== Errors ===");
-  for (const e of errors) {
-    console.log(`  ${JSON.stringify(e, null, 2)}`);
-  }
-  process.exit(1);
-}
-
-if (verbose) {
-  console.log("\n=== Operations ===");
-  for (const op of operations) {
-    console.log(`  ${JSON.stringify(op)}`);
-  }
-}
-
-if (outputEndState) {
-  console.log("\n=== Section End State ===");
-  const output = { sections: sectionEndStates };
-  console.log(JSON.stringify(output, null, 2));
-}
-
-if (outputIds) {
-  console.log("\n=== Section Mobject IDs ===");
-  const output = { sections: sectionIds };
-  console.log(JSON.stringify(output, null, 2));
-}
+console.log(JSON.stringify(result));
+if (errors.length > 0) process.exit(1);
 
 process.exit(0);

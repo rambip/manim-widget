@@ -421,9 +421,23 @@ export class Player {
       const tipPoints = Array.isArray(tipState?.points) ? tipState.points : [];
 
       const start = shaftPoints.length > 0 ? shaftPoints[0] : [0, 0, 0];
-      const end = tipPoints.length > 0 ? tipPoints[0] : [1, 0, 0];
-
       const shaftEnd = shaftPoints.length > 0 ? shaftPoints[shaftPoints.length - 1] : null;
+
+      // Find the apex: the tip point farthest along the shaft direction.
+      // tipPoints[0] is a base corner, not the apex — point order varies.
+      const dir = shaftEnd
+        ? [shaftEnd[0] - start[0], shaftEnd[1] - start[1], shaftEnd[2] - start[2]]
+        : [1, 0, 0];
+      const end =
+        tipPoints.length > 0
+          ? tipPoints.reduce(
+              (best, p) => {
+                const d = p[0] * dir[0] + p[1] * dir[1] + p[2] * dir[2];
+                return d > best.d ? { p, d } : best;
+              },
+              { p: tipPoints[0], d: -Infinity },
+            ).p
+          : [1, 0, 0];
       const tipLength =
         shaftEnd && tipPoints.length > 0
           ? Math.hypot(

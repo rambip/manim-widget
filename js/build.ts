@@ -7,7 +7,7 @@ const result = await Bun.build({
   format: "esm",
   minify: true,
   conditions: ["source"],
-  plugins: [UnpluginTypia({ cache: true })],
+  plugins: [UnpluginTypia({ cache: true, log: false })],
 });
 
 if (!result.success) {

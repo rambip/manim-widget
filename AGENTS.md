@@ -44,7 +44,7 @@
 
 ### Bundled runtime (`src/manim_widget/static/index.js`)
 
-Built from `js/src/*` via Bun. This is what packaged widget users execute. Rebuild after any JS source change with `bun run build`.
+Built from `js/src/*` via Bun with the typia transform applied. This is what packaged widget users execute. Rebuild after any JS source change with `cd js && bun run build.ts`.
 
 ### manim-web
 
@@ -131,7 +131,9 @@ Families: `SimpleAnimation`, `TransformAnimation` (`Transform`, `MoveToTarget`),
 
 ### JS integration (`tests/test_js_integration.py`)
 
-Runs `js/src/test_cli.js` via `bun`. Uses `manim-web` headless mode — no WebGL/Three.js required.
+Uses `tests/js_runner.py` to validate scenes through `js/src/test_cli.js` with `manim-web` headless mode (no WebGL/Three.js required).
+
+Uses `tests/js_runner.py` (`check(SceneClass)` / `check_data(scene_data)`) to validate scenes through `js/src/test_cli.js` headlessly. If you need more debug info, extend `test_cli.js` and `JSResult` — don't add Python-side logging.
 
 Coverage includes: simple scenes (Create, FadeIn), multi-section navigation, VGroup handling, error conditions (invalid point arrays, missing state refs), and ImageMobject intro animation playback.
 
@@ -149,8 +151,23 @@ Runtime note: this suite is relatively slow (often around ~1 minute locally). Us
 uv run pytest -q
 uv run pytest -q tests/test_widget.py
 uv run pytest -q tests/test_js_integration.py
-bun run build                        # from js/ — rebuild static bundle
-bun run cli < scene-spec.json        # from js/ — manual JS runtime test
+```
+
+### JS build and CLI test
+
+**All bun commands must be run from `js/`** — `bunfig.toml`, `tsconfig.json`, and node_modules live there.
+
+`manim-web` uses typia for runtime type assertions, which requires a compile-time transform. The bare `bun build` CLI skips it; use `build.ts` instead:
+
+```sh
+cd js && bun run build.ts            # rebuilds src/manim_widget/static/index.js
+```
+
+To validate a scene from the command line:
+
+```sh
+uv run python tests/js_runner.py examples/boolean_operations.py BooleanOperations
+uv run python tests/js_runner.py --json < scene.json   # pre-serialized JSON on stdin
 ```
 
 ---
