@@ -921,33 +921,6 @@ def test_register_new_section_register_back_emits_two_registers_with_two_states(
     assert abs(p1[0] - 1.0) < 1e-9
 
 
-def test_arrow_serializes_with_arrow_kind():
-    """Test that Arrow serializes with kind='Arrow' and shaft/tip structure."""
-    from manim import Arrow, Create
-
-    class ArrowScene(ManimWidget):
-        def construct(self):
-            a = Arrow(start=LEFT, end=RIGHT)
-            self.play(Create(a))
-
-    scene = ArrowScene(fps=10)
-    data = scene.scene_data
-
-    # Find Arrow state in section states
-    arrow_state = None
-    for state in data["sections"][0]["states"]:
-        if state.get("kind") == "Arrow":
-            arrow_state = state
-            break
-
-    assert arrow_state is not None, "Arrow state not found"
-    assert arrow_state["kind"] == "Arrow"
-    # Arrow has points (shaft) and children (tip)
-    assert "points" in arrow_state
-    assert "children" in arrow_state
-    assert len(arrow_state["children"]) == 1  # One tip child
-
-
 def test_camera_set_before_next_section_appears_in_first_and_second_sections():
     """Test that camera parameters set before next_section() appear in both outgoing and new section entry."""
 

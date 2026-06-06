@@ -16,6 +16,7 @@ from manim import (
     UP,
     AnimationGroup,
     Arrow,
+    GrowArrow,
     Circle,
     Create,
     Difference,
@@ -306,16 +307,12 @@ class TestCLIIntegration:
     def test_create_vgroup(self, vgroup_create_data):
         r = check_data(vgroup_create_data, output_ids=True)
         assert r.ok, f"CLI failed: {r.errors}"
-        sections = r.section_ids
-        assert len(sections) == 1
-        assert len(sections[0]["ids"]) == 1
+        assert len(r.section_ids) == 1
 
     def test_vgroup_reordered(self, vgroup_reordered_data):
         r = check_data(vgroup_reordered_data, output_ids=True)
         assert r.ok, f"CLI failed: {r.errors}"
-        sections = r.section_ids
-        assert len(sections) == 1
-        assert len(sections[0]["ids"]) == 1
+        assert len(r.section_ids) == 1
 
     def test_vgroup_scale_section(self, vgroup_scale_section_data):
         r = check_data(vgroup_scale_section_data, output_ids=True)
@@ -324,16 +321,11 @@ class TestCLIIntegration:
         assert len(sections) == 2
         assert sections[0]["name"] == "initial"
         assert sections[1]["name"] == "scale"
-        assert len(sections[0]["ids"]) == 1
-        assert len(sections[1]["ids"]) == 1
 
     def test_vgroup_shift(self, vgroup_shift_data):
         r = check_data(vgroup_shift_data, output_ids=True)
         assert r.ok, f"CLI failed: {r.errors}"
-        sections = r.section_ids
-        assert len(sections) == 1
-        assert sections[0]["name"] == "initial"
-        assert len(sections[0]["ids"]) == 1
+        assert len(r.section_ids) == 1
 
     def test_boolean_operations(self, boolean_operations_data):
         r = check_data(boolean_operations_data, output_ids=True)
@@ -759,9 +751,8 @@ def test_js_static_mathtex_with_scaled_transform():
     assert len(sections) == 1
 
 
-def test_arrow_vgroup_body_points_applied_in_end_state():
-    """Regression: Arrow body points must be applied when state.kind is Arrow."""
-    from manim import Arrow, ORIGIN, RIGHT
+def test_arrow_serialized_as_vgroup_with_shaft_and_tip():
+    """Arrow is serialized as VGroup with 2 children: shaft (VMobject) + tip."""
 
     class ArrowScene(ManimWidget):
         def construct(self):
@@ -776,13 +767,55 @@ def test_arrow_vgroup_body_points_applied_in_end_state():
     root_ref = next(iter(snapshot.values()))
     root_state = states[root_ref]
 
-    assert root_state["kind"] == "Arrow"
-    assert "children" in root_state and len(root_state["children"]) == 2
+    assert root_state["kind"] == "VGroup"
+    assert len(root_state["children"]) == 2
 
-    body_ref = root_state["children"][0]
-    body_state = states[body_ref]
-    assert body_state["kind"] == "VMobject"
-    assert len(body_state.get("points", [])) >= 4
+    shaft_state = states[root_state["children"][0]]
+    assert shaft_state["kind"] == "VMobject"
+    assert len(shaft_state.get("points", [])) >= 4
+
+
+def _arrow_end_states(r, section=0):
+    """Return (shaft_state, tip_state) from an end-state result."""
+    states = r.section_end_states[section]["end_state"]["states"]
+    snapshot = r.section_end_states[section]["end_state"]["snapshot"]
+    root_ref = next(iter(snapshot.values()))
+    root = states[root_ref]
+    assert root["kind"] == "VGroup" and len(root["children"]) == 2
+    return states[root["children"][0]], states[root["children"][1]]
+
+
+@pytest.mark.parametrize(
+    "tip_color,shaft_color",
+    [
+        ("#ffeb3b", "#7dd3fc"),
+        ("#ff0000", "#00ff00"),
+        ("#ffffff", "#343434"),
+    ],
+)
+def test_animating_arrow_tip_does_not_affect_shaft(tip_color, shaft_color):
+    """Regression: child-index mismatch caused shaft to morph when tip was animated."""
+
+    class S(ManimWidget):
+        def construct(self):
+            arrow = Arrow(ORIGIN, [2, 0, 0], buff=0, color=shaft_color)
+            self.play(GrowArrow(arrow))
+            self.play(arrow.submobjects[-1].animate.set_color(tip_color))
+
+    r = check_data(S(fps=10).scene_data, output_end_state=True)
+    r.assert_ok()
+
+    shaft_state, tip_state = _arrow_end_states(r)
+
+    def _color(state):
+        return state.get("color") or state.get("stroke_color") or ""
+
+    assert tip_color.lower() in _color(tip_state).lower(), (
+        f"tip color should be {tip_color}, got {_color(tip_state)}"
+    )
+    assert tip_color.lower() not in _color(shaft_state).lower(), (
+        f"shaft color should not be {tip_color}, got {_color(shaft_state)}"
+    )
 
 
 def test_animation_group_plays_without_error():

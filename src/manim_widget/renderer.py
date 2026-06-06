@@ -25,6 +25,7 @@ from manim import (
 from manim.mobject.svg.brace import Brace
 from manim.animation.composition import AnimationGroup
 from manim.animation.animation import Animation
+from manim.mobject.geometry.line import Arrow
 from manim.mobject.mobject import Mobject
 from manim.mobject.types.image_mobject import AbstractImageMobject
 from manim.mobject.types.vectorized_mobject import VMobject
@@ -35,6 +36,7 @@ from .states import (
     MathTexState,
     MobjectState,
     VMobjectState,
+    VGroupState,
     ValueTrackerState,
 )
 from .tex_patch import PatchedMathTex
@@ -195,6 +197,9 @@ class CaptureRenderer:
                 z_index=getattr(mob, "z_index", None),
             )
 
+        if isinstance(mob, Arrow):
+            return self._serialize_arrow(mob)
+
         # Collect VMobject styling shared by single-path and vgroup paths.
         style: dict[str, object] = {}
         if isinstance(mob, VMobject) and not isinstance(mob, VGroup):
@@ -236,10 +241,9 @@ class CaptureRenderer:
                     style["points"] = points_3n1
 
         if hasattr(mob, "submobjects") and mob.submobjects:
-            return {
-                "kind": "VGroup",
-                "children": [self.state_ref_for(child) for child in mob.submobjects],
-            }
+            return VGroupState(
+                children=[self.state_ref_for(child) for child in mob.submobjects]
+            )
 
         text_extras: dict[str, object] = {}
         if isinstance(mob, Text):
@@ -248,9 +252,45 @@ class CaptureRenderer:
 
         return VMobjectState(**style, **text_extras)
 
+    def _serialize_arrow(self, mob: Arrow) -> dict[str, object]:
+        """Serialize Arrow as a plain VGroup with shaft + tip children.
+
+        Python Arrow keeps shaft geometry on its own points (not a submobject).
+        We extract it into a synthetic VMobject child so JS sees a flat VGroup
+        with two children [shaft, tip] matching JS Arrow's submobject layout.
+        """
+        stroke_color = mob.get_stroke_color()
+        stroke_width = mob.get_stroke_width()
+        stroke_opacity = mob.get_stroke_opacity()
+
+        points_3n1: list[list[float]] | None = None
+        subpaths = mob.get_subpaths()
+        if subpaths:
+            raw = subpaths[0]
+            pts: list[list[float]] = []
+            for i in range(0, len(raw), 4):
+                chunk = raw[i : i + 4]
+                pts.extend(chunk.tolist() if i == 0 else chunk[1:].tolist())
+            points_3n1 = pts or None
+
+        shaft_state = VMobjectState(
+            points=points_3n1,
+            stroke_color=self._color_to_hex(stroke_color) if stroke_color else None,
+            stroke_width=float(stroke_width) if stroke_width else None,
+            stroke_opacity=float(stroke_opacity)
+            if stroke_opacity is not None
+            else None,
+        )
+        shaft_ref = self._intern_state(shaft_state)
+
+        children = [shaft_ref] + [
+            self.state_ref_for(child) for child in mob.submobjects
+        ]
+        return VGroupState(children=children)
+
     def _serialize_multi_subpath(
         self, mob: Mobject, subpaths: list, *, style: dict, for_snapshot: bool
-    ) -> dict[str, object]:
+    ) -> VGroupState:
         child_refs: list[int] = []
         for subpath in subpaths:
             if len(subpath) == 0:
@@ -265,11 +305,7 @@ class CaptureRenderer:
             child_refs.append(
                 self._intern_state(VMobjectState(points=points_3n1, **style))
             )
-
-        return {
-            "kind": "VGroup",
-            "children": child_refs,
-        }
+        return VGroupState(children=child_refs)
 
     def _intern_state(self, state: MobjectState) -> int:
         """Insert state into the section bank or return its existing index.
@@ -321,6 +357,33 @@ class CaptureRenderer:
     def is_active(self, mob: Mobject) -> bool:
         return id(mob) in self._active_ids
 
+    def _collapsed_arrow_state_ref(self, mob: Arrow) -> int:
+        """State ref for an Arrow VGroup with both children collapsed to get_start()."""
+        start = mob.get_start().tolist()
+        collapsed_pt = [start, start, start, start]
+
+        def _make_stroke(m: Mobject) -> VMobjectState:
+            c = m.get_stroke_color()
+            w = m.get_stroke_width()
+            o = m.get_stroke_opacity()
+            return VMobjectState(
+                points=collapsed_pt,
+                stroke_color=self._color_to_hex(c) if c else None,
+                stroke_width=float(w) if w else None,
+                stroke_opacity=float(o) if o is not None else None,
+            )
+
+        tip = mob.submobjects[-1] if mob.submobjects else None
+        shaft_ref = self._intern_state(_make_stroke(mob))
+        tip_ref = self._intern_state(
+            _make_stroke(tip) if tip else VMobjectState(points=collapsed_pt)
+        )
+        return self._intern_state(VGroupState(children=[shaft_ref, tip_ref]))
+
+    def _emit_register(self, mob: Mobject) -> dict:
+        sid = self.short_id(mob)
+        return {"cmd": "register", "id": sid, "state_ref": self.state_ref_for(mob)}
+
     def flush_staged_adds(self) -> None:
         """Emit staged pre-play register commands into the current section.
 
@@ -330,13 +393,7 @@ class CaptureRenderer:
         if current is None or not self._staged_adds:
             return
         for mob in self._staged_adds.values():
-            current.commands.append(
-                {
-                    "cmd": "register",
-                    "id": self.short_id(mob),
-                    "state_ref": self.state_ref_for(mob),
-                }
-            )
+            current.commands.append(self._emit_register(mob))
         self._staged_adds = {}
 
     def emit_final_add_animations(self, scene: Scene) -> None:
@@ -438,13 +495,7 @@ class CaptureRenderer:
                 continue
             if not self.is_active(mob):
                 self.register_mobject(mob)
-                pre_commands.append(
-                    {
-                        "cmd": "register",
-                        "id": self.short_id(mob),
-                        "state_ref": self.state_ref_for(mob),
-                    }
-                )
+                pre_commands.append(self._emit_register(mob))
             if not self._introduced_by_animation.get(id(mob), False):
                 animate_descriptors.append({"kind": "Add", "id": self.short_id(mob)})
                 self._introduced_by_animation[id(mob)] = True
@@ -459,15 +510,22 @@ class CaptureRenderer:
                 return
             if isinstance(mob, Mobject) and not _is_supported(mob):
                 return
+            from manim.animation.growing import GrowArrow as _GrowArrow
+
+            if isinstance(anim, _GrowArrow) and isinstance(mob, Arrow):
+                if not self.is_active(mob):
+                    self.register_mobject(mob)
+                collapsed_ref = self._collapsed_arrow_state_ref(mob)
+                sid = self.short_id(mob)
+                pre_commands.append(
+                    {"cmd": "register", "id": sid, "state_ref": collapsed_ref}
+                )
+                self._introduced_by_animation[id(mob)] = True
+                return
+
             if not self.is_active(mob):
                 self.register_mobject(mob)
-                pre_commands.append(
-                    {
-                        "cmd": "register",
-                        "id": self.short_id(mob),
-                        "state_ref": self.state_ref_for(mob),
-                    }
-                )
+                pre_commands.append(self._emit_register(mob))
             if anim.is_introducer():
                 self._introduced_by_animation[id(mob)] = True
             if isinstance(anim, ReplacementTransform):
@@ -678,6 +736,13 @@ class CaptureRenderer:
                     descriptor["rate_func"] = "smooth"
                 else:
                     descriptor["rate_func"] = rate_func_name
+            return descriptor
+
+        from manim.animation.growing import GrowArrow
+
+        if isinstance(anim, GrowArrow) and isinstance(anim.mobject, Arrow):
+            descriptor["kind"] = "Transform"
+            descriptor["state_ref"] = self.state_ref_for(anim.mobject)
             return descriptor
 
         if isinstance(anim, Rotate):

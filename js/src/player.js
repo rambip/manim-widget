@@ -17,7 +17,6 @@ import {
   Rotating,
   MathTexImage,
   ImageMobject,
-  Arrow,
 } from "manim-web";
 import * as THREE from "three";
 
@@ -412,77 +411,6 @@ export class Player {
         }
       }
     }
-    if (state.kind === "Arrow") {
-      const shaftPoints = Array.isArray(state.points) ? state.points : [];
-      const tipState =
-        Array.isArray(state.children) && state.children.length > 0
-          ? this._stateFromRef(section, state.children[0])
-          : null;
-      const tipPoints = Array.isArray(tipState?.points) ? tipState.points : [];
-
-      const start = shaftPoints.length > 0 ? shaftPoints[0] : [0, 0, 0];
-      const shaftEnd = shaftPoints.length > 0 ? shaftPoints[shaftPoints.length - 1] : null;
-
-      // Find the apex: the tip point farthest along the shaft direction.
-      // tipPoints[0] is a base corner, not the apex — point order varies.
-      const dir = shaftEnd
-        ? [shaftEnd[0] - start[0], shaftEnd[1] - start[1], shaftEnd[2] - start[2]]
-        : [1, 0, 0];
-      const end =
-        tipPoints.length > 0
-          ? tipPoints.reduce(
-              (best, p) => {
-                const d = p[0] * dir[0] + p[1] * dir[1] + p[2] * dir[2];
-                return d > best.d ? { p, d } : best;
-              },
-              { p: tipPoints[0], d: -Infinity },
-            ).p
-          : [1, 0, 0];
-      const tipLength =
-        shaftEnd && tipPoints.length > 0
-          ? Math.hypot(
-              end[0] - shaftEnd[0],
-              end[1] - shaftEnd[1],
-              end[2] - shaftEnd[2],
-            )
-          : undefined;
-
-      const tipWidth =
-        shaftEnd && tipPoints.length > 0
-          ? (() => {
-              const axis = [end[0] - start[0], end[1] - start[1], end[2] - start[2]];
-              const axisLen = Math.hypot(axis[0], axis[1], axis[2]);
-              if (axisLen <= 1e-9) return undefined;
-              const u = [axis[0] / axisLen, axis[1] / axisLen, axis[2] / axisLen];
-
-              // tipWidth convention in Arrow: perpendicular offset from tip-base center.
-              // shaftEnd is tip-base center for canonical serialized arrows.
-              return Math.max(
-                ...tipPoints.map((p) => {
-                  const v = [p[0] - shaftEnd[0], p[1] - shaftEnd[1], p[2] - shaftEnd[2]];
-                  const parallel = v[0] * u[0] + v[1] * u[1] + v[2] * u[2];
-                  const perp = [
-                    v[0] - parallel * u[0],
-                    v[1] - parallel * u[1],
-                    v[2] - parallel * u[2],
-                  ];
-                  return Math.hypot(perp[0], perp[1], perp[2]);
-                }),
-              );
-            })()
-          : undefined;
-
-      const arrow = new Arrow({
-        start,
-        end,
-        color: state.stroke_color,
-        strokeWidth: state.stroke_width,
-        ...(typeof tipLength === "number" && tipLength > 0 ? { tipLength } : {}),
-        ...(typeof tipWidth === "number" && tipWidth > 0 ? { tipWidth } : {}),
-      });
-      this._applyState(arrow, state);
-      return arrow;
-    }
     return mob;
   }
 
@@ -524,9 +452,9 @@ export class Player {
   }
 
   async _restoreSnapshot(snapshot, section) {
-    for (const [id, stateRef] of Object.entries(snapshot)) {
-      const state = this._stateFromRef(section, stateRef);
-      const mob = this._instantiateFromRef(section, stateRef);
+    for (const [id, value] of Object.entries(snapshot)) {
+      const state = this._stateFromRef(section, value);
+      const mob = this._instantiateFromRef(section, value);
       this._registry.set(id, mob);
       await this._finalizeMobject(mob, state);
       this._scene.add(mob);

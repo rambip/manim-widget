@@ -208,6 +208,7 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
             mob_sid = self._renderer.short_id(mob)
             if mob_sid not in snapshot:
                 snapshot[mob_sid] = self._renderer.state_ref_for(mob)
+
         return snapshot
 
     def add(self, *mobjects: Mobject) -> None:  # type: ignore[override]

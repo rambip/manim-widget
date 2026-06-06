@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.13.6"
+__generated_with = "0.23.0"
 app = marimo.App(width="medium")
 
 with app.setup:
@@ -95,6 +95,11 @@ class ArrowDance(ManimWidget):
 @app.cell
 def _():
     ArrowDance(fps=15)
+    return
+
+
+@app.cell
+def _():
     return
 
 
