@@ -17,6 +17,7 @@ from manim import (
     RED,
     RIGHT,
     UP,
+    AnimationGroup,
     Arrow,
     Circle,
     Create,
@@ -859,3 +860,24 @@ def test_arrow_vgroup_body_points_applied_in_end_state():
     body_state = states[body_ref]
     assert body_state["kind"] == "VMobject"
     assert len(body_state.get("points", [])) >= 4
+
+
+def test_animation_group_plays_without_error():
+    """AnimationGroup serializes start/end timestamps and plays back cleanly."""
+
+    class AnimGroupScene(ManimWidget):
+        def construct(self):
+            c = Circle()
+            s = Square()
+            self.play(Create(c))
+            self.play(
+                AnimationGroup(
+                    c.animate.shift(LEFT), s.animate.shift(RIGHT), lag_ratio=0.5
+                )
+            )
+
+    scene = AnimGroupScene()
+    returncode, stdout, stderr = run_cli(scene.scene_data)
+    assert returncode == 0, f"CLI failed:\n{stderr}\n{stdout}"
+
+    assert "Errors: 0" in stdout
