@@ -4,7 +4,7 @@
   "workspaces": ["../manim-web"],
   "type": "module",
   "scripts": {
-    "build": "bun build src/index.js --conditions source --minify --format=esm --outdir=../src/manim_widget/static --naming-pattern=[name].js",
+    "build": "bun run build.ts",
     "cli": "bun run src/test_cli.js"
   },
   "dependencies": {
@@ -14,6 +14,7 @@
     "three": "^0.184.0"
   },
   "devDependencies": {
-    "@happy-dom/global-registrator": "^20.8.9"
+    "@happy-dom/global-registrator": "^20.8.9",
+    "@typia/unplugin": "^12.1.1"
   }
 }

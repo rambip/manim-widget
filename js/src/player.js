@@ -17,7 +17,6 @@ import {
   Rotating,
   MathTexImage,
   ImageMobject,
-  Arrow,
 } from "manim-web";
 import * as THREE from "three";
 
@@ -175,6 +174,7 @@ export class Player {
 
   _applyState(mob, state) {
     if (
+      !(mob instanceof VGroup) &&
       Array.isArray(state.points) &&
       state.points.length > 0 &&
       typeof mob.setPoints3D === "function"
@@ -411,63 +411,6 @@ export class Player {
         }
       }
     }
-    if (state.kind === "Arrow") {
-      const shaftPoints = Array.isArray(state.points) ? state.points : [];
-      const tipState =
-        Array.isArray(state.children) && state.children.length > 0
-          ? this._stateFromRef(section, state.children[0])
-          : null;
-      const tipPoints = Array.isArray(tipState?.points) ? tipState.points : [];
-
-      const start = shaftPoints.length > 0 ? shaftPoints[0] : [0, 0, 0];
-      const end = tipPoints.length > 0 ? tipPoints[0] : [1, 0, 0];
-
-      const shaftEnd = shaftPoints.length > 0 ? shaftPoints[shaftPoints.length - 1] : null;
-      const tipLength =
-        shaftEnd && tipPoints.length > 0
-          ? Math.hypot(
-              end[0] - shaftEnd[0],
-              end[1] - shaftEnd[1],
-              end[2] - shaftEnd[2],
-            )
-          : undefined;
-
-      const tipWidth =
-        shaftEnd && tipPoints.length > 0
-          ? (() => {
-              const axis = [end[0] - start[0], end[1] - start[1], end[2] - start[2]];
-              const axisLen = Math.hypot(axis[0], axis[1], axis[2]);
-              if (axisLen <= 1e-9) return undefined;
-              const u = [axis[0] / axisLen, axis[1] / axisLen, axis[2] / axisLen];
-
-              // tipWidth convention in Arrow: perpendicular offset from tip-base center.
-              // shaftEnd is tip-base center for canonical serialized arrows.
-              return Math.max(
-                ...tipPoints.map((p) => {
-                  const v = [p[0] - shaftEnd[0], p[1] - shaftEnd[1], p[2] - shaftEnd[2]];
-                  const parallel = v[0] * u[0] + v[1] * u[1] + v[2] * u[2];
-                  const perp = [
-                    v[0] - parallel * u[0],
-                    v[1] - parallel * u[1],
-                    v[2] - parallel * u[2],
-                  ];
-                  return Math.hypot(perp[0], perp[1], perp[2]);
-                }),
-              );
-            })()
-          : undefined;
-
-      const arrow = new Arrow({
-        start,
-        end,
-        color: state.stroke_color,
-        strokeWidth: state.stroke_width,
-        ...(typeof tipLength === "number" && tipLength > 0 ? { tipLength } : {}),
-        ...(typeof tipWidth === "number" && tipWidth > 0 ? { tipWidth } : {}),
-      });
-      this._applyState(arrow, state);
-      return arrow;
-    }
     return mob;
   }
 
@@ -509,9 +452,9 @@ export class Player {
   }
 
   async _restoreSnapshot(snapshot, section) {
-    for (const [id, stateRef] of Object.entries(snapshot)) {
-      const state = this._stateFromRef(section, stateRef);
-      const mob = this._instantiateFromRef(section, stateRef);
+    for (const [id, value] of Object.entries(snapshot)) {
+      const state = this._stateFromRef(section, value);
+      const mob = this._instantiateFromRef(section, value);
       this._registry.set(id, mob);
       await this._finalizeMobject(mob, state);
       this._scene.add(mob);
@@ -550,7 +493,18 @@ export class Player {
     switch (cmd?.cmd) {
       case "register": {
         const state = this._stateFromRef(section, cmd.state_ref);
-        const mob = this._instantiateFromRef(section, cmd.state_ref);
+        let mob;
+        if (Array.isArray(cmd.child_ids) && cmd.child_ids.length > 0) {
+          // Children are already registered; create mob without adding state.children,
+          // then wire the pre-registered children in order.
+          mob = this._createMobjectFromState(state);
+          this._applyState(mob, state);
+          for (const cid of cmd.child_ids) {
+            mob.add(this._registry.get(cid));
+          }
+        } else {
+          mob = this._instantiateFromRef(section, cmd.state_ref);
+        }
         this._registry.set(cmd.id, mob);
         await this._finalizeMobject(mob, state);
         return;
@@ -640,8 +594,33 @@ export class Player {
 
   async _playAnimate(cmd, section) {
     const descriptors = Array.isArray(cmd.animations) ? cmd.animations : [];
-    const animations = [];
+    const cmdDuration = typeof cmd.duration === "number" ? cmd.duration : 1;
 
+    // Check if any descriptor carries explicit start/end timestamps.
+    const hasTimestamps = descriptors.some(
+      (d) => d.start !== undefined || d.end !== undefined,
+    );
+
+    if (hasTimestamps) {
+      const entries = [];
+      for (const desc of descriptors) {
+        if (desc.kind === "Wait") continue;
+        const animation = await this._buildAnimation(desc, section);
+        if (animation) {
+          entries.push({
+            animation,
+            start: desc.start ?? 0,
+            end: desc.end ?? cmdDuration,
+          });
+        }
+      }
+      if (entries.length > 0) {
+        await this._scene.playWithTimestamps(entries);
+      }
+      return;
+    }
+
+    const animations = [];
     for (const desc of descriptors) {
       if (desc.kind === "Wait") {
         // Wait needs to be handled separately - play accumulated animations first
@@ -649,7 +628,7 @@ export class Player {
           await this._scene.play(...animations);
           animations.length = 0;
         }
-        await this._scene.wait(cmd.duration);
+        await this._scene.wait(cmdDuration);
         continue;
       }
       const animation = await this._buildAnimation(desc, section);

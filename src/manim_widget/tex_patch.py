@@ -78,6 +78,18 @@ class PatchedTex(PatchedMathTex):
 _original_classes = {}
 
 
+def _patched_brace_get_text(self, *text, **kwargs):
+    from manim import Text
+
+    return Text(" ".join(text)).next_to(self, DOWN)
+
+
+def _patched_brace_get_tex(self, *tex, **kwargs):
+    mob = PatchedMathTex(*tex)
+    mob.next_to(self, DOWN)
+    return mob
+
+
 def patch_tex():
     import manim
 
@@ -85,3 +97,8 @@ def patch_tex():
     _original_classes["Tex"] = manim.Tex
     manim.MathTex = PatchedMathTex
     manim.Tex = PatchedTex
+
+    from manim.mobject.svg.brace import Brace
+
+    Brace.get_text = _patched_brace_get_text
+    Brace.get_tex = _patched_brace_get_tex
