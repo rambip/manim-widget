@@ -14,6 +14,9 @@ CLI usage::
     # from a scene class
     python tests/js_runner.py examples/arrow.py ArrowDance
 
+    # from a marimo notebook class
+    python tests/js_runner.py examples/polygon_on_axes.py PolygonOnAxes
+
     # from pre-serialized JSON
     python tests/js_runner.py --json < scene.json
     uv run python -c "..." | python tests/js_runner.py --json
@@ -53,8 +56,8 @@ class JSResult:
         section_count: Number of sections in the scene.
         errors: List of error dicts, each with keys: section, name, error, stack.
         warnings: List of warning dicts, each with keys: section, name, reason.
-        section_ids: Per-section mobject ID lists (populated with output_ids=True).
-        section_end_states: Per-section serialized end states (populated with output_end_state=True).
+        section_ids: Per-section mobject ID lists (registry ids + scene ids).
+        section_end_states: Per-section serialized end states.
     """
 
     ok: bool
@@ -85,63 +88,77 @@ class JSResult:
             msgs = "\n".join(e.get("error", str(e)) for e in self.errors)
             raise AssertionError(f"JS playback failed:\n{msgs}")
 
+    def scene_ids(self, section: int = 0) -> list[str]:
+        """IDs of mobjects present in the scene (not just registry) at section end."""
+        if section >= len(self.section_ids):
+            return []
+        return self.section_ids[section].get("scene_ids", [])
 
-def check_data(
-    scene_data: str | dict[str, Any],
-    output_ids: bool = False,
-    output_end_state: bool = False,
-) -> JSResult:
+
+def check_data(scene_data: str | dict[str, Any]) -> JSResult:
     """Validate pre-serialized scene data through the JS headless runner.
 
     Args:
         scene_data: Scene dict (or pre-serialized JSON string).
-        output_ids: Include per-section mobject IDs in the result.
-        output_end_state: Include per-section serialized end states in the result.
 
     Returns:
-        JSResult with errors, warnings, and optional diagnostics.
+        JSResult with errors, warnings, section_ids, and section_end_states.
     """
+    import tempfile
+    import os
+
     _check_env()
     scene_json = json.dumps(scene_data) if isinstance(scene_data, dict) else scene_data
-    args = [
-        "bun",
-        "run",
-        "--preload",
-        str(_PRELOAD),
-        "--conditions",
-        "source",
-        str(_CLI),
-    ]
-    if output_ids:
-        args.append("--output-ids")
-    if output_end_state:
-        args.append("--output-end-state")
 
-    proc = subprocess.run(
-        args, input=scene_json, capture_output=True, text=True, cwd=str(_JS_ROOT)
-    )
+    # Write input to a temp file to avoid pipe buffer limits on large scenes.
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+        f.write(scene_json)
+        input_path = f.name
+
+    out_path = input_path + ".out"
     try:
-        data = json.loads(proc.stdout)
+        args = [
+            "bun",
+            "run",
+            "--preload",
+            str(_PRELOAD),
+            "--conditions",
+            "source",
+            str(_CLI),
+            input_path,
+        ]
+        with open(out_path, "w") as outf:
+            proc = subprocess.run(
+                args, stdout=outf, stderr=subprocess.PIPE, text=True, cwd=str(_JS_ROOT)
+            )
+        with open(out_path) as f:
+            raw = f.read()
+    finally:
+        os.unlink(input_path)
+        if os.path.exists(out_path):
+            os.unlink(out_path)
+
+    try:
+        data = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise RuntimeError(
-            f"CLI produced non-JSON output (exit {proc.returncode}):\n{proc.stdout}\n{proc.stderr}"
+            f"CLI produced non-JSON output (exit {proc.returncode}):\n{raw[:500]}\n{proc.stderr}"
         ) from exc
     return JSResult._from_json(data)
 
 
-def check(scene_cls: type, fps: int = 10, **kwargs: Any) -> JSResult:
+def check(scene_cls: type, fps: int = 10) -> JSResult:
     """Instantiate scene_cls and validate it through the JS headless runner.
 
     Args:
         scene_cls: A ManimWidget subclass.
         fps: Frames per second for serialization.
-        **kwargs: Forwarded to check_data (output_ids, output_end_state).
 
     Returns:
-        JSResult with errors, warnings, and optional diagnostics.
+        JSResult with errors, warnings, section_ids, and section_end_states.
     """
     scene = scene_cls(fps=fps)
-    return check_data(scene.scene_data, **kwargs)
+    return check_data(scene.scene_data)
 
 
 def _pretty_print(result: JSResult) -> None:
@@ -175,18 +192,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "class_name", nargs="?", help="Scene class name (required with example)"
     )
-    parser.add_argument("--output-ids", action="store_true")
-    parser.add_argument("--output-end-state", action="store_true")
 
     args = parser.parse_args()
 
     if args.json:
         scene_json = sys.stdin.read()
-        result = check_data(
-            scene_json,
-            output_ids=args.output_ids,
-            output_end_state=args.output_end_state,
-        )
+        result = check_data(scene_json)
     else:
         if not args.class_name:
             parser.error("class_name is required when providing an example file")
@@ -194,11 +205,7 @@ if __name__ == "__main__":
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         scene_cls = getattr(mod, args.class_name)
-        result = check(
-            scene_cls,
-            output_ids=args.output_ids,
-            output_end_state=args.output_end_state,
-        )
+        result = check(scene_cls)
 
     _pretty_print(result)
     sys.exit(0 if result.ok else 1)

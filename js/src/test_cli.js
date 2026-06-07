@@ -14,8 +14,6 @@ import { Player } from "./player.js";
 import { MobjectRegistry } from "./registry.js";
 
 const args = process.argv.slice(2);
-const outputIds = args.includes("--output-ids");
-const outputEndState = args.includes("--output-end-state");
 const filePathArg = args.find(arg => !arg.startsWith("-"));
 
 const VMOBJECT_KINDS = new Set([
@@ -309,18 +307,23 @@ for (let i = 0; i < spec.sections.length; i++) {
 
     operations.push({ type: "section_end", index: i, name: section.name });
 
-    const ids = Array.from(registry._registry.keys());
+    const registryIds = Array.from(registry._registry.keys()).sort();
+    const sceneIdSet = new Set();
+    for (const mob of scene.mobjects) {
+      for (const [id, m] of registry._registry.entries()) {
+        if (m === mob) sceneIdSet.add(id);
+      }
+    }
     sectionIds.push({
       name: section.name,
-      ids: ids.sort(),
+      ids: registryIds,
+      scene_ids: Array.from(sceneIdSet).sort(),
     });
 
-    if (outputEndState) {
-      sectionEndStates.push({
-        name: section.name,
-        end_state: serializeRuntimeState(registry),
-      });
-    }
+    sectionEndStates.push({
+      name: section.name,
+      end_state: serializeRuntimeState(registry),
+    });
   } catch (e) {
     errors.push({
       section: i,
@@ -337,8 +340,8 @@ const result = {
   sectionCount: spec.sections.length,
   warnings,
   errors,
-  ...(outputIds ? { sectionIds } : {}),
-  ...(outputEndState ? { sectionEndStates } : {}),
+  sectionIds,
+  sectionEndStates,
 };
 
 console.log(JSON.stringify(result));

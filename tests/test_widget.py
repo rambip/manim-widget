@@ -164,9 +164,9 @@ def test_vmobject_state_round_trips_via_model_dump(state):
 
 
 @given(value_tracker_state())
-def test_value_tracker_state_has_no_kind(state):
+def test_value_tracker_state_serializes_kind(state):
     d = state.model_dump(exclude_none=True)
-    assert "kind" not in d
+    assert d["kind"] == "ValueTracker"
     assert "value" in d
 
 
@@ -262,7 +262,7 @@ def test_serialize_value_tracker(value):
 # ---------------------------------------------------------------------------
 
 
-def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
+def test_updater_command_uses_state_refs_and_dedup_is_deterministic():
     class DataScene(ManimWidget):
         def construct(self):
             vt = ValueTracker(0)
@@ -288,7 +288,7 @@ def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
                     "fov": 77.31961650818019,
                 },
                 "states": [
-                    {"value": 0.0},
+                    {"kind": "ValueTracker", "value": 0.0},
                     {
                         "kind": "VMobject",
                         "fill_color": "#FFFFFF",
@@ -297,7 +297,7 @@ def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
                         "stroke_opacity": 1.0,
                         "z_index": 0,
                     },
-                    {"value": 0.12385697935738824},
+                    {"kind": "ValueTracker", "value": 0.12385697935738824},
                     {
                         "kind": "VMobject",
                         "fill_color": "#FFFFFF",
@@ -306,7 +306,7 @@ def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
                         "stroke_opacity": 1.0,
                         "z_index": 0,
                     },
-                    {"value": 0.7974197341465827},
+                    {"kind": "ValueTracker", "value": 0.7974197341465827},
                     {
                         "kind": "VMobject",
                         "fill_color": "#FFFFFF",
@@ -315,7 +315,7 @@ def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
                         "stroke_opacity": 1.0,
                         "z_index": 0,
                     },
-                    {"value": 2.2025802658534173},
+                    {"kind": "ValueTracker", "value": 2.2025802658534173},
                     {
                         "kind": "VMobject",
                         "fill_color": "#FFFFFF",
@@ -324,7 +324,7 @@ def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
                         "stroke_opacity": 1.0,
                         "z_index": 0,
                     },
-                    {"value": 2.8761430206426124},
+                    {"kind": "ValueTracker", "value": 2.8761430206426124},
                     {
                         "kind": "VMobject",
                         "fill_color": "#FFFFFF",
@@ -333,7 +333,7 @@ def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
                         "stroke_opacity": 1.0,
                         "z_index": 0,
                     },
-                    {"value": 3.0},
+                    {"kind": "ValueTracker", "value": 3.0},
                     {
                         "kind": "VMobject",
                         "fill_color": "#FFFFFF",
@@ -365,7 +365,7 @@ def test_v2_updater_command_uses_state_refs_and_dedup_is_deterministic():
     assert_close(strip_points(data), strip_points(expected))
 
 
-def test_v2_create_then_next_section_snapshot_only_second_section():
+def test_create_then_next_section_snapshot_only_second_section():
     class Move(ManimWidget):
         def construct(self):
             circle = Circle(1, color=GREEN, fill_opacity=1, stroke_opacity=1)
@@ -453,7 +453,7 @@ def test_wait_with_vmobject():
     assert len(data["sections"][0]["construct"]) == 3
 
 
-def test_v2_method_animation_uses_move_to_target():
+def test_method_animation_uses_move_to_target():
     class ShiftScene(ManimWidget):
         def construct(self):
             c = Circle()
@@ -479,7 +479,7 @@ def test_v2_method_animation_uses_move_to_target():
     assert target_state["kind"] == "VMobject"
 
 
-def test_v2_multiple_sections_with_move_to_target():
+def test_multiple_sections_with_move_to_target():
     class MultiSectionMoveToTarget(ManimWidget):
         def construct(self):
             c = Circle()

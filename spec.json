@@ -319,6 +319,9 @@
         },
         {
           "$ref": "#/definitions/AnimateCommand"
+        },
+        {
+          "$ref": "#/definitions/UpdaterDescriptor"
         }
       ]
     },
@@ -433,11 +436,11 @@
     },
     "UpdaterDescriptor": {
       "type": "object",
-      "description": "For objects using updaters, snapshots of the object properties at every frame.",
+      "description": "A scene.play() call driven by object updaters. Captures full scene state at every frame.",
       "required": [
         "cmd",
         "duration",
-        "updates"
+        "frames"
       ],
       "additionalProperties": false,
       "properties": {
@@ -445,22 +448,31 @@
           "type": "string",
           "const": "updater"
         },
-        "updates": {
-          "description": "Data to update object properties (points, color, opacity ...) at each frame. Data for all properties must contain the same number of values (one per frame)",
-          "additionalProperties": {
-            "description": "The data for each frame. Use the 'scheme' field to specify how it is encoded.",
-            "oneOf": [
-              {
-                "$ref": "#/definitions/RawUpdaterData"
-              },
-              {
-                "$ref": "#/definitions/ZLibUpdaterData"
-              },
-              {
-                "$ref": "#/definitions/DeltaPointUpdaterData"
+        "duration": {
+          "type": "number",
+          "minimum": 0
+        },
+        "frames": {
+          "type": "array",
+          "description": "Per-frame scene state. Each entry maps mob_id to a state_ref into section.states.",
+          "items": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "required": ["state_ref"],
+              "additionalProperties": false,
+              "properties": {
+                "state_ref": {
+                  "type": "integer",
+                  "minimum": 0
+                }
               }
-            ]
+            }
           }
+        },
+        "camera_updates": {
+          "$ref": "#/definitions/CameraUpdaterData",
+          "description": "Per-frame camera state for 3D scenes."
         }
       }
     },

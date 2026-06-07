@@ -40,7 +40,7 @@
 - **`index.js`** — anywidget entry point. Creates scene, registry, player, wires controls.
 - **`registry.js`** — Runtime mobject registry keyed by stable IDs.
 - **`player.js`** — Restores section snapshots and executes command streams. Resolves `state_ref` through `section.states` before restoring mobjects. Animation adapter must handle both constructor-style and factory-style exports from `manim-web`.
-- **`test_cli.js`** — CLI integration test entry point. Uses `happy-dom` for a browser-like environment and `manim-web` headless mode (scene graph only, no pixel output). Reads scene spec from stdin, reports errors to stderr. `--output-ids` emits JSON with mobject IDs at end of each section.
+- **`test_cli.js`** — CLI integration test entry point. Uses `happy-dom` for a browser-like environment and `manim-web` headless mode (scene graph only, no pixel output). Reads scene spec from stdin; always outputs `sectionIds` (registry + scene IDs per section) and `sectionEndStates` in the result JSON.
 
 ### Bundled runtime (`src/manim_widget/static/index.js`)
 
@@ -168,6 +168,13 @@ To validate a scene from the command line:
 ```sh
 uv run python tests/js_runner.py examples/boolean_operations.py BooleanOperations
 uv run python tests/js_runner.py --json < scene.json   # pre-serialized JSON on stdin
+```
+
+Marimo notebooks work the same way — pass the `.py` file and the class name defined inside it:
+
+```sh
+uv run python tests/js_runner.py examples/polygon_on_axes.py PolygonOnAxes
+uv run python tests/js_runner.py examples/point_with_trace.py PointWithTrace
 ```
 
 ---

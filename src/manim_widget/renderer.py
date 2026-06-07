@@ -895,6 +895,13 @@ class CaptureRenderer:
         for anim in animations:
             anim.begin()
 
+        # Register any mobs that entered the scene via always_redraw or similar
+        # mechanisms that bypass the normal add() path.
+        for mob in tracked:
+            if id(mob) not in self._js_registered:
+                for cmd in self._emit_register(mob):
+                    current.commands.append(cmd)
+
         n_frames = math.ceil(run_time * self.fps)
         frames: list[dict[str, Any]] = []
         camera_frames: list[dict[str, float]] = []
