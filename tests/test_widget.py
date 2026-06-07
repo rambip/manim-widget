@@ -98,11 +98,46 @@ def bezier_points_3n1(draw, min_segments: int = 0, max_segments: int = 4):
     return pts
 
 
+def _polygon_contour(n_sides: int, clockwise: bool = False) -> list[list[float]]:
+    """Regular polygon with n_sides as a 3n+1 bezier contour.
+
+    Uses n_sides >= 3 so signed area is unambiguous.
+    CCW by default (angles increasing); CW when clockwise=True.
+    """
+    angles = [2 * 3.14159 * i / n_sides for i in range(n_sides + 1)]
+    if clockwise:
+        angles = angles[::-1]
+    pts = [[float(np.cos(a)), float(np.sin(a)), 0.0] for a in angles]
+    full: list[list[float]] = []
+    for i in range(len(pts) - 1):
+        p0, p1 = pts[i], pts[i + 1]
+        mid = [(p0[j] + p1[j]) / 2 for j in range(3)]
+        full.extend([p0, mid, mid])
+    full.append(pts[-1])
+    return full
+
+
+@st.composite
+def ccw_contour(draw, min_sides: int = 3, max_sides: int = 8):
+    """Generate a CCW 3n+1 contour (regular polygon, guaranteed CCW)."""
+    n = draw(st.integers(min_value=min_sides, max_value=max_sides))
+    return _polygon_contour(n, clockwise=False)
+
+
+@st.composite
+def cw_contour(draw, min_sides: int = 3, max_sides: int = 8):
+    """Generate a CW 3n+1 contour (regular polygon, guaranteed CW)."""
+    n = draw(st.integers(min_value=min_sides, max_value=max_sides))
+    return _polygon_contour(n, clockwise=True)
+
+
 @st.composite
 def vmobject_state(draw):
-    points = draw(st.one_of(st.none(), bezier_points_3n1()))
+    n_contours = draw(st.integers(min_value=0, max_value=2))
+    n_holes = draw(st.integers(min_value=0, max_value=2))
     return VMobjectState(
-        points=points,
+        contours=[draw(ccw_contour()) for _ in range(n_contours)],
+        holes=[draw(cw_contour()) for _ in range(n_holes)],
         fill_color=draw(st.one_of(st.none(), hex_color)),
         fill_opacity=draw(st.one_of(st.none(), opacity)),
         stroke_color=draw(st.one_of(st.none(), hex_color)),
@@ -119,18 +154,24 @@ def value_tracker_state(draw):
     )
 
 
-def strip_points(obj: dict) -> dict:
+def strip_geometry(obj: dict) -> dict:
+    """Remove contours/holes from dicts for structural comparison."""
     result = {}
     for key, value in obj.items():
-        if key == "points":
+        if key in ("contours", "holes"):
             continue
         if isinstance(value, dict):
-            result[key] = strip_points(value)
+            result[key] = strip_geometry(value)
         elif isinstance(value, list):
-            result[key] = [strip_points(v) if isinstance(v, dict) else v for v in value]
+            result[key] = [
+                strip_geometry(v) if isinstance(v, dict) else v for v in value
+            ]
         else:
             result[key] = value
     return result
+
+
+strip_points = strip_geometry  # backwards compat alias
 
 
 # ---------------------------------------------------------------------------
@@ -138,29 +179,58 @@ def strip_points(obj: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
-@given(bezier_points_3n1(min_segments=1))
-def test_vmobject_state_accepts_valid_3n1_points(pts):
-    state = VMobjectState(points=pts)
-    assert (len(state.points) - 1) % 3 == 0
+@given(ccw_contour())
+def test_vmobject_state_accepts_ccw_contour(pts):
+    state = VMobjectState(contours=[pts])
+    assert len(state.contours) == 1
+    assert (len(state.contours[0]) - 1) % 3 == 0
+
+
+@given(cw_contour())
+def test_vmobject_state_accepts_cw_hole(pts):
+    state = VMobjectState(holes=[pts])
+    assert len(state.holes) == 1
+    assert (len(state.holes[0]) - 1) % 3 == 0
+
+
+@given(cw_contour())
+def test_vmobject_state_rejects_cw_contour(pts):
+    """CW points in contours must be rejected (contours must be CCW)."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="CCW"):
+        VMobjectState(contours=[pts])
+
+
+@given(ccw_contour())
+def test_vmobject_state_rejects_ccw_hole(pts):
+    """CCW points in holes must be rejected (holes must be CW)."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="CW"):
+        VMobjectState(holes=[pts])
 
 
 @given(st.integers(min_value=1, max_value=6).map(lambda n: n * 3))
-def test_vmobject_state_rejects_non_3n1_points(bad_len):
-    """A points list of length 3n (not 3n+1) must be rejected."""
+def test_vmobject_state_rejects_non_3n1_contour(bad_len):
+    """A contour with length 3n (not 3n+1) must be rejected."""
     from pydantic import ValidationError
 
     pts = [[0.0, 0.0, 0.0]] * bad_len
     with pytest.raises(ValidationError):
-        VMobjectState(points=pts)
+        VMobjectState(contours=[pts])
 
 
 @given(vmobject_state())
 def test_vmobject_state_round_trips_via_model_dump(state):
     d = state.model_dump(exclude_none=True)
     assert d.get("kind") == "VMobject"
-    if "points" in d:
-        assert (len(d["points"]) - 1) % 3 == 0
-        assert all(len(p) == 3 for p in d["points"])
+    for c in d.get("contours", []):
+        assert (len(c) - 1) % 3 == 0
+        assert all(len(p) == 3 for p in c)
+    for h in d.get("holes", []):
+        assert (len(h) - 1) % 3 == 0
+        assert all(len(p) == 3 for p in h)
 
 
 @given(value_tracker_state())
@@ -221,12 +291,12 @@ def test_intern_state_bank_length_never_exceeds_unique_count(states):
 
 @given(bezier_points_3n1(min_segments=1, max_segments=3))
 @settings(max_examples=30)
-def test_serialize_single_subpath_vmobject_preserves_point_format(pts_list):
-    """A VMobject with exactly one subpath must serialize to VMobjectState with 3n+1 points."""
+def test_serialize_single_subpath_vmobject_gives_one_contour_no_holes(pts_list):
+    """A VMobject with one subpath serializes to VMobjectState with exactly one contour."""
     from manim import VMobject as ManimVMobject
+    from manim_widget.states import _contour_winding
 
     mob = ManimVMobject()
-    # Build a single Bezier subpath: set_points expects raw (4k) format
     n_segs = (len(pts_list) - 1) // 3
     raw_pts = []
     for i in range(n_segs):
@@ -240,9 +310,70 @@ def test_serialize_single_subpath_vmobject_preserves_point_format(pts_list):
     result = r.serialize_mobject(mob, for_snapshot=False)
 
     assert isinstance(result, VMobjectState)
-    if result.points:
-        assert (len(result.points) - 1) % 3 == 0
-        assert all(len(p) == 3 for p in result.points)
+    assert len(result.holes) == 0
+    assert len(result.contours) <= 1
+    for c in result.contours:
+        assert (len(c) - 1) % 3 == 0
+        assert _contour_winding(c) == "CCW"
+
+
+def test_classify_subpaths_text_O_gives_one_contour_one_hole():
+    """Text 'O' has one outer contour and one hole regardless of SVG winding."""
+    from manim import Text
+    from manim_widget.renderer import _classify_subpaths
+    from manim_widget.states import _contour_winding
+
+    mob = Text("O").submobjects[0]
+    contours, holes = _classify_subpaths(mob.get_subpaths())
+
+    assert len(contours) == 1
+    assert len(holes) == 1
+    assert _contour_winding(contours[0]) == "CCW"
+    assert _contour_winding(holes[0]) == "CW"
+
+
+def test_classify_subpaths_text_i_gives_two_contours_no_holes():
+    """Text 'i' has two disconnected outer contours (stem + dot), no holes."""
+    from manim import Text
+    from manim_widget.renderer import _classify_subpaths
+    from manim_widget.states import _contour_winding
+
+    mob = Text("i").submobjects[0]
+    contours, holes = _classify_subpaths(mob.get_subpaths())
+
+    assert len(contours) == 2
+    assert len(holes) == 0
+    assert all(_contour_winding(c) == "CCW" for c in contours)
+
+
+def test_classify_subpaths_difference_gives_one_contour_one_hole():
+    """Difference(big, small) has one outer contour and one hole."""
+    from manim import Circle, Difference
+    from manim_widget.renderer import _classify_subpaths
+    from manim_widget.states import _contour_winding
+
+    mob = Difference(Circle(radius=1), Circle(radius=0.4))
+    contours, holes = _classify_subpaths(mob.get_subpaths())
+
+    assert len(contours) == 1
+    assert len(holes) == 1
+    assert _contour_winding(contours[0]) == "CCW"
+    assert _contour_winding(holes[0]) == "CW"
+
+
+def test_classify_subpaths_text_B_gives_one_contour_two_holes():
+    """Text 'B' has one outer contour and two holes."""
+    from manim import Text
+    from manim_widget.renderer import _classify_subpaths
+    from manim_widget.states import _contour_winding
+
+    mob = Text("B").submobjects[0]
+    contours, holes = _classify_subpaths(mob.get_subpaths())
+
+    assert len(contours) == 1
+    assert len(holes) == 2
+    assert _contour_winding(contours[0]) == "CCW"
+    assert all(_contour_winding(h) == "CW" for h in holes)
 
 
 @given(st.floats(-100.0, 100.0, allow_nan=False, allow_infinity=False))
@@ -294,6 +425,7 @@ def test_updater_command_uses_state_refs_and_dedup_is_deterministic():
                         "fill_color": "#FFFFFF",
                         "fill_opacity": 1.0,
                         "stroke_color": "#FFFFFF",
+                        "stroke_width": 0.0,
                         "stroke_opacity": 1.0,
                         "z_index": 0,
                     },
@@ -303,6 +435,7 @@ def test_updater_command_uses_state_refs_and_dedup_is_deterministic():
                         "fill_color": "#FFFFFF",
                         "fill_opacity": 1.0,
                         "stroke_color": "#FFFFFF",
+                        "stroke_width": 0.0,
                         "stroke_opacity": 1.0,
                         "z_index": 0,
                     },
@@ -312,6 +445,7 @@ def test_updater_command_uses_state_refs_and_dedup_is_deterministic():
                         "fill_color": "#FFFFFF",
                         "fill_opacity": 1.0,
                         "stroke_color": "#FFFFFF",
+                        "stroke_width": 0.0,
                         "stroke_opacity": 1.0,
                         "z_index": 0,
                     },
@@ -321,6 +455,7 @@ def test_updater_command_uses_state_refs_and_dedup_is_deterministic():
                         "fill_color": "#FFFFFF",
                         "fill_opacity": 1.0,
                         "stroke_color": "#FFFFFF",
+                        "stroke_width": 0.0,
                         "stroke_opacity": 1.0,
                         "z_index": 0,
                     },
@@ -330,6 +465,7 @@ def test_updater_command_uses_state_refs_and_dedup_is_deterministic():
                         "fill_color": "#FFFFFF",
                         "fill_opacity": 1.0,
                         "stroke_color": "#FFFFFF",
+                        "stroke_width": 0.0,
                         "stroke_opacity": 1.0,
                         "z_index": 0,
                     },
@@ -339,6 +475,7 @@ def test_updater_command_uses_state_refs_and_dedup_is_deterministic():
                         "fill_color": "#FFFFFF",
                         "fill_opacity": 1.0,
                         "stroke_color": "#FFFFFF",
+                        "stroke_width": 0.0,
                         "stroke_opacity": 1.0,
                         "z_index": 0,
                     },
@@ -394,7 +531,7 @@ def test_create_then_next_section_snapshot_only_second_section():
                         "fill_color": "#83C167",
                         "fill_opacity": 1.0,
                         "stroke_color": "#83C167",
-                        "stroke_width": 4,
+                        "stroke_width": 4.0,
                         "stroke_opacity": 1.0,
                         "z_index": 0,
                     }
@@ -423,7 +560,7 @@ def test_create_then_next_section_snapshot_only_second_section():
                         "fill_color": "#83C167",
                         "fill_opacity": 1.0,
                         "stroke_color": "#83C167",
-                        "stroke_width": 4,
+                        "stroke_width": 4.0,
                         "stroke_opacity": 1.0,
                         "z_index": 0,
                     }
@@ -866,10 +1003,11 @@ def test_same_square_scaled_and_readded_serializes_only_scaled_state():
     assert len(register_cmds) == 1
 
     state_ref = register_cmds[0]["state_ref"]
-    points = section["states"][state_ref]["points"]
-    assert abs(points[0][0] - 1.0) < 1e-9
-    assert abs(points[0][1] - 1.0) < 1e-9
-    assert abs(points[0][2] - 0.0) < 1e-9
+    state = section["states"][state_ref]
+    first_anchor = state["contours"][0][0]
+    assert abs(first_anchor[0] - 1.0) < 1e-9
+    assert abs(first_anchor[1] - 1.0) < 1e-9
+    assert abs(first_anchor[2] - 0.0) < 1e-9
 
 
 def test_register_play_mutate_register_back_emits_two_registers_with_two_states():
@@ -887,8 +1025,8 @@ def test_register_play_mutate_register_back_emits_two_registers_with_two_states(
     register_cmds = [cmd for cmd in section["construct"] if cmd["cmd"] == "register"]
     assert len(register_cmds) == 2
 
-    p0 = section["states"][register_cmds[0]["state_ref"]]["points"][0]
-    p1 = section["states"][register_cmds[1]["state_ref"]]["points"][0]
+    p0 = section["states"][register_cmds[0]["state_ref"]]["contours"][0][0]
+    p1 = section["states"][register_cmds[1]["state_ref"]]["contours"][0][0]
 
     assert abs(p0[0] - 0.5) < 1e-9
     assert abs(p1[0] - 1.0) < 1e-9
@@ -914,8 +1052,8 @@ def test_register_new_section_register_back_emits_two_registers_with_two_states(
     assert len(reg0) == 1
     assert len(reg1) == 1
 
-    p0 = s0["states"][reg0[0]["state_ref"]]["points"][0]
-    p1 = s1["states"][reg1[0]["state_ref"]]["points"][0]
+    p0 = s0["states"][reg0[0]["state_ref"]]["contours"][0][0]
+    p1 = s1["states"][reg1[0]["state_ref"]]["contours"][0][0]
 
     assert abs(p0[0] - 0.5) < 1e-9
     assert abs(p1[0] - 1.0) < 1e-9
@@ -958,16 +1096,14 @@ def test_arrow_serializes_as_vgroup_container():
             s
             for s in states
             if s.get("kind") == "VGroup"
-            and all(
-                states[r].get("kind") == "VMobject" and states[r].get("points")
-                for r in s["children"]
-            )
+            and all(states[r].get("kind") == "VMobject" for r in s["children"])
         ),
         None,
     )
 
     assert arrow_state is not None
     assert "points" not in arrow_state
+    assert "contours" not in arrow_state
     assert len(arrow_state["children"]) == 2
 
 
@@ -987,12 +1123,10 @@ def test_intern_state_ref_always_in_bounds_after_mixed_inserts(states, extra_rep
         assert 0 <= ref < len(r._current.states)
 
 
-@given(bezier_points_3n1(min_segments=1, max_segments=3))
-@settings(max_examples=25)
-def test_state_bank_stores_dict_not_pydantic_model(pts):
+@given(vmobject_state())
+def test_state_bank_stores_dict_not_pydantic_model(state):
     """States in the bank must be plain dicts (for JSON serialization)."""
     r = _fresh_renderer()
-    state = VMobjectState(points=pts)
     ref = r._intern_state(state)
     stored = r._current.states[ref]
     assert isinstance(stored, dict)

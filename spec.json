@@ -19,10 +19,12 @@
       "const": 2
     },
     "frame_width": {
-      "type": "integer"
+      "type": "number",
+      "description": "Scene frame width in Manim units (default 14.222)."
     },
-    "frame_heighheight": {
-      "type": "integer"
+    "frame_height": {
+      "type": "number",
+      "description": "Scene frame height in Manim units (default 8.0)."
     },
     "sections": {
       "type": "array",
@@ -119,26 +121,40 @@
       "type": "object",
       "required": [
         "kind",
-        "points"
+        "contours"
       ],
       "additionalProperties": false,
       "properties": {
         "kind": {
           "type": "string",
           "const": "VMobject",
-          "description": "Generic VMobject state with bezier points."
+          "description": "Generic VMobject state with bezier contours."
         },
-        "points": {
+        "contours": {
           "type": "array",
+          "description": "Outer filled regions. Each contour is a closed bezier path with 3n+1 points: [p0, h0_a, h0_b, p1, ...] where pi are anchors and hi_a/hi_b are handles. Empty array means no geometry.",
           "items": {
             "type": "array",
             "items": {
-              "type": "number"
-            },
-            "minItems": 3,
-            "maxItems": 3
-          },
-          "description": "Bezier control points. [] means no geometry (empty mobject). Non-empty arrays must have 3n+1 points — format: [p0, h0_a, h0_b, p1, h1_a, h1_b, p2, ...] where pi is an anchor and hi_a, hi_b are handles (starting anchor + n cubic Bezier segments). Mobjects with multiple disconnected subpaths are serialized as VGroup with each subpath as a child."
+              "type": "array",
+              "items": { "type": "number" },
+              "minItems": 3,
+              "maxItems": 3
+            }
+          }
+        },
+        "holes": {
+          "type": "array",
+          "description": "Cutout regions subtracted from the filled contours (e.g. the inside of 'O', 'B', or Difference). Same point format as contours.",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": { "type": "number" },
+              "minItems": 3,
+              "maxItems": 3
+            }
+          }
         },
         "fill_color": {
           "$ref": "#/definitions/Color"

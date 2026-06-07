@@ -32,6 +32,7 @@ from manim.mobject.types.vectorized_mobject import VMobject
 
 from .snapshot import IdCounter
 from .states import (
+    _signed_area_2d,
     ImageMobjectState,
     MathTexState,
     MobjectState,
@@ -40,6 +41,64 @@ from .states import (
     ValueTrackerState,
 )
 from .tex_patch import PatchedMathTex
+
+
+def _subpath_to_3n1(raw_points) -> list[list[float]]:
+    """Convert a manim subpath (4k points: anchor+2handles+anchor...) to 3n+1 format.
+
+    pre: len(raw_points) % 4 == 0 or len(raw_points) == 0
+    post: len(__return__) == 0 or (len(__return__) - 1) % 3 == 0
+    """
+    pts: list[list[float]] = []
+    for i in range(0, len(raw_points), 4):
+        chunk = raw_points[i : i + 4]
+        pts.extend(chunk.tolist() if i == 0 else chunk[1:].tolist())
+    return pts
+
+
+def _classify_subpaths(
+    subpaths,
+) -> tuple[list[list[list[float]]], list[list[list[float]]]]:
+    """Split subpaths into contours and holes, enforcing SVG convention.
+
+    The first non-empty subpath's winding determines which are outer vs inner.
+    Points are reversed when needed so the output always satisfies:
+      CCW => contour (outer filled region)
+      CW  => hole (cutout)
+
+    pre: all(len(sp) % 4 == 0 for sp in subpaths)
+    post: all((len(c) - 1) % 3 == 0 for c in __return__[0])
+    post: all((len(h) - 1) % 3 == 0 for h in __return__[1])
+    post: all(_contour_winding(c) == 'CCW' for c in __return__[0])
+    post: all(_contour_winding(h) == 'CW'  for h in __return__[1])
+    """
+    contours: list[list[list[float]]] = []
+    holes: list[list[list[float]]] = []
+    outer_sign: float | None = None
+    for sp in subpaths:
+        if len(sp) == 0:
+            continue
+        pts = _subpath_to_3n1(sp)
+        if not pts:
+            continue
+        area = _signed_area_2d(pts)
+        if outer_sign is None:
+            outer_sign = area
+        is_outer = (area >= 0) == (outer_sign >= 0)
+        # Enforce SVG convention: contours CCW (area < 0), holes CW (area > 0)
+        # Reverse if the winding doesn't match the expected convention.
+        if is_outer and area > 0:
+            pts = pts[::-1]
+        elif not is_outer and area < 0:
+            pts = pts[::-1]
+        if is_outer:
+            contours.append(pts)
+        else:
+            holes.append(pts)
+    # Postcondition guard
+    assert all(_signed_area_2d(c) <= 0 for c in contours)
+    assert all(_signed_area_2d(h) >= 0 for h in holes)
+    return contours, holes
 
 
 def _needs_camera_frame_loop(scene: Scene, animations: list) -> bool:
@@ -227,8 +286,7 @@ class CaptureRenderer:
             if stroke_color:
                 style["stroke_color"] = self._color_to_hex(stroke_color)
             stroke_width = mob.get_stroke_width()
-            if stroke_width:
-                style["stroke_width"] = stroke_width
+            style["stroke_width"] = float(stroke_width) if stroke_width else 0.0
             stroke_opacity = mob.get_stroke_opacity()
             if stroke_opacity is not None:
                 style["stroke_opacity"] = stroke_opacity
@@ -237,21 +295,10 @@ class CaptureRenderer:
                 style["z_index"] = z_index
 
         if isinstance(mob, VMobject):
-            subpaths = mob.get_subpaths()
-            if len(subpaths) > 1:
-                return self._serialize_multi_subpath(
-                    mob, subpaths, style=style, for_snapshot=for_snapshot
-                )
-            points_3n1: list[list[float]] = []
-            if subpaths:
-                raw_points = subpaths[0]
-                for i in range(0, len(raw_points), 4):
-                    chunk = raw_points[i : i + 4]
-                    if i == 0:
-                        points_3n1.extend(chunk.tolist())
-                    else:
-                        points_3n1.extend(chunk[1:].tolist())
-            style["points"] = points_3n1
+            contours, holes = _classify_subpaths(mob.get_subpaths())
+            style["contours"] = contours
+            if holes:
+                style["holes"] = holes
 
         if hasattr(mob, "submobjects") and mob.submobjects:
             return VGroupState(
@@ -270,17 +317,10 @@ class CaptureRenderer:
         stroke_color = mob.get_stroke_color()
         stroke_width = mob.get_stroke_width()
         stroke_opacity = mob.get_stroke_opacity()
-        points_3n1: list[list[float]] | None = None
-        subpaths = mob.get_subpaths()
-        if subpaths:
-            raw = subpaths[0]
-            pts: list[list[float]] = []
-            for i in range(0, len(raw), 4):
-                chunk = raw[i : i + 4]
-                pts.extend(chunk.tolist() if i == 0 else chunk[1:].tolist())
-            points_3n1 = pts or None
+        contours, holes = _classify_subpaths(mob.get_subpaths())
         return VMobjectState(
-            points=points_3n1,
+            contours=contours,
+            holes=holes or [],
             stroke_color=self._color_to_hex(stroke_color) if stroke_color else None,
             stroke_width=float(stroke_width) if stroke_width else None,
             stroke_opacity=float(stroke_opacity)
@@ -309,25 +349,6 @@ class CaptureRenderer:
         ]
         return VGroupState(children=children)
 
-    def _serialize_multi_subpath(
-        self, mob: Mobject, subpaths: list, *, style: dict, for_snapshot: bool
-    ) -> VGroupState:
-        child_refs: list[int] = []
-        for subpath in subpaths:
-            if len(subpath) == 0:
-                continue
-            points_3n1: list[list[float]] = []
-            for i in range(0, len(subpath), 4):
-                chunk = subpath[i : i + 4]
-                if i == 0:
-                    points_3n1.extend(chunk.tolist())
-                else:
-                    points_3n1.extend(chunk[1:].tolist())
-            child_refs.append(
-                self._intern_state(VMobjectState(points=points_3n1, **style))
-            )
-        return VGroupState(children=child_refs)
-
     def _intern_state(self, state: MobjectState) -> int:
         """Insert state into the section bank or return its existing index.
 
@@ -341,11 +362,10 @@ class CaptureRenderer:
         if current is None:
             msg = "No active section"
             raise RuntimeError(msg)
-        d = state.model_dump(exclude_none=True)
-        # VMobjectState always emits points ([] for empty mobjects) so JS
-        # and schema validation can rely on the field always being present.
-        if d.get("kind") == "VMobject" and "points" not in d:
-            d["points"] = []
+        d = state.model_dump(exclude_none=True, exclude_defaults=False)
+        # VMobjectState always emits contours so JS can rely on the field being present.
+        if d.get("kind") == "VMobject":
+            d.setdefault("contours", [])
         key = json.dumps(d, sort_keys=True, separators=(",", ":"))
         existing = current._state_ref_map.get(key)
         if existing is not None:

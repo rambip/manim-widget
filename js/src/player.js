@@ -161,30 +161,42 @@ export class Player {
     }
 
     const mob = new VMobject();
-    if (Array.isArray(state.points) && state.points.length > 0) {
-      if ((state.points.length - 1) % 3 !== 0) {
-        throw new Error(
-          `Invalid points array length: ${state.points.length}. Expected 3n+1.`,
-        );
-      }
-      mob.setPoints3D(state.points);
-    }
+    this._applyContours(mob, state);
     return mob;
   }
 
-  _applyState(mob, state) {
-    if (
-      !(mob instanceof VGroup) &&
-      Array.isArray(state.points) &&
-      state.points.length > 0 &&
-      typeof mob.setPoints3D === "function"
-    ) {
-      if ((state.points.length - 1) % 3 !== 0) {
-        throw new Error(
-          `Invalid points array length: ${state.points.length}. Expected 3n+1.`,
-        );
+  // Apply contours + holes from a VMobject state onto a mob.
+  // Contours (CCW) and holes (CW) are concatenated into one flat points array;
+  // subpath lengths are recorded via setBaseSubpathLengths so the renderer
+  // can apply the correct fill rule per subpath.
+  _applyContours(mob, state) {
+    const subpaths = [
+      ...(Array.isArray(state.contours) ? state.contours : []),
+      ...(Array.isArray(state.holes) ? state.holes : []),
+    ];
+    if (subpaths.length === 0) return;
+
+    const flat = [];
+    const lengths = [];
+    for (const sp of subpaths) {
+      if (!Array.isArray(sp) || sp.length === 0) continue;
+      if ((sp.length - 1) % 3 !== 0) {
+        throw new Error(`Invalid contour length ${sp.length}: expected 3n+1.`);
       }
-      mob.setPoints3D(state.points);
+      flat.push(...sp);
+      lengths.push(sp.length);
+    }
+    if (flat.length > 0) {
+      mob.setPoints3D(flat);
+      if (typeof mob.setBaseSubpathLengths === "function") {
+        mob.setBaseSubpathLengths(lengths.length > 1 ? lengths : undefined);
+      }
+    }
+  }
+
+  _applyState(mob, state) {
+    if (!(mob instanceof VGroup) && typeof mob.setPoints3D === "function") {
+      this._applyContours(mob, state);
     }
 
     if (typeof state.color === "string" && typeof mob.setColor === "function") {
@@ -506,7 +518,9 @@ export class Player {
           mob = this._instantiateFromRef(section, cmd.state_ref);
         }
         this._registry.set(cmd.id, mob);
-        this._scene.add(mob);
+        // Do NOT add to scene here — introducing animations (Add, FadeIn,
+        // Create, …) handle that themselves. Adding here causes a visible
+        // flash before the animation resets opacity to 0.
         await this._finalizeMobject(mob, state);
         return;
       }
@@ -527,6 +541,18 @@ export class Player {
         return;
       }
       case "updater": {
+        // Ensure all mobs referenced by updater frames are in the scene.
+        // These may have been registered without an introducing animation
+        // (e.g. always_redraw mobs added via self.add).
+        for (const frame of (cmd.frames || [])) {
+          for (const id of Object.keys(frame)) {
+            const mob = this._registry.get(id);
+            if (mob && !this._scene.mobjects.includes(mob)) {
+              this._scene.add(mob);
+            }
+          }
+          break; // only need to check first frame
+        }
         await this._playUpdater(cmd, section);
         return;
       }
