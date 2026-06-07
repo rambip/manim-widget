@@ -75,6 +75,7 @@ class MathTexState(BaseModel):
 class ValueTrackerState(BaseModel):
     model_config = {"extra": "forbid"}
 
+    kind: Literal["ValueTracker"] = "ValueTracker"
     value: float
 
 

@@ -506,6 +506,7 @@ export class Player {
           mob = this._instantiateFromRef(section, cmd.state_ref);
         }
         this._registry.set(cmd.id, mob);
+        this._scene.add(mob);
         await this._finalizeMobject(mob, state);
         return;
       }
