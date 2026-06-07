@@ -408,6 +408,8 @@ def test_updater_command_uses_state_refs_and_dedup_is_deterministic():
     expected = {
         "version": 2,
         "fps": 10,
+        "frame_width": 14.222222222222221,
+        "frame_height": 8.0,
         "sections": [
             {
                 "name": "initial",
@@ -515,6 +517,8 @@ def test_create_then_next_section_snapshot_only_second_section():
     expected = {
         "version": 2,
         "fps": 10,
+        "frame_width": 14.222222222222221,
+        "frame_height": 8.0,
         "sections": [
             {
                 "name": "initial",
