@@ -547,7 +547,7 @@ export class Player {
         for (const frame of (cmd.frames || [])) {
           for (const id of Object.keys(frame)) {
             const mob = this._registry.get(id);
-            if (mob && !this._scene.mobjects.includes(mob)) {
+            if (mob && !this._scene.mobjects.has(mob)) {
               this._scene.add(mob);
             }
           }

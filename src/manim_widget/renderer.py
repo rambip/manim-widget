@@ -422,7 +422,7 @@ class CaptureRenderer:
             w = m.get_stroke_width()
             o = m.get_stroke_opacity()
             return VMobjectState(
-                points=collapsed_pt,
+                contours=[collapsed_pt],
                 stroke_color=self._color_to_hex(c) if c else None,
                 stroke_width=float(w) if w else None,
                 stroke_opacity=float(o) if o is not None else None,
@@ -431,7 +431,7 @@ class CaptureRenderer:
         shaft_ref = self._intern_state(_collapsed(mob))
         self._state_ref_overrides[id(shaft_proxy)] = shaft_ref
         tip_ref = self._intern_state(
-            _collapsed(tip) if tip else VMobjectState(points=collapsed_pt)
+            _collapsed(tip) if tip else VMobjectState(contours=[collapsed_pt])
         )
         arrow_ref = self._intern_state(VGroupState(children=[shaft_ref, tip_ref]))
 
