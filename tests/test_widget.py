@@ -164,9 +164,9 @@ def test_vmobject_state_round_trips_via_model_dump(state):
 
 
 @given(value_tracker_state())
-def test_value_tracker_state_has_no_kind(state):
+def test_value_tracker_state_serializes_kind(state):
     d = state.model_dump(exclude_none=True)
-    assert "kind" not in d
+    assert d["kind"] == "ValueTracker"
     assert "value" in d
 
 
