@@ -134,9 +134,15 @@ async function render({ model, el }) {
     ui.container.innerHTML = "";
 
     const is3D = model.get("is_3d");
+    const pxWidth = 600;
+    const aspectRatio = (data.frame_width && data.frame_height)
+      ? data.frame_width / data.frame_height
+      : 16 / 9;
+    const pxHeight = Math.round(pxWidth / aspectRatio);
+    ui.container.style.height = `${pxHeight}px`;
     scene = is3D
-      ? new ThreeDScene(ui.container, { width: 600, height: 400, enableOrbitControls: true, orbitControlsUp: 'z' })
-      : new Scene(ui.container, { width: 600, height: 400 });
+      ? new ThreeDScene(ui.container, { width: pxWidth, height: pxHeight, enableOrbitControls: true, orbitControlsUp: 'z' })
+      : new Scene(ui.container, { width: pxWidth, height: pxHeight });
     registry = new MobjectRegistry();
     player = createPlayer(scene, registry);
     player.setfps(data.fps || 10);

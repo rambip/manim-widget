@@ -19,10 +19,14 @@ def serialize_scene(
     sections: list[SectionRecord],
     snapshots: dict[str, dict[str, object]],
     cameras: dict[str, dict[str, float]],
+    frame_width: float = 14.222222222222221,
+    frame_height: float = 8.0,
 ) -> dict[str, object]:
     return {
         "version": 2,
         "fps": fps,
+        "frame_width": frame_width,
+        "frame_height": frame_height,
         "sections": [
             {
                 "name": s.name,
@@ -84,6 +88,8 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
             sections=self._renderer.sections,
             snapshots=self._snapshots,
             cameras=self._cameras,
+            frame_width=float(self.camera.frame_width),
+            frame_height=float(self.camera.frame_height),
         )
         validate_scene_data(data)
         self.scene_data = data
