@@ -1,6 +1,7 @@
 import { ThreeDScene, Scene } from "manim-web";
 import { MobjectRegistry } from "./registry.js";
 import { createPlayer } from "./player.js";
+import { diffSceneData } from "./diff.js";
 
 function buildUi(el) {
   el.innerHTML = `
@@ -126,12 +127,14 @@ async function render({ model, el }) {
 
   async function loadScene(data) {
     if (!data || data.version !== 2 || !Array.isArray(data.sections)) {
-      console.warn("Invalid V2 scene payload");
+      console.warn("[manim-widget] invalid scene payload");
       return;
     }
 
+    console.log(`[manim-widget] scene created (sections: ${data.sections.length}, states: ${(data.states || []).length})`);
     sceneData = data;
     ui.container.innerHTML = "";
+    console.log("[manim-widget] scene cleared");
 
     const is3D = model.get("is_3d");
     const pxWidth = 600;
@@ -146,6 +149,7 @@ async function render({ model, el }) {
     registry = new MobjectRegistry();
     player = createPlayer(scene, registry);
     player.setfps(data.fps || 10);
+    player.setStates(data.states || []);
     player.setSections(data.sections);
 
     ui.sectionsDiv.innerHTML = data.sections
@@ -213,10 +217,23 @@ async function render({ model, el }) {
 
   model.on("change:scene_data", async () => {
     const data = model.get("scene_data");
-    if (!data) {
-      return;
+    if (!data) return;
+
+    const diff = diffSceneData(sceneData, data);
+
+    if (diff.kind === "none") return;
+
+    if (diff.kind === "states" || diff.kind === "states+camera") {
+      console.log(`[manim-widget] state updated (states: ${diff.states.length})`);
+      sceneData = data;
+      player.updateStates(diff.states);
+      scene.render();
+    } else if (diff.kind === "camera") {
+      sceneData = data;
+      player.applyCamera(diff.section, diff.camera);
+    } else {
+      await loadScene(data);
     }
-    await loadScene(data);
   });
 
   model.on("change:is_3d", async () => {

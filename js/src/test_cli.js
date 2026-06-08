@@ -275,6 +275,7 @@ const registry = new MobjectRegistry();
 const player = new Player(scene, registry);
 
 player.setfps(spec.fps || 10);
+player.setStates(spec.states || []);
 player.setSections(spec.sections || []);
 
 const sectionIds = [];

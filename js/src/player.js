@@ -73,9 +73,12 @@ export class Player {
     this._scene = scene;
     this._registry = registry;
     this._sections = [];
+    this._states = [];
     this._fps = 10;
     this._isPlaying = false;
     this._currentSectionIndex = 0;
+    // state_ref → mob[] — populated during register commands, used by updateStates
+    this._stateRefToMobs = new Map();
   }
 
   setfps(fps) {
@@ -84,6 +87,34 @@ export class Player {
 
   setSections(sections) {
     this._sections = Array.isArray(sections) ? sections : [];
+  }
+
+  setStates(states) {
+    this._states = Array.isArray(states) ? states : [];
+  }
+
+  /** Re-apply mutated states to all registered mobs without replaying commands. */
+  updateStates(states) {
+    this._states = states;
+    for (const [stateRef, mobs] of this._stateRefToMobs.entries()) {
+      const state = states[stateRef];
+      if (!state) continue;
+      for (const mob of mobs) {
+        this._applyState(mob, state);
+        this._applyContours(mob, state);
+      }
+    }
+    this._scene.render();
+  }
+
+  /** Update the camera for a section by index. */
+  applyCamera(sectionIndex, camera) {
+    if (!camera) return;
+    const section = this._sections[sectionIndex];
+    if (section) section.camera = camera;
+    if (typeof this._scene.setCamera === "function") {
+      this._scene.setCamera(camera);
+    }
   }
 
   get isPlaying() {
@@ -111,9 +142,9 @@ export class Player {
   }
 
   _stateFromRef(section, stateRef) {
-    const states = section?.states;
+    const states = this._states;
     if (!Array.isArray(states)) {
-      throw new Error("Section is missing states array");
+      throw new Error("Player is missing global states array");
     }
     if (
       !Number.isInteger(stateRef) ||
@@ -122,7 +153,16 @@ export class Player {
     ) {
       throw new Error(`Invalid state_ref: ${stateRef}`);
     }
-    return states[stateRef];
+    const entry = states[stateRef];
+    // DAG: if entry has a `from` pointer, merge parent content with this entry's fields
+    if (entry && typeof entry.from === 'number') {
+      const parent = states[entry.from];
+      if (parent) {
+        const { from: _, ...rest } = entry;
+        return { ...parent, ...rest };
+      }
+    }
+    return entry;
   }
 
   _createMobjectFromState(state) {
@@ -518,6 +558,10 @@ export class Player {
           mob = this._instantiateFromRef(section, cmd.state_ref);
         }
         this._registry.set(cmd.id, mob);
+        if (!this._stateRefToMobs.has(cmd.state_ref)) {
+          this._stateRefToMobs.set(cmd.state_ref, []);
+        }
+        this._stateRefToMobs.get(cmd.state_ref).push(mob);
         // Do NOT add to scene here — introducing animations (Add, FadeIn,
         // Create, …) handle that themselves. Adding here causes a visible
         // flash before the animation resets opacity to 0.

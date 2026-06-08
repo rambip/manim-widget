@@ -31,6 +31,13 @@
       "items": {
         "$ref": "#/definitions/Section"
       }
+    },
+    "states": {
+      "type": "array",
+      "description": "Global state bank shared across all sections. Commands and snapshots reference entries by integer index.",
+      "items": {
+        "$ref": "#/definitions/MobjectState"
+      }
     }
   },
   "definitions": {
@@ -39,7 +46,6 @@
       "required": [
         "name",
         "snapshot",
-        "states",
         "construct"
       ],
       "additionalProperties": false,
@@ -67,14 +73,7 @@
               "type": "null"
             }
           ],
-          "description": "Full scene state at section entry. Null only when unsupported=true. Maps mob_id to state_ref index into section.states."
-        },
-        "states": {
-          "type": "array",
-          "description": "List of all serialized Geometrical data that will be used in this section (excluding updaters). Other commands and animations acces it using integer indices.",
-          "items": {
-            "$ref": "#/definitions/MobjectState"
-          }
+          "description": "Full scene state at section entry. Null only when unsupported=true. Maps mob_id to state_ref index into the global states bank."
         },
         "construct": {
           "type": "array",
@@ -91,14 +90,14 @@
     },
     "Snapshot": {
       "type": "object",
-      "description": "Scene state at the start of this section. It is a map of object_id -> index in section.states. Note that for groups, VGroup children are NOT included - the player must restore the children from VGroupState.children.",
+      "description": "Scene state at the start of this section. It is a map of object_id -> index in the global states bank. Note that for groups, VGroup children are NOT included - the player must restore the children from VGroupState.children.",
       "additionalProperties": {
         "type": "integer",
         "minimum": 0
       }
     },
     "MobjectState": {
-      "description": "State variant holding geometrical or textual data. Nature of data is determined by the 'kind' field: either 'VMobject', 'VGroup', 'MathTexSource'",
+      "description": "State variant holding geometrical or textual data. Nature of data is determined by the 'kind' field: either 'VMobject', 'VGroup', 'MathTexSource', 'ImageMobject'. An entry may also be a DAG addon: an object with a 'from' integer pointer to a parent entry plus override fields (e.g. positional 'points' for an ImageMobject).",
       "oneOf": [
         {
           "$ref": "#/definitions/VMobjectState"
@@ -114,8 +113,39 @@
         },
         {
           "$ref": "#/definitions/ValueTrackerState"
+        },
+        {
+          "$ref": "#/definitions/DagAddonState"
         }
       ]
+    },
+    "DagAddonState": {
+      "type": "object",
+      "description": "DAG addon entry: inherits all fields from the parent state at index 'from', then overrides with its own fields. Used for ImageMobject to separate pixel data (parent) from positional data (addon).",
+      "required": [
+        "from",
+        "points"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Index into the global states bank of the parent entry whose fields are inherited."
+        },
+        "points": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "type": "array",
+            "items": { "type": "number" },
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "description": "Corner positions in scene coordinates [UL, UR, DL, DR]."
+        }
+      }
     },
     "VMobjectState": {
       "type": "object",
@@ -211,7 +241,7 @@
             "type": "integer",
             "minimum": 0
           },
-          "description": "Ordered list of child state_refs. Resolved through section.states to create child mobjects. VGroup children are NOT in the snapshot - only the VGroup root is."
+          "description": "Ordered list of child state_refs. Resolved through the global states bank to create child mobjects. VGroup children are NOT in the snapshot - only the VGroup root is."
         },
         "z_index": {
           "type": "number"
@@ -267,8 +297,7 @@
       "type": "object",
       "required": [
         "kind",
-        "source",
-        "points"
+        "source"
       ],
       "additionalProperties": false,
       "properties": {
@@ -361,7 +390,7 @@
         "state_ref": {
           "type": "integer",
           "minimum": 0,
-          "description": "Index into section.states."
+          "description": "Index into the global states bank."
         },
         "child_ids": {
           "type": "array",
@@ -470,7 +499,7 @@
         },
         "frames": {
           "type": "array",
-          "description": "Per-frame scene state. Each entry maps mob_id to a state_ref into section.states.",
+          "description": "Per-frame scene state. Each entry maps mob_id to a state_ref into the global states bank.",
           "items": {
             "type": "object",
             "additionalProperties": {
@@ -739,7 +768,7 @@
         "state_ref": {
           "type": "integer",
           "minimum": 0,
-          "description": "Index into section.states for destination state."
+          "description": "Index into the global states bank for destination state."
         },
         "rate_func": {
           "$ref": "#/definitions/RateFunc"

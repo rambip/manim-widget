@@ -166,42 +166,45 @@ class SectionData(BaseModel):
 
     name: str
     snapshot: dict[str, int] = Field(default_factory=dict)
-    states: list[dict[str, Any]]
     commands: list[dict[str, Any]] = Field(alias="construct", default_factory=list)
     camera: dict[str, float] | None = None
-
-    @model_validator(mode="after")
-    def check_state_refs_in_bounds(self) -> SectionData:
-        n = len(self.states)
-
-        def _check_ref(ref: int, ctx: str) -> None:
-            if not (0 <= ref < n):
-                raise ValueError(
-                    f"state_ref={ref} out of bounds (states has {n} entries) in {ctx}"
-                )
-
-        for mob_id, ref in self.snapshot.items():
-            _check_ref(ref, f"snapshot[{mob_id!r}]")
-
-        for cmd in self.commands:
-            cmd_name = cmd.get("cmd", "?")
-            if "state_ref" in cmd:
-                _check_ref(cmd["state_ref"], f"{cmd_name} command")
-            for anim in cmd.get("animations", []):
-                if "state_ref" in anim:
-                    _check_ref(anim["state_ref"], f"animation in {cmd_name}")
-            for frame in cmd.get("frames", []):
-                for mob_id, mob_frame in frame.items():
-                    if "state_ref" in mob_frame:
-                        _check_ref(mob_frame["state_ref"], f"updater frame[{mob_id!r}]")
-
-        return self
 
 
 class SceneData(BaseModel):
     version: int
     fps: int
+    states: list[dict[str, Any]] = Field(default_factory=list)
     sections: list[SectionData]
+
+    @model_validator(mode="after")
+    def check_state_refs_in_bounds(self) -> SceneData:
+        n = len(self.states)
+
+        def _check_ref(ref: int, ctx: str) -> None:
+            if not (0 <= ref < n):
+                raise ValueError(
+                    f"state_ref={ref} out of bounds (global states has {n} entries) in {ctx}"
+                )
+
+        for section in self.sections:
+            for mob_id, ref in section.snapshot.items():
+                _check_ref(ref, f"snapshot[{mob_id!r}]")
+
+            for cmd in section.commands:
+                cmd_name = cmd.get("cmd", "?")
+                if "state_ref" in cmd:
+                    _check_ref(cmd["state_ref"], f"{cmd_name} command")
+                for anim in cmd.get("animations", []):
+                    if "state_ref" in anim:
+                        _check_ref(anim["state_ref"], f"animation in {cmd_name}")
+                for frame in cmd.get("frames", []):
+                    for mob_id, mob_frame in frame.items():
+                        if "state_ref" in mob_frame:
+                            _check_ref(
+                                mob_frame["state_ref"], f"updater frame[{mob_id!r}]"
+                            )
+
+        return self
 
 
 _BUG_REPORT_URL = "https://github.com/rambip/manim-widget/issues"
