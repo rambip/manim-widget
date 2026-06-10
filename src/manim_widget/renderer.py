@@ -23,6 +23,7 @@ from manim import (
     VGroup,
 )
 from manim.animation.animation import Animation
+from manim.animation.composition import AnimationGroup
 from manim.mobject.mobject import Mobject
 from manim.mobject.types.image_mobject import AbstractImageMobject
 from manim.mobject.types.vectorized_mobject import VMobject
@@ -404,6 +405,57 @@ class CaptureRenderer:
                 return result
 
         return list(submobs)
+
+    def _grow_arrow_register_commands(
+        self, mob: Mobject, anim: GrowArrow
+    ) -> list[dict]:
+        """Register commands for GrowArrow: children get collapsed starting states,
+        parent gets a virtual collapsed VGroupState. The paired Transform descriptor
+        then animates from this collapsed state to the final state."""
+        starting = anim.create_starting_mobject()
+        actual_children = self._js_children(mob)
+        starting_children = self._js_children(starting)
+
+        child_cmds: list[dict] = []
+        child_ids: list[str] = []
+        collapsed_child_refs: list[int] = []
+
+        for actual, start in zip(actual_children, starting_children):
+            if isinstance(actual, _SubpathChild):
+                # Reuse actual mob's parent/id but swap in the collapsed subpath.
+                collapsed_sc = _SubpathChild(
+                    parent=actual.parent,
+                    parent_id=actual.parent_id,
+                    subpath_idx=actual.subpath_idx,
+                    subpath=start.subpath,
+                )
+                ref = self._subpath_child_state_ref(collapsed_sc)
+                child_cmds.append(
+                    {"cmd": "register", "id": actual.mob_id, "state_ref": ref}
+                )
+                child_ids.append(actual.mob_id)
+            else:
+                # VMobject submob: find corresponding submob in starting mob by index.
+                idx = mob.submobjects.index(actual)
+                start_submob = starting.submobjects[idx]
+                ref = self.state_ref_for(start_submob)
+                mob_id = self.short_id(actual)
+                child_cmds.append({"cmd": "register", "id": mob_id, "state_ref": ref})
+                child_ids.append(mob_id)
+            collapsed_child_refs.append(ref)
+
+        collapsed_vgroup_ref = self._state_registry.insert_raw(
+            VGroupState(children=collapsed_child_refs).model_dump(exclude_none=True)
+        )
+        return [
+            *child_cmds,
+            {
+                "cmd": "register",
+                "id": self.short_id(mob),
+                "state_ref": collapsed_vgroup_ref,
+                "child_ids": child_ids,
+            },
+        ]
 
     def _mob_register_commands(self, mob: Mobject) -> list[dict]:
         """Return register command(s) for mob and all its JS children."""
@@ -858,32 +910,18 @@ class CaptureRenderer:
                 animate_descriptors.append({"kind": "Add", "id": self.short_id(mob)})
                 self._introduced_by_animation[id(mob)] = True
 
-        for anim in animations:
-            desc = self._descriptor_from_animation(anim)
-            animate_descriptors.append(desc)
-
+        def _process_leaf_anim(anim: Animation, desc: dict) -> None:
+            """Register mobject and emit post-commands for a single leaf animation."""
             mob = anim.mobject
-            # Skip registration for group animation internal Groups
             if isinstance(anim, Swap | CyclicReplace):
-                continue
+                return
             if isinstance(mob, Mobject) and not _is_supported(mob):
-                continue
+                return
 
             if not self.is_active(mob):
                 self.register_mobject(mob)
-                # GrowArrow grows from a collapsed arrow: register the starting
-                # (zero-scale) state so the paired Transform descriptor animates
-                # collapsed -> full.
                 if isinstance(anim, GrowArrow):
-                    pre_commands.append(
-                        {
-                            "cmd": "register",
-                            "id": self.short_id(mob),
-                            "state_ref": self.state_ref_for(
-                                anim.create_starting_mobject()
-                            ),
-                        }
-                    )
+                    pre_commands.extend(self._grow_arrow_register_commands(mob, anim))
                 else:
                     pre_commands.extend(self._mob_register_commands(mob))
 
@@ -894,17 +932,34 @@ class CaptureRenderer:
                 target = anim.target_mobject
                 if not self.is_active(target):
                     self.register_mobject(target)
-                source = anim.mobject
                 post_commands.append(
                     {
                         "cmd": "rebind",
-                        "source_id": self.short_id(source),
+                        "source_id": self.short_id(anim.mobject),
                         "target_id": self.short_id(target),
                     }
                 )
-
             elif isinstance(anim, FadeOut):
                 post_commands.extend(self._mob_remove_commands(anim.mobject))
+
+        for anim in animations:
+            if isinstance(anim, AnimationGroup):
+                # Flatten sub-animations with explicit start/end timestamps so the
+                # JS player can use playWithTimestamps for correct lag_ratio timing.
+                scale = (
+                    anim.run_time / anim.max_end_time if anim.max_end_time > 0 else 1.0
+                )
+                for row in anim.anims_with_timings:
+                    sub: Animation = row["anim"]
+                    desc = self._descriptor_from_animation(sub)
+                    desc["start"] = round(float(row["start"]) * scale, 6)
+                    desc["end"] = round(float(row["end"]) * scale, 6)
+                    animate_descriptors.append(desc)
+                    _process_leaf_anim(sub, desc)
+            else:
+                desc = self._descriptor_from_animation(anim)
+                animate_descriptors.append(desc)
+                _process_leaf_anim(anim, desc)
 
         if pre_commands:
             current.commands.extend(pre_commands)

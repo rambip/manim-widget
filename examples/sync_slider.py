@@ -64,6 +64,7 @@ def _(widget, x_slider, y_slider):
     return
 
 
+@app.function(hide_code=True)
 def test(runner):
     runner.check(SyncDemo).assert_ok()
 

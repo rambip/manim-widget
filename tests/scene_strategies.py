@@ -62,7 +62,12 @@ class VGroupSpec:
     children: tuple  # tuple[MobjectSpec, ...]
 
 
-MobjectSpec = CircleSpec | SquareSpec | DotSpec | VGroupSpec
+@dataclass(frozen=True)
+class ArrowSpec:
+    pass
+
+
+MobjectSpec = CircleSpec | SquareSpec | DotSpec | VGroupSpec | ArrowSpec
 
 # ---------------------------------------------------------------------------
 # Command specs
@@ -106,7 +111,30 @@ class UpdaterCmd:
     run_time: float
 
 
-CommandSpec = CreateCmd | FadeInCmd | TransformCmd | ShiftCmd | FadeOutCmd | UpdaterCmd
+@dataclass(frozen=True)
+class GrowArrowCmd:
+    mob_idx: int  # must be an ArrowSpec mob
+
+
+@dataclass(frozen=True)
+class AnimateSubmobCmd:
+    """Animate arrow.submobjects[-1] directly — exercises the submob-lookup fix."""
+
+    mob_idx: int  # must be a live ArrowSpec mob
+    dx: float
+    dy: float
+
+
+CommandSpec = (
+    CreateCmd
+    | FadeInCmd
+    | TransformCmd
+    | ShiftCmd
+    | FadeOutCmd
+    | UpdaterCmd
+    | GrowArrowCmd
+    | AnimateSubmobCmd
+)
 
 # ---------------------------------------------------------------------------
 # Individual mobject strategies
@@ -134,16 +162,21 @@ def dot_spec() -> st.SearchStrategy[DotSpec]:
 
 
 @st.composite
-def leaf_mob_spec(draw) -> MobjectSpec:
-    return draw(st.one_of(circle_spec(), square_spec(), dot_spec()))
+def leaf_mob_spec(draw, *, allow_arrows: bool = False) -> MobjectSpec:
+    options = [circle_spec(), square_spec(), dot_spec()]
+    if allow_arrows:
+        options.append(st.just(ArrowSpec()))
+    return draw(st.one_of(*options))
 
 
-def mob_spec(max_depth: int = 2) -> st.SearchStrategy[MobjectSpec]:
+def mob_spec(
+    max_depth: int = 2, *, allow_arrows: bool = False
+) -> st.SearchStrategy[MobjectSpec]:
     """Possibly-recursive mobject spec (VGroup if depth allows)."""
     if max_depth == 0:
-        return leaf_mob_spec()
+        return leaf_mob_spec(allow_arrows=allow_arrows)
     return st.recursive(
-        base=leaf_mob_spec(),
+        base=leaf_mob_spec(allow_arrows=allow_arrows),
         extend=lambda inner: st.builds(
             lambda kids: VGroupSpec(children=tuple(kids)),
             st.lists(inner, min_size=1, max_size=3),
@@ -169,6 +202,7 @@ def construct_script(
     allow_transform: bool = True,
     allow_fadeout: bool = True,
     allow_updaters: bool = False,
+    allow_arrows: bool = False,
 ) -> tuple[list[MobjectSpec], list[CommandSpec]]:
     """Generate a valid (mob_specs, commands) pair.
 
@@ -182,10 +216,21 @@ def construct_script(
     """
     depth = 2 if allow_groups else 0
     n_mobs = draw(st.integers(min_mobs, max_mobs))
-    mob_specs = [draw(mob_spec(depth)) for _ in range(n_mobs)]
+    mob_specs = [
+        draw(mob_spec(depth, allow_arrows=allow_arrows)) for _ in range(n_mobs)
+    ]
 
     commands: list[CommandSpec] = []
     live: set[int] = set()  # indices of mobs currently in the scene
+    live_arrows: set[int] = set()  # subset of live that are ArrowSpec
+
+    def _intro_cmd(idx: int) -> st.SearchStrategy[CommandSpec]:
+        if isinstance(mob_specs[idx], ArrowSpec):
+            return st.just(GrowArrowCmd(mob_idx=idx))
+        return st.one_of(
+            st.just(CreateCmd(mob_idx=idx)),
+            st.just(FadeInCmd(mob_idx=idx)),
+        )
 
     n_plays = draw(st.integers(min_plays, max_plays))
 
@@ -193,14 +238,11 @@ def construct_script(
         if not live:
             # Nothing in scene yet — must introduce something.
             idx = draw(st.integers(0, n_mobs - 1))
-            cmd: CommandSpec = draw(
-                st.one_of(
-                    st.just(CreateCmd(mob_idx=idx)),
-                    st.just(FadeInCmd(mob_idx=idx)),
-                )
-            )
+            cmd: CommandSpec = draw(_intro_cmd(idx))
             commands.append(cmd)
             live.add(idx)
+            if isinstance(mob_specs[idx], ArrowSpec):
+                live_arrows.add(idx)
             continue
 
         # Build the menu of valid commands given current live set.
@@ -210,12 +252,7 @@ def construct_script(
         not_live = [i for i in range(n_mobs) if i not in live]
         if not_live:
             new_idx = draw(st.sampled_from(not_live))
-            options.append(
-                st.one_of(
-                    st.just(CreateCmd(mob_idx=new_idx)),
-                    st.just(FadeInCmd(mob_idx=new_idx)),
-                )
-            )
+            options.append(_intro_cmd(new_idx))
 
         # Shift a live mob.
         live_list = sorted(live)
@@ -253,11 +290,28 @@ def construct_script(
                 )
             )
 
+        # Animate a submobject of a live arrow directly.
+        if live_arrows:
+            arrow_idx = draw(st.sampled_from(sorted(live_arrows)))
+            options.append(
+                st.builds(
+                    lambda dx, dy: AnimateSubmobCmd(mob_idx=arrow_idx, dx=dx, dy=dy),
+                    _shift_float,
+                    _shift_float,
+                )
+            )
+
         chosen = draw(st.one_of(*options))
         commands.append(chosen)
 
         if isinstance(chosen, FadeOutCmd):
             live.discard(chosen.mob_idx)
+            live_arrows.discard(chosen.mob_idx)
+        elif isinstance(chosen, (GrowArrowCmd,)) and isinstance(
+            mob_specs[chosen.mob_idx], ArrowSpec
+        ):
+            live.add(chosen.mob_idx)
+            live_arrows.add(chosen.mob_idx)
 
     return mob_specs, commands
 
@@ -269,7 +323,7 @@ def construct_script(
 
 def _instantiate(spec: MobjectSpec):
     """Create a fresh live Manim mobject from a spec."""
-    from manim import Circle, Dot, Square, VGroup
+    from manim import Arrow, Circle, Dot, Square, VGroup
 
     if isinstance(spec, CircleSpec):
         return Circle(radius=spec.radius, fill_opacity=spec.fill_opacity)
@@ -279,13 +333,15 @@ def _instantiate(spec: MobjectSpec):
         return Dot()
     if isinstance(spec, VGroupSpec):
         return VGroup(*[_instantiate(c) for c in spec.children])
+    if isinstance(spec, ArrowSpec):
+        return Arrow(buff=0)
     msg = f"Unknown MobjectSpec type: {type(spec)}"
     raise TypeError(msg)
 
 
 def _execute(self, mobs: list, cmd: CommandSpec) -> None:
     """Execute a single command against a live scene."""
-    from manim import Create, FadeIn, FadeOut, Transform, ValueTracker
+    from manim import Create, FadeIn, FadeOut, GrowArrow, Transform, ValueTracker
 
     if isinstance(cmd, CreateCmd):
         self.play(Create(mobs[cmd.mob_idx]))
@@ -304,6 +360,10 @@ def _execute(self, mobs: list, cmd: CommandSpec) -> None:
         self.add(vt)
         self.play(vt.animate.set_value(cmd.end_value), run_time=cmd.run_time)
         mob.clear_updaters()
+    elif isinstance(cmd, GrowArrowCmd):
+        self.play(GrowArrow(mobs[cmd.mob_idx]))
+    elif isinstance(cmd, AnimateSubmobCmd):
+        self.play(mobs[cmd.mob_idx].submobjects[-1].animate.shift((cmd.dx, cmd.dy, 0)))
     else:
         msg = f"Unknown CommandSpec type: {type(cmd)}"
         raise TypeError(msg)

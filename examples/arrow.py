@@ -27,14 +27,28 @@ with app.setup:
 
 
 @app.class_definition
+class SingleArrow(ManimWidget):
+    def construct(self):
+        arrow = Arrow(ORIGIN, [2, 0, 0], buff=0, color="#7dd3fc")
+        self.play(GrowArrow(arrow))
+        self.play(arrow.submobjects[-1].animate.set_color("#ffeb3b"))
+
+
+@app.cell
+def _():
+    SingleArrow()
+    return
+
+
+@app.class_definition
 class ArrowDance(ManimWidget):
     def construct(self):
         arrows = [make_arrow(RADIUS, 2 * math.pi * i / N) for i in range(N)]
 
         for arrow in arrows:
-            self.play(GrowArrow(arrow), run_time=0.16)
+            self.play(GrowArrow(arrow), run_time=0.10)
 
-        self.wait(0.125)
+        self.wait(0.1)
 
         targets = []
         for i, arrow in enumerate(arrows):
@@ -98,13 +112,32 @@ def _():
     return
 
 
+@app.function(hide_code=True)
+def test(runner):
+    runner.check(SingleArrow).assert_ok()
+
+    # Regression: animating a submobject must not bleed color onto siblings.
+    r = runner.check(SingleArrow)
+    r.assert_ok()
+    states = r.section_end_states[0]["end_state"]["states"]
+    snapshot = r.section_end_states[0]["end_state"]["snapshot"]
+    root = states[next(iter(snapshot.values()))]
+    assert root["kind"] == "VGroup" and len(root["children"]) == 2
+    shaft_state = states[root["children"][0]]
+    tip_state = states[root["children"][1]]
+    tip_color = (tip_state.get("color") or tip_state.get("stroke_color") or "").lower()
+    shaft_color = (
+        shaft_state.get("color") or shaft_state.get("stroke_color") or ""
+    ).lower()
+    assert "ffeb3b" in tip_color, f"tip should be yellow, got {tip_color}"
+    assert "ffeb3b" not in shaft_color, f"shaft should not be yellow, got {shaft_color}"
+
+    runner.check(ArrowDance).assert_ok()
+
+
 @app.cell
 def _():
     return
-
-
-def test(runner):
-    runner.check(ArrowDance).assert_ok()
 
 
 if __name__ == "__main__":

@@ -26,6 +26,7 @@ def _():
     return
 
 
+@app.function(hide_code=True)
 def test(runner):
     runner.check(SwapDemo).assert_ok()
 
