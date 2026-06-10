@@ -93,8 +93,10 @@ def _patched_brace_get_tex(self, *tex, **kwargs):
 def patch_tex():
     import manim
 
-    _original_classes["MathTex"] = manim.MathTex
-    _original_classes["Tex"] = manim.Tex
+    if manim.MathTex is not PatchedMathTex:
+        _original_classes["MathTex"] = manim.MathTex
+    if manim.Tex is not PatchedTex:
+        _original_classes["Tex"] = manim.Tex
     manim.MathTex = PatchedMathTex
     manim.Tex = PatchedTex
 
@@ -102,3 +104,12 @@ def patch_tex():
 
     Brace.get_text = _patched_brace_get_text
     Brace.get_tex = _patched_brace_get_tex
+
+
+def unpatch_tex():
+    import manim
+
+    if "MathTex" in _original_classes:
+        manim.MathTex = _original_classes["MathTex"]
+    if "Tex" in _original_classes:
+        manim.Tex = _original_classes["Tex"]

@@ -667,13 +667,12 @@ def test_create_without_explicit_add_does_not_emit_add_animation():
 
 def test_mathtex_add_only_emits_add_animation():
     from manim_widget import patch_tex
+    from manim_widget.tex_patch import PatchedMathTex, unpatch_tex
     import manim
-
-    original_math_tex = manim.MathTex
-    original_tex = manim.Tex
 
     patch_tex()
     try:
+        assert manim.MathTex is PatchedMathTex
         from manim import MathTex, WHITE
 
         class MathTexAddOnlyScene(ManimWidget):
@@ -689,8 +688,7 @@ def test_mathtex_add_only_emits_add_animation():
             a["kind"] == "Add" and a["id"] == "0" for a in anim_cmd["animations"]
         )
     finally:
-        manim.MathTex = original_math_tex
-        manim.Tex = original_tex
+        unpatch_tex()
 
 
 def test_image_mobject_serializes_source_and_pixels():
@@ -827,13 +825,12 @@ def test_mathtex_boundary_points_and_scale_center():
 
 def test_patch_tex_mathtex_add_serializes_as_mathtexsource():
     from manim_widget import patch_tex
+    from manim_widget.tex_patch import PatchedMathTex, unpatch_tex
     import manim
-
-    original_math_tex = manim.MathTex
-    original_tex = manim.Tex
 
     patch_tex()
     try:
+        assert manim.MathTex is PatchedMathTex
         from manim import MathTex, WHITE
 
         class MathTexScene(ManimWidget):
@@ -854,8 +851,7 @@ def test_patch_tex_mathtex_add_serializes_as_mathtexsource():
         assert "points" in state
         assert len(state["points"]) == 4
     finally:
-        manim.MathTex = original_math_tex
-        manim.Tex = original_tex
+        unpatch_tex()
 
 
 def test_swap_animation_emits_group_animation():
