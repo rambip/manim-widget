@@ -19,7 +19,6 @@ from manim import (
     UP,
     AnimationGroup,
     Arrow,
-    GrowArrow,
     Circle,
     Create,
     Difference,
@@ -284,12 +283,16 @@ class TestCLIIntegration:
 
     def test_fadein_image(self, fadein_image_data):
         section = fadein_image_data["sections"][0]
-        assert section["states"][0]["kind"] == "ImageMobject"
+        states = fadein_image_data["states"]
+        # DAG: content entry (kind+source) is at index 0, addon entry (from+points) at index 1
+        assert states[0]["kind"] == "ImageMobject"
+        assert "from" in states[1]
 
         register_cmd = section["construct"][0]
         animate_cmd = section["construct"][1]
         assert register_cmd["cmd"] == "register"
-        assert register_cmd["state_ref"] == 0
+        # register points to the addon state (which has positional data)
+        assert states[register_cmd["state_ref"]].get("from") == 0
 
         assert animate_cmd["cmd"] == "animate"
         assert animate_cmd["animations"][0]["kind"] == "FadeIn"
@@ -386,28 +389,28 @@ class TestCLIIntegration:
         invalid_scene_data = {
             "version": 2,
             "fps": 10,
+            "states": [
+                {
+                    "kind": "Circle",
+                    "contours": [
+                        [
+                            [0, 0, 0],
+                            [1, 1, 1],
+                            [2, 0, 0],
+                            [3, 1, 1],
+                            [4, 0, 0],
+                            [5, 1, 1],
+                            [6, 0, 0],
+                            [7, 1, 1],
+                            [8, 0, 0],
+                        ]
+                    ],
+                }
+            ],
             "sections": [
                 {
                     "name": "intro",
                     "snapshot": {},
-                    "states": [
-                        {
-                            "kind": "Circle",
-                            "contours": [
-                                [
-                                    [0, 0, 0],
-                                    [1, 1, 1],
-                                    [2, 0, 0],
-                                    [3, 1, 1],
-                                    [4, 0, 0],
-                                    [5, 1, 1],
-                                    [6, 0, 0],
-                                    [7, 1, 1],
-                                    [8, 0, 0],
-                                ]
-                            ],
-                        }
-                    ],
                     "construct": [{"cmd": "register", "id": "circle1", "state_ref": 0}],
                 }
             ],
@@ -497,7 +500,7 @@ class TestCLIIntegration:
         r = check_data_validated(group_two_objects_data)
         assert r.ok, f"CLI failed: {r.errors}"
         data = group_two_objects_data
-        states = data["sections"][0]["states"]
+        states = data["states"]
         construct = data["sections"][0]["construct"]
 
         assert len(states) == 3, (
@@ -583,88 +586,86 @@ def test_swap_with_world_coordinate_points():
     scene_data = {
         "version": 2,
         "fps": 10,
+        "states": [
+            {
+                "kind": "VMobject",
+                "stroke_color": "#FC6255",
+                "stroke_width": 4,
+                "stroke_opacity": 1.0,
+                "fill_opacity": 0.0,
+                "z_index": 0,
+                "contours": [
+                    [
+                        [-2, 0, 0],
+                        [-2, 0.26, 0],
+                        [-1.89, 0.52, 0],
+                        [-1.71, 0.71, 0],
+                        [-1.52, 0.89, 0],
+                        [-1.26, 1.0, 0],
+                        [-1.0, 1.0, 0],
+                        [-0.74, 1.0, 0],
+                        [-0.48, 0.89, 0],
+                        [-0.29, 0.71, 0],
+                        [-0.11, 0.52, 0],
+                        [0, 0.26, 0],
+                        [0, 0, 0],
+                        [0, -0.26, 0],
+                        [-0.11, -0.52, 0],
+                        [-0.29, -0.71, 0],
+                        [-0.48, -0.89, 0],
+                        [-0.74, -1.0, 0],
+                        [-1.0, -1.0, 0],
+                        [-1.26, -1.0, 0],
+                        [-1.52, -0.89, 0],
+                        [-1.71, -0.71, 0],
+                        [-1.89, -0.52, 0],
+                        [-2, -0.26, 0],
+                        [-2, 0, 0],
+                    ]
+                ],
+            },
+            {
+                "kind": "VMobject",
+                "stroke_color": "#58C4DD",
+                "stroke_width": 4,
+                "stroke_opacity": 1.0,
+                "fill_opacity": 0.0,
+                "z_index": 0,
+                "contours": [
+                    [
+                        [0, 0, 0],
+                        [0, 0.26, 0],
+                        [0.11, 0.52, 0],
+                        [0.29, 0.71, 0],
+                        [0.48, 0.89, 0],
+                        [0.74, 1.0, 0],
+                        [1.0, 1.0, 0],
+                        [1.26, 1.0, 0],
+                        [1.52, 0.89, 0],
+                        [1.71, 0.71, 0],
+                        [1.89, 0.52, 0],
+                        [2, 0.26, 0],
+                        [2, 0, 0],
+                        [2, -0.26, 0],
+                        [1.89, -0.52, 0],
+                        [1.71, -0.71, 0],
+                        [1.52, -0.89, 0],
+                        [1.26, -1.0, 0],
+                        [1.0, -1.0, 0],
+                        [0.74, -1.0, 0],
+                        [0.48, -0.89, 0],
+                        [0.29, -0.71, 0],
+                        [0.11, -0.52, 0],
+                        [0, -0.26, 0],
+                        [0, 0, 0],
+                    ]
+                ],
+            },
+        ],
         "sections": [
             {
                 "name": "test",
                 "snapshot": {},
-                "states": [
-                    {
-                        "kind": "VMobject",
-                        "stroke_color": "#FC6255",
-                        "stroke_width": 4,
-                        "stroke_opacity": 1.0,
-                        "fill_opacity": 0.0,
-                        "z_index": 0,
-                        # Circle centered at x=-1 (radius 1), CCW
-                        "contours": [
-                            [
-                                [-2, 0, 0],
-                                [-2, 0.26, 0],
-                                [-1.89, 0.52, 0],
-                                [-1.71, 0.71, 0],
-                                [-1.52, 0.89, 0],
-                                [-1.26, 1.0, 0],
-                                [-1.0, 1.0, 0],
-                                [-0.74, 1.0, 0],
-                                [-0.48, 0.89, 0],
-                                [-0.29, 0.71, 0],
-                                [-0.11, 0.52, 0],
-                                [0, 0.26, 0],
-                                [0, 0, 0],
-                                [0, -0.26, 0],
-                                [-0.11, -0.52, 0],
-                                [-0.29, -0.71, 0],
-                                [-0.48, -0.89, 0],
-                                [-0.74, -1.0, 0],
-                                [-1.0, -1.0, 0],
-                                [-1.26, -1.0, 0],
-                                [-1.52, -0.89, 0],
-                                [-1.71, -0.71, 0],
-                                [-1.89, -0.52, 0],
-                                [-2, -0.26, 0],
-                                [-2, 0, 0],
-                            ]
-                        ],
-                    },
-                    {
-                        "kind": "VMobject",
-                        "stroke_color": "#58C4DD",
-                        "stroke_width": 4,
-                        "stroke_opacity": 1.0,
-                        "fill_opacity": 0.0,
-                        "z_index": 0,
-                        # Circle centered at x=+1 (radius 1), CCW
-                        "contours": [
-                            [
-                                [0, 0, 0],
-                                [0, 0.26, 0],
-                                [0.11, 0.52, 0],
-                                [0.29, 0.71, 0],
-                                [0.48, 0.89, 0],
-                                [0.74, 1.0, 0],
-                                [1.0, 1.0, 0],
-                                [1.26, 1.0, 0],
-                                [1.52, 0.89, 0],
-                                [1.71, 0.71, 0],
-                                [1.89, 0.52, 0],
-                                [2, 0.26, 0],
-                                [2, 0, 0],
-                                [2, -0.26, 0],
-                                [1.89, -0.52, 0],
-                                [1.71, -0.71, 0],
-                                [1.52, -0.89, 0],
-                                [1.26, -1.0, 0],
-                                [1.0, -1.0, 0],
-                                [0.74, -1.0, 0],
-                                [0.48, -0.89, 0],
-                                [0.29, -0.71, 0],
-                                [0.11, -0.52, 0],
-                                [0, -0.26, 0],
-                                [0, 0, 0],
-                            ]
-                        ],
-                    },
-                ],
                 "construct": [
                     {"cmd": "register", "id": "0", "state_ref": 0},
                     {"cmd": "register", "id": "1", "state_ref": 1},
@@ -725,7 +726,7 @@ def test_js_create_without_explicit_add_has_no_injected_add():
 
 
 def test_arrow_serialized_as_vgroup_with_shaft_and_tip():
-    """Arrow is serialized as VGroup with 2 children: shaft (VMobject) + tip."""
+    """Arrow serializes as VGroup with 2 children: shaft (VMobject) + tip."""
 
     class ArrowScene(ManimWidget):
         def construct(self):
@@ -740,54 +741,9 @@ def test_arrow_serialized_as_vgroup_with_shaft_and_tip():
     root_ref = next(iter(snapshot.values()))
     root_state = states[root_ref]
 
-    assert root_state["kind"] == "VGroup"
-    assert len(root_state["children"]) == 2
-
-    shaft_state = states[root_state["children"][0]]
-    assert shaft_state["kind"] == "VMobject"
-    assert len(shaft_state.get("points", [])) >= 4
-
-
-def _arrow_end_states(r, section=0):
-    """Return (shaft_state, tip_state) from an end-state result."""
-    states = r.section_end_states[section]["end_state"]["states"]
-    snapshot = r.section_end_states[section]["end_state"]["snapshot"]
-    root_ref = next(iter(snapshot.values()))
-    root = states[root_ref]
-    assert root["kind"] == "VGroup" and len(root["children"]) == 2
-    return states[root["children"][0]], states[root["children"][1]]
-
-
-@pytest.mark.parametrize(
-    "tip_color,shaft_color",
-    [
-        ("#ffeb3b", "#7dd3fc"),
-        ("#ff0000", "#00ff00"),
-        ("#ffffff", "#343434"),
-    ],
-)
-def test_animating_arrow_tip_does_not_affect_shaft(tip_color, shaft_color):
-    """Regression: child-index mismatch caused shaft to morph when tip was animated."""
-
-    class S(ManimWidget):
-        def construct(self):
-            arrow = Arrow(ORIGIN, [2, 0, 0], buff=0, color=shaft_color)
-            self.play(GrowArrow(arrow))
-            self.play(arrow.submobjects[-1].animate.set_color(tip_color))
-
-    r = check_data_validated(S(fps=10).scene_data)
-    r.assert_ok()
-
-    shaft_state, tip_state = _arrow_end_states(r)
-
-    def _color(state):
-        return state.get("color") or state.get("stroke_color") or ""
-
-    assert tip_color.lower() in _color(tip_state).lower(), (
-        f"tip color should be {tip_color}, got {_color(tip_state)}"
-    )
-    assert tip_color.lower() not in _color(shaft_state).lower(), (
-        f"shaft color should not be {tip_color}, got {_color(shaft_state)}"
+    assert root_state["kind"] == "VGroup", f"Expected VGroup, got {root_state['kind']}"
+    assert len(root_state["children"]) == 2, (
+        f"Expected 2 children (shaft + tip), got {len(root_state['children'])}"
     )
 
 

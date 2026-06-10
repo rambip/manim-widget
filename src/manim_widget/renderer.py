@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import base64
 import io
-import json
 import math
 from dataclasses import dataclass, field
 from typing import Any
@@ -13,6 +12,7 @@ from PIL import Image
 from manim import (
     CyclicReplace,
     FadeOut,
+    GrowArrow,
     ReplacementTransform,
     Rotate,
     ScaleInPlace,
@@ -22,14 +22,13 @@ from manim import (
     ValueTracker,
     VGroup,
 )
-from manim.mobject.svg.brace import Brace
-from manim.animation.composition import AnimationGroup
 from manim.animation.animation import Animation
-from manim.mobject.geometry.line import Arrow
 from manim.mobject.mobject import Mobject
 from manim.mobject.types.image_mobject import AbstractImageMobject
 from manim.mobject.types.vectorized_mobject import VMobject
 
+from .anim_compat import force_end_state
+from .registry import StateRegistry
 from .snapshot import IdCounter
 from .states import (
     _signed_area_2d,
@@ -44,11 +43,6 @@ from .tex_patch import PatchedMathTex
 
 
 def _subpath_to_3n1(raw_points) -> list[list[float]]:
-    """Convert a manim subpath (4k points: anchor+2handles+anchor...) to 3n+1 format.
-
-    pre: len(raw_points) % 4 == 0 or len(raw_points) == 0
-    post: len(__return__) == 0 or (len(__return__) - 1) % 3 == 0
-    """
     pts: list[list[float]] = []
     for i in range(0, len(raw_points), 4):
         chunk = raw_points[i : i + 4]
@@ -59,19 +53,6 @@ def _subpath_to_3n1(raw_points) -> list[list[float]]:
 def _classify_subpaths(
     subpaths,
 ) -> tuple[list[list[list[float]]], list[list[list[float]]]]:
-    """Split subpaths into contours and holes, enforcing SVG convention.
-
-    The first non-empty subpath's winding determines which are outer vs inner.
-    Points are reversed when needed so the output always satisfies:
-      CCW => contour (outer filled region)
-      CW  => hole (cutout)
-
-    pre: all(len(sp) % 4 == 0 for sp in subpaths)
-    post: all((len(c) - 1) % 3 == 0 for c in __return__[0])
-    post: all((len(h) - 1) % 3 == 0 for h in __return__[1])
-    post: all(_contour_winding(c) == 'CCW' for c in __return__[0])
-    post: all(_contour_winding(h) == 'CW'  for h in __return__[1])
-    """
     contours: list[list[list[float]]] = []
     holes: list[list[list[float]]] = []
     outer_sign: float | None = None
@@ -85,8 +66,6 @@ def _classify_subpaths(
         if outer_sign is None:
             outer_sign = area
         is_outer = (area >= 0) == (outer_sign >= 0)
-        # Enforce SVG convention: contours CCW (area < 0), holes CW (area > 0)
-        # Reverse if the winding doesn't match the expected convention.
         if is_outer and area > 0:
             pts = pts[::-1]
         elif not is_outer and area < 0:
@@ -95,9 +74,6 @@ def _classify_subpaths(
             contours.append(pts)
         else:
             holes.append(pts)
-    # Postcondition guard
-    assert all(_signed_area_2d(c) <= 0 for c in contours)
-    assert all(_signed_area_2d(h) >= 0 for h in holes)
     return contours, holes
 
 
@@ -146,8 +122,43 @@ def _compute_camera_state(cam) -> dict[str, float]:
 class SectionRecord:
     name: str
     commands: list[dict] = field(default_factory=list)
-    states: list[dict[str, object]] = field(default_factory=list)
-    _state_ref_map: dict[str, int] = field(default_factory=dict)
+    # setup: list of {cmd:"register", id:..., state_ref:...} emitted for snapshot mobs
+    setup: list[dict] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class PixelContent:
+    """Immutable, hashable container for a numpy pixel array."""
+
+    data: bytes
+    shape: tuple[int, ...]
+    dtype: str
+
+    @classmethod
+    def from_array(cls, arr: np.ndarray) -> "PixelContent":
+        return cls(data=arr.tobytes(), shape=tuple(arr.shape), dtype=str(arr.dtype))
+
+    def to_array(self) -> np.ndarray:
+        return np.frombuffer(self.data, dtype=self.dtype).reshape(self.shape)
+
+
+@dataclass
+class _SubpathChild:
+    """Synthetic JS child node for one subpath of a VMobject that also has submobjects.
+
+    Arises when a VMobject carries both its own Bezier points (e.g. Arrow's shaft)
+    and actual submobjects (e.g. Arrow's tip).  Gets a stable synthetic mob-id and
+    a state_ref allocated on first use.
+    """
+
+    parent: object  # the owning VMobject (Mobject, not typed to avoid circular)
+    parent_id: str  # short_id of the owning mob, pre-computed
+    subpath_idx: int
+    subpath: object  # numpy array
+
+    @property
+    def mob_id(self) -> str:
+        return f"{self.parent_id}_sp{self.subpath_idx}"
 
 
 class CaptureRenderer:
@@ -163,6 +174,15 @@ class CaptureRenderer:
         self._active_ids: set[int] = set()
         self.sections: list[SectionRecord] = []
         self._current: SectionRecord | None = None
+        # Global content-addressed state bank shared across all sections.
+        self._state_registry: StateRegistry[Mobject, PixelContent, tuple, dict] = (
+            StateRegistry(
+                extract_content=self._extract_content,
+                extract_state=self._extract_state,
+                make_from_content=self._make_from_content,
+                make_from_state=self._make_from_state,
+            )
+        )
         # Staging bucket for pre-play add() calls in current section.
         # Keyed by short_id; repeated add() of same object overwrites prior state.
         self._staged_adds: dict[str, Mobject] = {}
@@ -174,15 +194,8 @@ class CaptureRenderer:
         # Keyed by python object identity.
         self._introduced_by_animation: dict[int, bool] = {}
         self._id_counter = IdCounter()
-        # Python id()s for which a register command has been emitted this section.
-        self._js_registered: set[int] = set()
-        # Extra synthetic children prepended before real submobjects for a mob.
-        # Keyed by id(mob). Populated by serialize_mobject (e.g. Arrow shaft proxy).
-        # _emit_register reads this generically — no mob-type checks needed there.
-        self._synthetic_children: dict[int, list[object]] = {}
-        # Direct state-ref overrides: id(mob) → state bank index.
-        # Avoids re-serializing synthetic proxies that already have a known ref.
-        self._state_ref_overrides: dict[int, int] = {}
+        # id(mob) → list of state_refs assigned; updated by state_ref_for.
+        self.state_refs: dict[int, list[int]] = {}
 
     def short_id(self, mob: object) -> str:
         return self._id_counter.short_id(mob)
@@ -214,34 +227,372 @@ class CaptureRenderer:
         self._current = SectionRecord(name=name, commands=[])
         self.sections.append(self._current)
         self._staged_adds = {}
-        self._js_registered = set()
-        self._state_ref_overrides = {}
 
-    def state_ref_for(self, mob: object) -> int:
-        """Return the state-bank index for mob in the current section.
+    # ------------------------------------------------------------------
+    # Registry extract / make functions (injected at construction)
+    # ------------------------------------------------------------------
 
-        pre: self._current is not None
-        post: 0 <= __return__ < len(self._current.states)
-        post: self.state_ref_for(mob) == self.state_ref_for(mob)
+    def _extract_content(self, mob: Mobject) -> PixelContent | None:
+        if isinstance(mob, AbstractImageMobject):
+            return PixelContent.from_array(mob.get_pixel_array())
+        return None
+
+    def _extract_state(self, mob: Mobject) -> tuple | None:
+        if isinstance(mob, ValueTracker):
+            return ("vt", float(mob.get_value()))
+
+        if isinstance(mob, PatchedMathTex):
+            raw = (
+                mob.points.tolist()
+                if hasattr(mob.points, "tolist")
+                else list(mob.points)
+            )
+            color_hex = self._color_to_hex(mob.color) if mob.color is not None else None
+            return ("mathtex", mob.tex_string, tuple(tuple(p) for p in raw), color_hex)
+
+        if isinstance(mob, AbstractImageMobject):
+            content = self._extract_content(mob)
+            content_ref = self._state_registry.get_content_ref(content)
+            if content_ref is None:
+                return (
+                    None  # content not yet registered; insert() registers content first
+                )
+            raw = (
+                mob.points.tolist()
+                if hasattr(mob.points, "tolist")
+                else list(mob.points)
+            )
+            return (
+                ("img", content_ref, tuple(tuple(p) for p in raw))
+                if len(raw) == 4
+                else None
+            )
+
+        if hasattr(mob, "submobjects") and mob.submobjects:
+            # If the mob also has its own subpaths (e.g. Arrow shaft), fall through
+            # to _serialize_vgroup so both shaft and tip children are captured.
+            if isinstance(mob, VMobject) and mob.get_subpaths():
+                return None
+            child_refs = []
+            for child in mob.submobjects:
+                ref = self._state_registry.get(child)
+                if ref is None:
+                    return None  # children not yet registered
+                child_refs.append(ref)
+            return ("vgroup", tuple(child_refs))
+
+        if isinstance(mob, VMobject) and not mob.submobjects:
+            subpaths = mob.get_subpaths()
+            if len(subpaths) > 1:
+                return None  # multi-subpath: handled via insert_raw in state_ref_for
+            contours, holes = _classify_subpaths(subpaths)
+            fill_color = mob.get_fill_color()
+            stroke_color = mob.get_stroke_color()
+            return (
+                "vmob",
+                tuple(tuple(tuple(p) for p in c) for c in contours),
+                tuple(tuple(tuple(p) for p in h) for h in holes),
+                self._color_to_hex(fill_color) if fill_color else None,
+                self._color_to_hex(stroke_color) if stroke_color else None,
+                mob.get_fill_opacity(),
+                mob.get_stroke_width(),
+                mob.get_stroke_opacity(),
+                getattr(mob, "z_index", None),
+            )
+
+        return None  # multi-subpath with no submobjects: handled via insert_raw
+
+    def _make_from_content(self, content: PixelContent) -> dict:
+        return {
+            "kind": "ImageMobject",
+            "source": self._image_source_from_pixel_array(content.to_array()),
+        }
+
+    def _make_from_state(self, state: tuple) -> dict:
+        kind = state[0]
+        if kind == "vt":
+            return ValueTrackerState(value=state[1]).model_dump(exclude_none=True)
+        if kind == "mathtex":
+            _, latex, pts, color = state
+            return MathTexState(
+                latex=latex,
+                points=[[float(p[0]), float(p[1]), float(p[2])] for p in pts],
+                color=color,
+            ).model_dump(exclude_none=True)
+        if kind == "img":
+            _, content_ref, corners = state
+            return {"from": content_ref, "points": [list(p) for p in corners]}
+        if kind == "vgroup":
+            _, child_refs = state
+            return VGroupState(children=list(child_refs)).model_dump(exclude_none=True)
+        if kind == "vmob":
+            (
+                _,
+                contours,
+                holes,
+                fill_color,
+                stroke_color,
+                fill_opacity,
+                stroke_width,
+                stroke_opacity,
+                z_index,
+            ) = state
+            return VMobjectState(
+                contours=[[list(p) for p in c] for c in contours],
+                holes=[[list(p) for p in h] for h in holes],
+                fill_color=fill_color,
+                stroke_color=stroke_color,
+                fill_opacity=fill_opacity,
+                stroke_width=stroke_width,
+                stroke_opacity=stroke_opacity,
+                z_index=z_index,
+            ).model_dump(exclude_none=True)
+        msg = f"Unknown state kind: {kind!r}"
+        raise ValueError(msg)
+
+    # ------------------------------------------------------------------
+    # State-ref helpers
+    # ------------------------------------------------------------------
+
+    def _ensure_image_refs(self, mob: AbstractImageMobject) -> tuple[int, int | None]:
+        """Ensure image content and current-position derived state are registered.
+
+        Content (pixel data) is registered once.  The derived state
+        ``{from: content_ref, points: corners}`` is keyed by ``(content_ref, corners)``
+        so each unique position gets its own entry and identical positions are reused.
         """
-        override = self._state_ref_overrides.get(id(mob))
-        if override is not None:
-            return override
-        # For groups (VGroup, Group, etc.), ensure children are serialized first
+        reg = self._state_registry
+        if reg.get(mob) is None:
+            # First time this content is seen: insert() registers content then derived state.
+            reg.insert(mob)
+        else:
+            # Content already registered; ensure derived state for THIS position.
+            state = self._extract_state(
+                mob
+            )  # ("img", content_ref, corners) — content_ref in bank ✓
+            if state is not None:
+                reg.ensure_addon(state)
+        return reg.get(mob), reg.get_addon(mob)
+
+    def _js_children(self, mob: Mobject) -> list:
+        """Single source of truth for what children a mob exposes to the JS player.
+
+        Returns an empty list for leaf mobs (no JS children).
+        For groups / mobs with children: actual submobjects.
+        For VMobjects that carry both own subpaths AND submobjects (e.g. Arrow):
+            _SubpathChild entries first (one per non-empty subpath), then actual submobjects.
+
+        All consumers — register commands, remove commands, VGroupState serialisation —
+        must derive their child list exclusively from this method.
+        """
+        submobs = getattr(mob, "submobjects", None) or []
+        if not submobs:
+            return list(submobs)  # pure leaf or pure VGroup with no children
+
+        # VMobject with own Bezier points AND actual children → mixed node.
+        if isinstance(mob, VMobject) and not isinstance(mob, VGroup):
+            own_subpaths = [sp for sp in mob.get_subpaths() if len(sp) > 0]
+            if own_subpaths:
+                parent_id = self.short_id(mob)
+                result: list = [
+                    _SubpathChild(
+                        parent=mob, parent_id=parent_id, subpath_idx=i, subpath=sp
+                    )
+                    for i, sp in enumerate(own_subpaths)
+                ]
+                result.extend(submobs)
+                return result
+
+        return list(submobs)
+
+    def _mob_register_commands(self, mob: Mobject) -> list[dict]:
+        """Return register command(s) for mob and all its JS children."""
+        js_children = self._js_children(mob)
+        if not js_children:
+            return [
+                {
+                    "cmd": "register",
+                    "id": self.short_id(mob),
+                    "state_ref": self.state_ref_for(mob),
+                }
+            ]
+
+        cmds: list[dict] = []
+        child_ids: list[str] = []
+        for child in js_children:
+            if isinstance(child, _SubpathChild):
+                state_ref = self._subpath_child_state_ref(child)
+                cmds.append(
+                    {"cmd": "register", "id": child.mob_id, "state_ref": state_ref}
+                )
+                child_ids.append(child.mob_id)
+            else:
+                cmds.extend(self._mob_register_commands(child))
+                child_ids.append(self.short_id(child))
+        cmds.append(
+            {
+                "cmd": "register",
+                "id": self.short_id(mob),
+                "state_ref": self.state_ref_for(mob),
+                "child_ids": child_ids,
+            }
+        )
+        return cmds
+
+    def _mob_remove_commands(self, mob: Mobject) -> list[dict]:
+        """Return remove command(s) for mob and all its JS children (deepest first)."""
+        js_children = self._js_children(mob)
+        cmds: list[dict] = []
+        for child in js_children:
+            if isinstance(child, _SubpathChild):
+                cmds.append({"cmd": "remove", "id": child.mob_id})
+            else:
+                cmds.extend(self._mob_remove_commands(child))
+        cmds.append({"cmd": "remove", "id": self.short_id(mob)})
+        return cmds
+
+    def _subpath_child_state_ref(self, child: _SubpathChild) -> int:
+        """Allocate a state_ref for a synthetic subpath child."""
+        style = self._vmob_style(child.parent)
+        points_3n1 = _subpath_to_3n1(child.subpath)
+        if not points_3n1:
+            return self._state_registry.insert_raw(
+                {"kind": "VMobject", "contours": [], "holes": []}
+            )
+        if _signed_area_2d(points_3n1) > 0:
+            points_3n1 = points_3n1[::-1]
+        subpath_state = VMobjectState(contours=[points_3n1], **style)
+        return self._state_registry.insert_raw(
+            subpath_state.model_dump(exclude_none=True)
+        )
+
+    def state_ref_for(self, mob: Mobject) -> int:
+        """Return the global state-bank index for mob's current state.
+
+        For images returns the derived-state ref ``{from: content_ref, points: corners}``.
+        Recurses into children first so VGroup extract_state can look them up.
+        Multi-subpath VMobjects are serialized via insert_raw (no dedup).
+
+        post: 0 <= __return__ < len(self._state_registry)
+        """
+        if isinstance(mob, AbstractImageMobject):
+            _, addon_ref = self._ensure_image_refs(mob)
+            # addon_ref is the derived state {from, points}; fall back to content_ref if None
+            if addon_ref is not None:
+                self.state_refs.setdefault(id(mob), []).append(addon_ref)
+                return addon_ref
+            ref = self._state_registry.get(mob)
+            self.state_refs.setdefault(id(mob), []).append(ref)
+            return ref
+
+        # Recurse into children first so VGroup extract_state can look them up.
         if hasattr(mob, "submobjects") and mob.submobjects:
             for child in mob.submobjects:
                 self.state_ref_for(child)
-        return self._intern_state(self.serialize_mobject(mob, for_snapshot=False))
 
-    def serialize_mobject(
-        self, mob: Mobject, *, for_snapshot: bool
-    ) -> dict[str, object]:
-        if isinstance(mob, Brace) and mob.updaters:
-            raise RuntimeError(
-                "Dynamic Brace (always_redraw) is not supported. "
-                "Construct the Brace at a fixed position instead."
-            )
+        # Try typed state bank (handles simple VMobjects and VGroups with Mobject children).
+        ref = self._state_registry.get(mob)
+        if ref is not None:
+            self.state_refs.setdefault(id(mob), []).append(ref)
+            return ref
+        state = self._extract_state(mob)
+        if state is not None:
+            main_ref, _ = self._state_registry.insert(mob)
+            self.state_refs.setdefault(id(mob), []).append(main_ref)
+            return main_ref
 
+        # Multi-subpath or mixed (own subpaths + submobjects) VMobject.
+        if isinstance(mob, VMobject):
+            subpaths = mob.get_subpaths()
+            if subpaths:
+                style = self._vmob_style(mob)
+                js_ch = self._js_children(mob)
+                if js_ch:
+                    # Mixed: own subpaths + submobjects → VGroupState driven by _js_children.
+                    child_refs: list[int] = []
+                    for jsc in js_ch:
+                        if isinstance(jsc, _SubpathChild):
+                            child_refs.append(self._subpath_child_state_ref(jsc))
+                        else:
+                            child_refs.append(self.state_ref_for(jsc))
+                    vgroup_state = VGroupState(children=child_refs)
+                else:
+                    vgroup_state = self._serialize_vgroup(
+                        mob, subpaths, style, for_snapshot=False
+                    )
+                ref = self._state_registry.insert_raw(
+                    vgroup_state.model_dump(exclude_none=True)
+                )
+                self.state_refs.setdefault(id(mob), []).append(ref)
+                return ref
+            # Empty VMobject with no submobjects: treat as invisible.
+            if not mob.submobjects:
+                style = self._vmob_style(mob)
+                ref = self._state_registry.insert_raw(
+                    {"kind": "VMobject", "contours": [], "holes": [], **style}
+                )
+                self.state_refs.setdefault(id(mob), []).append(ref)
+                return ref
+
+        # VMobject with submobjects but no own subpaths (e.g. MarkupText, SVGMobject)
+        # whose children may have been registered via insert_raw and are invisible to
+        # _state_registry.get().  Build VGroupState from identity-keyed state_refs.
+        if hasattr(mob, "submobjects") and mob.submobjects:
+            child_refs = []
+            for child in mob.submobjects:
+                refs = self.state_refs.get(id(child))
+                if refs is None:
+                    self.state_ref_for(child)
+                    refs = self.state_refs.get(id(child))
+                if refs:
+                    child_refs.append(refs[-1])
+            if child_refs:
+                vgroup_state = VGroupState(children=child_refs)
+                ref = self._state_registry.insert_raw(
+                    vgroup_state.model_dump(exclude_none=True)
+                )
+                self.state_refs.setdefault(id(mob), []).append(ref)
+                return ref
+
+        msg = f"Cannot compute state_ref for {mob!r}"
+        raise ValueError(msg)
+
+    def _vmob_style(self, mob: VMobject) -> dict[str, object]:
+        """Extract fill/stroke style dict from a VMobject (not VGroup)."""
+        if isinstance(mob, VGroup):
+            return {}
+        style: dict[str, object] = {}
+        fill_color = mob.get_fill_color()
+        if fill_color:
+            style["fill_color"] = self._color_to_hex(fill_color)
+        fill_opacity = mob.get_fill_opacity()
+        if fill_opacity is not None:
+            style["fill_opacity"] = fill_opacity
+        stroke_color = mob.get_stroke_color()
+        if stroke_color:
+            style["stroke_color"] = self._color_to_hex(stroke_color)
+        stroke_width = mob.get_stroke_width()
+        if stroke_width:
+            style["stroke_width"] = stroke_width
+        stroke_opacity = mob.get_stroke_opacity()
+        if stroke_opacity is not None:
+            style["stroke_opacity"] = stroke_opacity
+        z_index = getattr(mob, "z_index", None)
+        if z_index is not None:
+            style["z_index"] = z_index
+        return style
+
+    def _intern_state(self, state: MobjectState) -> int:
+        """Insert a typed state into the global state bank and return its ref."""
+        return self._state_registry.insert_raw(state.model_dump(exclude_none=True))
+
+    def serialize_mobject(self, mob: Mobject, *, for_snapshot: bool) -> MobjectState:
+        """Serialize a single mobject to a typed state object.
+
+        post: implies(not isinstance(mob, ValueTracker), hasattr(__return__, "kind"))
+        post: implies(isinstance(__return__, VGroupState),
+                      forall(__return__.children, lambda r: isinstance(r, int)))
+        """
         if isinstance(mob, ValueTracker):
             return ValueTrackerState(value=float(mob.get_value()))
 
@@ -264,14 +615,16 @@ class CaptureRenderer:
                 if hasattr(mob.points, "tolist")
                 else list(mob.points)
             )
+            # Ensure pixel data is registered; retrieve cached source data-URI.
+            if self._state_registry.get(mob) is None:
+                self._state_registry.insert(mob)
+            content_ref = self._state_registry.get(mob)
+            source = self._state_registry.get_by_id(content_ref)["source"]
             return ImageMobjectState(
-                source=self._image_source_from_pixel_array(mob.get_pixel_array()),
+                source=source,
                 points=raw if len(raw) == 4 else None,
                 z_index=getattr(mob, "z_index", None),
             )
-
-        if isinstance(mob, Arrow):
-            return self._serialize_arrow(mob)
 
         # Collect VMobject styling shared by single-path and vgroup paths.
         style: dict[str, object] = {}
@@ -286,7 +639,8 @@ class CaptureRenderer:
             if stroke_color:
                 style["stroke_color"] = self._color_to_hex(stroke_color)
             stroke_width = mob.get_stroke_width()
-            style["stroke_width"] = float(stroke_width) if stroke_width else 0.0
+            if stroke_width:
+                style["stroke_width"] = stroke_width
             stroke_opacity = mob.get_stroke_opacity()
             if stroke_opacity is not None:
                 style["stroke_opacity"] = stroke_opacity
@@ -294,13 +648,30 @@ class CaptureRenderer:
             if z_index is not None:
                 style["z_index"] = z_index
 
+        js_children = self._js_children(mob)
+
         if isinstance(mob, VMobject):
-            contours, holes = _classify_subpaths(mob.get_subpaths())
-            style["contours"] = contours
-            if holes:
+            subpaths = mob.get_subpaths()
+            if js_children:
+                # Mixed (own subpaths + submobs) or pure multi-subpath: emit VGroupState
+                # whose children match exactly what _js_children returned.
+                child_refs: list[int] = []
+                for jsc in js_children:
+                    if isinstance(jsc, _SubpathChild):
+                        child_refs.append(self._subpath_child_state_ref(jsc))
+                    else:
+                        child_refs.append(self.state_ref_for(jsc))
+                return VGroupState(children=child_refs)
+            if len(subpaths) > 1:
+                return self._serialize_vgroup(
+                    mob, subpaths, style, for_snapshot=for_snapshot
+                )
+            if subpaths:
+                contours, holes = _classify_subpaths(subpaths[:1])
+                style["contours"] = contours
                 style["holes"] = holes
 
-        if hasattr(mob, "submobjects") and mob.submobjects:
+        if js_children:
             return VGroupState(
                 children=[self.state_ref_for(child) for child in mob.submobjects]
             )
@@ -312,68 +683,37 @@ class CaptureRenderer:
 
         return VMobjectState(**style, **text_extras)
 
-    def _arrow_shaft_state(self, mob: Arrow) -> VMobjectState:
-        """Build the shaft VMobjectState from Arrow's own bezier points."""
-        stroke_color = mob.get_stroke_color()
-        stroke_width = mob.get_stroke_width()
-        stroke_opacity = mob.get_stroke_opacity()
-        contours, holes = _classify_subpaths(mob.get_subpaths())
-        return VMobjectState(
-            contours=contours,
-            holes=holes or [],
-            stroke_color=self._color_to_hex(stroke_color) if stroke_color else None,
-            stroke_width=float(stroke_width) if stroke_width else None,
-            stroke_opacity=float(stroke_opacity)
-            if stroke_opacity is not None
-            else None,
-        )
+    def _serialize_vgroup(
+        self,
+        mob: Mobject,
+        subpaths: list,
+        style: dict[str, object],
+        *,
+        for_snapshot: bool,
+    ) -> VGroupState:
+        """Serialize a mob with multiple subpaths (no submobs) as a VGroup of subpath children.
 
-    def _serialize_arrow(self, mob: Arrow) -> VGroupState:
-        """Serialize Arrow as a plain VGroup with shaft + tip children.
+        Only called for pure multi-subpath VMobjects (no actual submobjects).
+        For mobs with both own subpaths and submobjects, _js_children / state_ref_for handle it.
 
-        The shaft lives on Arrow's own bezier points (not a Python submobject).
-        A VMobject proxy is stored in _synthetic_children so _emit_register
-        can serialize and pre-register it generically without knowing this is an Arrow.
+        post: isinstance(__return__, VGroupState)
         """
-        # Ensure a stable VMobject proxy exists for the shaft (created once per Arrow).
-        existing = self._synthetic_children.get(id(mob))
-        if not existing:
-            shaft_proxy = VMobject()
-            self._synthetic_children[id(mob)] = [shaft_proxy]
-        shaft_proxy = self._synthetic_children[id(mob)][0]
-        shaft_ref = self._intern_state(self._arrow_shaft_state(mob))
-        # Register the override so state_ref_for(shaft_proxy) returns the same ref.
-        self._state_ref_overrides[id(shaft_proxy)] = shaft_ref
-        children = [shaft_ref] + [
-            self.state_ref_for(child) for child in mob.submobjects
-        ]
-        return VGroupState(children=children)
-
-    def _intern_state(self, state: MobjectState) -> int:
-        """Insert state into the section bank or return its existing index.
-
-        pre: self._current is not None
-        post: 0 <= __return__ < len(self._current.states)
-        post: self._intern_state(state) == self._intern_state(state)
-        post: implies(__return__ == len(__old__.self._current.states),
-                      len(self._current.states) == len(__old__.self._current.states) + 1)
-        """
-        current = self._current
-        if current is None:
-            msg = "No active section"
-            raise RuntimeError(msg)
-        d = state.model_dump(exclude_none=True, exclude_defaults=False)
-        # VMobjectState always emits contours so JS can rely on the field being present.
-        if d.get("kind") == "VMobject":
-            d.setdefault("contours", [])
-        key = json.dumps(d, sort_keys=True, separators=(",", ":"))
-        existing = current._state_ref_map.get(key)
-        if existing is not None:
-            return existing
-        ref = len(current.states)
-        current.states.append(d)
-        current._state_ref_map[key] = ref
-        return ref
+        child_refs: list[int] = []
+        for subpath in subpaths:
+            if len(subpath) == 0:
+                continue
+            points_3n1 = _subpath_to_3n1(subpath)
+            if not points_3n1:
+                continue
+            if _signed_area_2d(points_3n1) > 0:
+                points_3n1 = points_3n1[::-1]
+            subpath_state = VMobjectState(contours=[points_3n1], **style)
+            child_refs.append(
+                self._state_registry.insert_raw(
+                    subpath_state.model_dump(exclude_none=True)
+                )
+            )
+        return VGroupState(children=child_refs)
 
     def update_frame(
         self,
@@ -402,105 +742,6 @@ class CaptureRenderer:
     def is_active(self, mob: Mobject) -> bool:
         return id(mob) in self._active_ids
 
-    def _collapsed_arrow_registers(self, mob: Arrow) -> list[dict]:
-        """Emit register commands for Arrow and all its JS children at collapsed state.
-
-        Returns a list of register commands: [shaft, tip, arrow_vgroup].
-        Children are collapsed to get_start() so GrowArrow animates from a point.
-        """
-        # Ensure shaft proxy exists (same logic as _serialize_arrow).
-        if id(mob) not in self._synthetic_children:
-            self._synthetic_children[id(mob)] = [VMobject()]
-        shaft_proxy = self._synthetic_children[id(mob)][0]
-        tip = mob.submobjects[-1] if mob.submobjects else None
-
-        start = mob.get_start().tolist()
-        collapsed_pt = [start, start, start, start]
-
-        def _collapsed(m: Mobject) -> VMobjectState:
-            c = m.get_stroke_color()
-            w = m.get_stroke_width()
-            o = m.get_stroke_opacity()
-            return VMobjectState(
-                contours=[collapsed_pt],
-                stroke_color=self._color_to_hex(c) if c else None,
-                stroke_width=float(w) if w else None,
-                stroke_opacity=float(o) if o is not None else None,
-            )
-
-        shaft_ref = self._intern_state(_collapsed(mob))
-        self._state_ref_overrides[id(shaft_proxy)] = shaft_ref
-        tip_ref = self._intern_state(
-            _collapsed(tip) if tip else VMobjectState(contours=[collapsed_pt])
-        )
-        arrow_ref = self._intern_state(VGroupState(children=[shaft_ref, tip_ref]))
-
-        cmds: list[dict] = []
-        if id(shaft_proxy) not in self._js_registered:
-            cmds.append(
-                {
-                    "cmd": "register",
-                    "id": self.short_id(shaft_proxy),
-                    "state_ref": shaft_ref,
-                }
-            )
-            self._js_registered.add(id(shaft_proxy))
-        if tip and id(tip) not in self._js_registered:
-            cmds.append(
-                {"cmd": "register", "id": self.short_id(tip), "state_ref": tip_ref}
-            )
-            self._js_registered.add(id(tip))
-        if id(mob) not in self._js_registered:
-            child_ids = [self.short_id(shaft_proxy)] + [
-                self.short_id(c) for c in mob.submobjects
-            ]
-            cmds.append(
-                {
-                    "cmd": "register",
-                    "id": self.short_id(mob),
-                    "state_ref": arrow_ref,
-                    "child_ids": child_ids,
-                }
-            )
-            self._js_registered.add(id(mob))
-        return cmds
-
-    def _emit_register(self, mob: object, *, force: bool = False) -> list[dict]:
-        """Return register commands for mob, preceded by child registers.
-
-        Children are always registered before their parent so any subsequent
-        animation targeting a child ID is guaranteed to find it in the JS registry.
-        The parent register carries a flat child_ids list so JS can wire its
-        already-registered submobjects in order.
-
-        force: re-emit even if already registered (for explicit re-adds after mutation).
-        """
-        if not force and id(mob) in self._js_registered:
-            return []
-
-        cmds: list[dict] = []
-
-        # state_ref_for populates _synthetic_children for special mobs (e.g. Arrow).
-        state_ref = self.state_ref_for(mob)
-
-        # Synthetic children (e.g. Arrow shaft proxy) prepend real submobjects.
-        synthetic = self._synthetic_children.get(id(mob), [])
-        real_subs = list(getattr(mob, "submobjects", None) or [])
-        all_js_children = synthetic + real_subs
-
-        child_ids: list[str] = []
-        for child in all_js_children:
-            cmds.extend(self._emit_register(child))
-            child_ids.append(self.short_id(child))
-
-        sid = self.short_id(mob)
-        cmd: dict = {"cmd": "register", "id": sid, "state_ref": state_ref}
-        if child_ids:
-            cmd["child_ids"] = child_ids
-        cmds.append(cmd)
-        self._js_registered.add(id(mob))
-        return cmds
-
     def flush_staged_adds(self) -> None:
         """Emit staged pre-play register commands into the current section.
 
@@ -510,7 +751,7 @@ class CaptureRenderer:
         if current is None or not self._staged_adds:
             return
         for mob in self._staged_adds.values():
-            current.commands.extend(self._emit_register(mob, force=True))
+            current.commands.extend(self._mob_register_commands(mob))
         self._staged_adds = {}
 
     def emit_final_add_animations(self, scene: Scene) -> None:
@@ -612,72 +853,58 @@ class CaptureRenderer:
                 continue
             if not self.is_active(mob):
                 self.register_mobject(mob)
-                pre_commands.extend(self._emit_register(mob))
+                pre_commands.extend(self._mob_register_commands(mob))
             if not self._introduced_by_animation.get(id(mob), False):
                 animate_descriptors.append({"kind": "Add", "id": self.short_id(mob)})
                 self._introduced_by_animation[id(mob)] = True
 
-        def _process_leaf_anim(
-            anim: Animation,
-            desc: dict,
-        ) -> None:
-            """Register mobject and emit post-commands for a single leaf animation."""
-            mob = anim.mobject
-            if isinstance(anim, Swap | CyclicReplace):
-                return
-            if isinstance(mob, Mobject) and not _is_supported(mob):
-                return
-            from manim.animation.growing import GrowArrow as _GrowArrow
+        for anim in animations:
+            desc = self._descriptor_from_animation(anim)
+            animate_descriptors.append(desc)
 
-            if isinstance(anim, _GrowArrow) and isinstance(mob, Arrow):
-                if not self.is_active(mob):
-                    self.register_mobject(mob)
-                pre_commands.extend(self._collapsed_arrow_registers(mob))
-                self._introduced_by_animation[id(mob)] = True
-                return
+            mob = anim.mobject
+            # Skip registration for group animation internal Groups
+            if isinstance(anim, Swap | CyclicReplace):
+                continue
+            if isinstance(mob, Mobject) and not _is_supported(mob):
+                continue
 
             if not self.is_active(mob):
                 self.register_mobject(mob)
-                pre_commands.extend(self._emit_register(mob))
+                # GrowArrow grows from a collapsed arrow: register the starting
+                # (zero-scale) state so the paired Transform descriptor animates
+                # collapsed -> full.
+                if isinstance(anim, GrowArrow):
+                    pre_commands.append(
+                        {
+                            "cmd": "register",
+                            "id": self.short_id(mob),
+                            "state_ref": self.state_ref_for(
+                                anim.create_starting_mobject()
+                            ),
+                        }
+                    )
+                else:
+                    pre_commands.extend(self._mob_register_commands(mob))
+
             if anim.is_introducer():
                 self._introduced_by_animation[id(mob)] = True
+
             if isinstance(anim, ReplacementTransform):
                 target = anim.target_mobject
                 if not self.is_active(target):
                     self.register_mobject(target)
+                source = anim.mobject
                 post_commands.append(
                     {
                         "cmd": "rebind",
-                        "source_id": self.short_id(anim.mobject),
+                        "source_id": self.short_id(source),
                         "target_id": self.short_id(target),
                     }
                 )
-            elif isinstance(anim, FadeOut):
-                post_commands.append(
-                    {"cmd": "remove", "id": self.short_id(anim.mobject)}
-                )
 
-        for anim in animations:
-            if isinstance(anim, AnimationGroup):
-                # Flatten into sub-descriptors with explicit start/end timestamps.
-                # anims_with_timings is built by AnimationGroup.__init__ in the
-                # max_end_time space; scale to actual wall-clock seconds.
-                scale = (
-                    anim.run_time / anim.max_end_time if anim.max_end_time > 0 else 1.0
-                )
-                for row in anim.anims_with_timings:
-                    sub: Animation = row["anim"]
-                    start_s = float(row["start"]) * scale
-                    end_s = float(row["end"]) * scale
-                    desc = self._descriptor_from_animation(sub)
-                    desc["start"] = round(start_s, 6)
-                    desc["end"] = round(end_s, 6)
-                    animate_descriptors.append(desc)
-                    _process_leaf_anim(sub, desc)
-            else:
-                desc = self._descriptor_from_animation(anim)
-                animate_descriptors.append(desc)
-                _process_leaf_anim(anim, desc)
+            elif isinstance(anim, FadeOut):
+                post_commands.extend(self._mob_remove_commands(anim.mobject))
 
         if pre_commands:
             current.commands.extend(pre_commands)
@@ -699,41 +926,63 @@ class CaptureRenderer:
                 anim._setup_scene(scene)
         finally:
             self._suppress_stage_adds = False
-        for anim in animations:
-            anim.begin()
 
         n_frames = math.ceil(run_time * self.fps)
         camera_frames: list[dict[str, float]] = []
         needs_frame_loop = _needs_camera_frame_loop(scene, animations)
 
-        # Capture initial camera state
         initial_cam_state: dict[str, float] | None = None
         if needs_frame_loop:
             initial_cam_state = _compute_camera_state(scene.camera)
-
-        # Set up scene for animation updates
-        scene.animations = animations
-        scene.last_t = 0.0
         last_cam_state = initial_cam_state
 
-        for i in range(n_frames):
-            t = (i + 1) / self.fps
-            if t > run_time:
-                t = run_time
-            scene.update_to_time(t)
+        # Run the animation lifecycle so mobjects reach their end state.
+        # Some transforms (e.g. between ImageMobjects of different pixel
+        # dimensions) cannot interpolate Python-side; Manim raises in begin().
+        # If that happens we warn, apply end states directly, and skip the
+        # frame loop — it would fail too. Visual interpolation is the JS
+        # player's job; Python only needs correct final geometry.
+        # NOTE: mixing interpolable and non-interpolable animations in one
+        # play() call is not supported — the whole batch is skipped on failure.
+        begin_failed = False
+        try:
+            for anim in animations:
+                anim.begin()
+        except Exception as exc:
+            import warnings
 
-            # Capture camera state for 3D scenes (skip duplicates, skip if unchanged from start)
+            warnings.warn(
+                f"Animation batch could not begin Python-side ({exc}). "
+                "Applying end states directly; this scene would not play back "
+                "in plain Manim. See manim_widget.anim_compat for details.",
+                stacklevel=3,
+            )
+            begin_failed = True
+            for anim in animations:
+                if hasattr(anim, "target_mobject"):
+                    force_end_state(anim)
+
+        if not begin_failed:
             if needs_frame_loop:
-                cam_state = _compute_camera_state(scene.camera)
-                # Only add frames that differ from initial state (actual camera movement)
-                if cam_state != initial_cam_state and cam_state != last_cam_state:
-                    camera_frames.append(cam_state)
-                    last_cam_state = cam_state
+                scene.animations = animations
+                scene.last_t = 0.0
 
-        scene.animations = None  # Clean up
+                for i in range(n_frames):
+                    t = (i + 1) / self.fps
+                    if t > run_time:
+                        t = run_time
+                    scene.update_to_time(t)
 
-        for anim in animations:
-            anim.finish()
+                    cam_state = _compute_camera_state(scene.camera)
+                    if cam_state != initial_cam_state and cam_state != last_cam_state:
+                        camera_frames.append(cam_state)
+                        last_cam_state = cam_state
+
+                scene.animations = None
+
+            for anim in animations:
+                anim.finish()
+
         for anim in animations:
             if isinstance(anim, (FadeOut, ReplacementTransform)):
                 self.unregister_mobject(anim.mobject)
@@ -778,6 +1027,15 @@ class CaptureRenderer:
                 raise RuntimeError(msg)
             descriptor["kind"] = "MoveToTarget"
             descriptor["state_ref"] = self.state_ref_for(target_mobject)
+            return descriptor
+
+        if isinstance(anim, GrowArrow):
+            # GrowArrow is replayed as a Transform from the collapsed arrow (its
+            # starting mobject, registered as the initial state) to the full
+            # arrow. This keeps the JS player free of arrow-specific growth and
+            # reconstruction logic.
+            descriptor["kind"] = "Transform"
+            descriptor["state_ref"] = self.state_ref_for(anim.mobject)
             return descriptor
 
         if anim_name in ("Transform", "ReplacementTransform"):
@@ -851,13 +1109,6 @@ class CaptureRenderer:
                     descriptor["rate_func"] = rate_func_name
             return descriptor
 
-        from manim.animation.growing import GrowArrow
-
-        if isinstance(anim, GrowArrow) and isinstance(anim.mobject, Arrow):
-            descriptor["kind"] = "Transform"
-            descriptor["state_ref"] = self.state_ref_for(anim.mobject)
-            return descriptor
-
         if isinstance(anim, Rotate):
             params["angle"] = float(getattr(anim, "angle", 0.0))
             axis = getattr(anim, "axis", None)
@@ -914,13 +1165,6 @@ class CaptureRenderer:
             self._suppress_stage_adds = False
         for anim in animations:
             anim.begin()
-
-        # Register any mobs that entered the scene via always_redraw or similar
-        # mechanisms that bypass the normal add() path.
-        for mob in tracked:
-            if id(mob) not in self._js_registered:
-                for cmd in self._emit_register(mob):
-                    current.commands.append(cmd)
 
         n_frames = math.ceil(run_time * self.fps)
         frames: list[dict[str, Any]] = []

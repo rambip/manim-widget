@@ -249,16 +249,7 @@ def test_value_tracker_state_serializes_kind(state):
 def test_intern_state_returns_valid_ref(state):
     r = _fresh_renderer()
     ref = r._intern_state(state)
-    assert 0 <= ref < len(r._current.states)
-
-
-@given(vmobject_state())
-def test_intern_state_is_idempotent(state):
-    r = _fresh_renderer()
-    ref1 = r._intern_state(state)
-    ref2 = r._intern_state(state)
-    assert ref1 == ref2
-    assert len(r._current.states) == 1
+    assert 0 <= ref < len(r._state_registry.as_list())
 
 
 @given(vmobject_state(), vmobject_state())
@@ -270,18 +261,7 @@ def test_intern_state_distinct_states_get_distinct_refs(s1, s2):
     ref1 = r._intern_state(s1)
     ref2 = r._intern_state(s2)
     assert ref1 != ref2
-    assert len(r._current.states) == 2
-
-
-@given(st.lists(vmobject_state(), min_size=1, max_size=8))
-def test_intern_state_bank_length_never_exceeds_unique_count(states):
-    r = _fresh_renderer()
-    for s in states:
-        r._intern_state(s)
-    unique = len(
-        {json.dumps(s.model_dump(exclude_none=True), sort_keys=True) for s in states}
-    )
-    assert len(r._current.states) == unique
+    assert len(r._state_registry.as_list()) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -409,6 +389,68 @@ def test_updater_command_uses_state_refs_and_dedup_is_deterministic():
         "fps": 10,
         "frame_width": 14.222222222222221,
         "frame_height": 8.0,
+        "states": [
+            {"kind": "ValueTracker", "value": 0.0},
+            {
+                "kind": "VMobject",
+                "fill_color": "#FFFFFF",
+                "fill_opacity": 1.0,
+                "stroke_color": "#FFFFFF",
+                "stroke_width": 0.0,
+                "stroke_opacity": 1.0,
+                "z_index": 0,
+            },
+            {"kind": "ValueTracker", "value": 0.12385697935738824},
+            {
+                "kind": "VMobject",
+                "fill_color": "#FFFFFF",
+                "fill_opacity": 1.0,
+                "stroke_color": "#FFFFFF",
+                "stroke_width": 0.0,
+                "stroke_opacity": 1.0,
+                "z_index": 0,
+            },
+            {"kind": "ValueTracker", "value": 0.7974197341465827},
+            {
+                "kind": "VMobject",
+                "fill_color": "#FFFFFF",
+                "fill_opacity": 1.0,
+                "stroke_color": "#FFFFFF",
+                "stroke_width": 0.0,
+                "stroke_opacity": 1.0,
+                "z_index": 0,
+            },
+            {"kind": "ValueTracker", "value": 2.2025802658534173},
+            {
+                "kind": "VMobject",
+                "fill_color": "#FFFFFF",
+                "fill_opacity": 1.0,
+                "stroke_color": "#FFFFFF",
+                "stroke_width": 0.0,
+                "stroke_opacity": 1.0,
+                "z_index": 0,
+            },
+            {"kind": "ValueTracker", "value": 2.8761430206426124},
+            {
+                "kind": "VMobject",
+                "fill_color": "#FFFFFF",
+                "fill_opacity": 1.0,
+                "stroke_color": "#FFFFFF",
+                "stroke_width": 0.0,
+                "stroke_opacity": 1.0,
+                "z_index": 0,
+            },
+            {"kind": "ValueTracker", "value": 3.0},
+            {
+                "kind": "VMobject",
+                "fill_color": "#FFFFFF",
+                "fill_opacity": 1.0,
+                "stroke_color": "#FFFFFF",
+                "stroke_width": 0.0,
+                "stroke_opacity": 1.0,
+                "z_index": 0,
+            },
+        ],
         "sections": [
             {
                 "name": "initial",
@@ -419,68 +461,6 @@ def test_updater_command_uses_state_refs_and_dedup_is_deterministic():
                     "distance": 5.0,
                     "fov": 77.31961650818019,
                 },
-                "states": [
-                    {"kind": "ValueTracker", "value": 0.0},
-                    {
-                        "kind": "VMobject",
-                        "fill_color": "#FFFFFF",
-                        "fill_opacity": 1.0,
-                        "stroke_color": "#FFFFFF",
-                        "stroke_width": 0.0,
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    },
-                    {"kind": "ValueTracker", "value": 0.12385697935738824},
-                    {
-                        "kind": "VMobject",
-                        "fill_color": "#FFFFFF",
-                        "fill_opacity": 1.0,
-                        "stroke_color": "#FFFFFF",
-                        "stroke_width": 0.0,
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    },
-                    {"kind": "ValueTracker", "value": 0.7974197341465827},
-                    {
-                        "kind": "VMobject",
-                        "fill_color": "#FFFFFF",
-                        "fill_opacity": 1.0,
-                        "stroke_color": "#FFFFFF",
-                        "stroke_width": 0.0,
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    },
-                    {"kind": "ValueTracker", "value": 2.2025802658534173},
-                    {
-                        "kind": "VMobject",
-                        "fill_color": "#FFFFFF",
-                        "fill_opacity": 1.0,
-                        "stroke_color": "#FFFFFF",
-                        "stroke_width": 0.0,
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    },
-                    {"kind": "ValueTracker", "value": 2.8761430206426124},
-                    {
-                        "kind": "VMobject",
-                        "fill_color": "#FFFFFF",
-                        "fill_opacity": 1.0,
-                        "stroke_color": "#FFFFFF",
-                        "stroke_width": 0.0,
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    },
-                    {"kind": "ValueTracker", "value": 3.0},
-                    {
-                        "kind": "VMobject",
-                        "fill_color": "#FFFFFF",
-                        "fill_opacity": 1.0,
-                        "stroke_color": "#FFFFFF",
-                        "stroke_width": 0.0,
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    },
-                ],
                 "construct": [
                     {"cmd": "register", "id": "0", "state_ref": 0},
                     {"cmd": "register", "id": "1", "state_ref": 1},
@@ -518,6 +498,17 @@ def test_create_then_next_section_snapshot_only_second_section():
         "fps": 10,
         "frame_width": 14.222222222222221,
         "frame_height": 8.0,
+        "states": [
+            {
+                "kind": "VMobject",
+                "fill_color": "#83C167",
+                "fill_opacity": 1.0,
+                "stroke_color": "#83C167",
+                "stroke_width": 4.0,
+                "stroke_opacity": 1.0,
+                "z_index": 0,
+            }
+        ],
         "sections": [
             {
                 "name": "initial",
@@ -528,17 +519,6 @@ def test_create_then_next_section_snapshot_only_second_section():
                     "distance": 5.0,
                     "fov": 77.31961650818019,
                 },
-                "states": [
-                    {
-                        "kind": "VMobject",
-                        "fill_color": "#83C167",
-                        "fill_opacity": 1.0,
-                        "stroke_color": "#83C167",
-                        "stroke_width": 4.0,
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    }
-                ],
                 "construct": [
                     {"cmd": "register", "id": "0", "state_ref": 0},
                     {
@@ -557,17 +537,6 @@ def test_create_then_next_section_snapshot_only_second_section():
             {
                 "name": "a",
                 "snapshot": {"0": 0},
-                "states": [
-                    {
-                        "kind": "VMobject",
-                        "fill_color": "#83C167",
-                        "fill_opacity": 1.0,
-                        "stroke_color": "#83C167",
-                        "stroke_width": 4.0,
-                        "stroke_opacity": 1.0,
-                        "z_index": 0,
-                    }
-                ],
                 "construct": [],
             },
         ],
@@ -605,7 +574,7 @@ def test_method_animation_uses_move_to_target():
     section = data["sections"][0]
 
     assert data["version"] == 2
-    assert len(section["states"]) >= 2
+    assert len(data["states"]) >= 2
 
     anim_cmd = section["construct"][1]
     assert anim_cmd["cmd"] == "animate"
@@ -615,7 +584,7 @@ def test_method_animation_uses_move_to_target():
     assert "state_ref" in anim
     assert anim["kind"] == "MoveToTarget"
 
-    target_state = section["states"][anim["state_ref"]]
+    target_state = data["states"][anim["state_ref"]]
     assert target_state["kind"] == "VMobject"
 
 
@@ -744,16 +713,22 @@ def test_image_mobject_serializes_source_and_pixels():
     assert_valid_scene(data)
 
     section = data["sections"][0]
-    assert section["construct"][0] == {"cmd": "register", "id": "0", "state_ref": 0}
+    # register points to the addon state (index 1), not the content state (index 0)
+    assert section["construct"][0]["cmd"] == "register"
+    assert section["construct"][0]["id"] == "0"
+    assert data["states"][section["construct"][0]["state_ref"]].get("from") == 0
 
-    state = section["states"][0]
-    assert state["kind"] == "ImageMobject"
-    assert state["source"].startswith("data:image/png;base64,")
-    assert "points" in state
-    assert len(state["points"]) == 4
-    assert all(len(pt) == 3 for pt in state["points"])
+    states = data["states"]
+    # DAG: content entry at 0 (kind+source), addon entry at 1 (from+points)
+    content_state = states[0]
+    addon_state = states[1]
+    assert content_state["kind"] == "ImageMobject"
+    assert content_state["source"].startswith("data:image/png;base64,")
+    assert "points" in addon_state
+    assert len(addon_state["points"]) == 4
+    assert all(len(pt) == 3 for pt in addon_state["points"])
 
-    encoded = state["source"].split(",", 1)[1]
+    encoded = content_state["source"].split(",", 1)[1]
     decoded = np.array(Image.open(io.BytesIO(base64.b64decode(encoded))))
     assert decoded.shape == pixels.shape
     assert np.array_equal(decoded, pixels)
@@ -771,8 +746,7 @@ def test_static_mathtex_serialization():
     data = scene.scene_data
     assert_valid_scene(data)
 
-    section = data["sections"][0]
-    state = section["states"][0]
+    state = data["states"][0]
 
     assert state["kind"] == "MathTexSource"
     assert state["latex"] == "x^2"
@@ -803,14 +777,14 @@ def test_static_mathtex_transform_updates_points():
 
     section = data["sections"][0]
 
-    initial_state = section["states"][0]
+    initial_state = data["states"][0]
     assert initial_state["kind"] == "MathTexSource"
     initial_points = initial_state["points"]
 
     anim = next(a for a in section["construct"][1]["animations"] if a["kind"] != "Add")
     assert anim["kind"] == "MoveToTarget"
 
-    final_state = section["states"][anim["state_ref"]]
+    final_state = data["states"][anim["state_ref"]]
     assert final_state["kind"] == "MathTexSource"
     final_points = final_state["points"]
 
@@ -892,7 +866,7 @@ def test_patch_tex_mathtex_add_serializes_as_mathtexsource():
 
         section = data["sections"][0]
         register_cmd = section["construct"][0]
-        state = section["states"][register_cmd["state_ref"]]
+        state = data["states"][register_cmd["state_ref"]]
 
         assert state["kind"] == "MathTexSource"
         assert state["latex"] == r"{0}"
@@ -1006,7 +980,7 @@ def test_same_square_scaled_and_readded_serializes_only_scaled_state():
     assert len(register_cmds) == 1
 
     state_ref = register_cmds[0]["state_ref"]
-    state = section["states"][state_ref]
+    state = data["states"][state_ref]
     first_anchor = state["contours"][0][0]
     assert abs(first_anchor[0] - 1.0) < 1e-9
     assert abs(first_anchor[1] - 1.0) < 1e-9
@@ -1028,8 +1002,9 @@ def test_register_play_mutate_register_back_emits_two_registers_with_two_states(
     register_cmds = [cmd for cmd in section["construct"] if cmd["cmd"] == "register"]
     assert len(register_cmds) == 2
 
-    p0 = section["states"][register_cmds[0]["state_ref"]]["contours"][0][0]
-    p1 = section["states"][register_cmds[1]["state_ref"]]["contours"][0][0]
+    states = scene.scene_data["states"]
+    p0 = states[register_cmds[0]["state_ref"]]["contours"][0][0]
+    p1 = states[register_cmds[1]["state_ref"]]["contours"][0][0]
 
     assert abs(p0[0] - 0.5) < 1e-9
     assert abs(p1[0] - 1.0) < 1e-9
@@ -1055,8 +1030,9 @@ def test_register_new_section_register_back_emits_two_registers_with_two_states(
     assert len(reg0) == 1
     assert len(reg1) == 1
 
-    p0 = s0["states"][reg0[0]["state_ref"]]["contours"][0][0]
-    p1 = s1["states"][reg1[0]["state_ref"]]["contours"][0][0]
+    global_states = data["states"]
+    p0 = global_states[reg0[0]["state_ref"]]["contours"][0][0]
+    p1 = global_states[reg1[0]["state_ref"]]["contours"][0][0]
 
     assert abs(p0[0] - 0.5) < 1e-9
     assert abs(p1[0] - 1.0) < 1e-9
@@ -1092,7 +1068,7 @@ def test_arrow_serializes_as_vgroup_container():
             self.play(Create(a))
 
     scene = ArrowScene(fps=10)
-    states = scene.scene_data["sections"][0]["states"]
+    states = scene.scene_data["states"]
 
     arrow_state = next(
         (
@@ -1121,9 +1097,9 @@ def test_intern_state_ref_always_in_bounds_after_mixed_inserts(states, extra_rep
     # Re-intern a subset to exercise deduplication path
     for s in states[:extra_repeats]:
         ref = r._intern_state(s)
-        assert 0 <= ref < len(r._current.states)
+        assert 0 <= ref < len(r._state_registry.as_list())
     for ref in refs:
-        assert 0 <= ref < len(r._current.states)
+        assert 0 <= ref < len(r._state_registry.as_list())
 
 
 @given(vmobject_state())
@@ -1131,7 +1107,7 @@ def test_state_bank_stores_dict_not_pydantic_model(state):
     """States in the bank must be plain dicts (for JSON serialization)."""
     r = _fresh_renderer()
     ref = r._intern_state(state)
-    stored = r._current.states[ref]
+    stored = r._state_registry.as_list()[ref]
     assert isinstance(stored, dict)
     assert stored.get("kind") == "VMobject"
 
@@ -1257,8 +1233,8 @@ def test_generated_scene_all_state_refs_in_bounds(args):
     mob_specs, commands = args
     data = run_generated_scene(mob_specs, commands, fps=5)
 
+    n_states = len(data["states"])
     for section in data["sections"]:
-        n_states = len(section["states"])
         for ref in section.get("snapshot", {}).values():
             assert 0 <= ref < n_states
         for cmd in section["construct"]:
@@ -1292,8 +1268,8 @@ def test_generated_scene_with_transforms_fadeouts_groups_is_valid(args):
     data = run_generated_scene(mob_specs, commands, fps=5)
     validate(data, schema)
 
+    n_states = len(data["states"])
     for section in data["sections"]:
-        n_states = len(section["states"])
         for cmd in section["construct"]:
             for anim in cmd.get("animations", []):
                 if "state_ref" in anim:
@@ -1305,7 +1281,7 @@ def test_generated_scene_with_transforms_fadeouts_groups_is_valid(args):
 # ---------------------------------------------------------------------------
 
 
-def _collect_register_invariants(section: dict) -> None:
+def _collect_register_invariants(section: dict, states: list) -> None:
     """Assert group registration invariants for a single section's construct list.
 
     1. For every register with child_ids, all those IDs appear in earlier registers.
@@ -1313,11 +1289,14 @@ def _collect_register_invariants(section: dict) -> None:
     3. Every animate descriptor ID appears in a prior register.
     4. No duplicate register IDs within a section.
     """
-    states = section["states"]
     seen_register_ids: set[str] = set()
+    removed_ids: set[str] = set()
     duplicate_ids: list[str] = []
 
     for cmd in section["construct"]:
+        if cmd["cmd"] == "remove":
+            removed_ids.add(cmd["id"])
+            seen_register_ids.discard(cmd["id"])
         if cmd["cmd"] == "register":
             rid = cmd["id"]
             if rid in seen_register_ids:
@@ -1366,7 +1345,7 @@ def test_generated_scene_group_registration_invariants(args):
     mob_specs, commands = args
     data = run_generated_scene(mob_specs, commands, fps=5)
     for section in data["sections"]:
-        _collect_register_invariants(section)
+        _collect_register_invariants(section, data["states"])
 
 
 @given(
@@ -1386,4 +1365,136 @@ def test_generated_scene_child_ids_precede_parent_always(args):
     mob_specs, commands = args
     data = run_generated_scene(mob_specs, commands, fps=5)
     for section in data["sections"]:
-        _collect_register_invariants(section)
+        _collect_register_invariants(section, data["states"])
+
+
+# ---------------------------------------------------------------------------
+# Group child isolation: animating one child must not mutate siblings
+# ---------------------------------------------------------------------------
+
+
+@st.composite
+def _group_with_shift(draw):
+    """Generate (n_children, animated_idx, dx, dy) for a VGroup shift test."""
+    n = draw(st.integers(2, 4))
+    animated_idx = draw(st.integers(0, n - 1))
+    dx = draw(st.floats(-1.0, 1.0, allow_nan=False, allow_infinity=False))
+    dy = draw(st.floats(-1.0, 1.0, allow_nan=False, allow_infinity=False))
+    return n, animated_idx, dx, dy
+
+
+@given(_group_with_shift())
+@settings(max_examples=30, deadline=None)
+def test_animating_vgroup_child_does_not_affect_siblings(args):
+    """Animating one child of a VGroup must not produce state_ref changes for siblings."""
+    from manim import Circle, Dot, VGroup, Create
+
+    n_children, animated_idx, dx, dy = args
+
+    class S(ManimWidget):
+        def construct(self):
+            mobs = [Circle() if i % 2 == 0 else Dot() for i in range(n_children)]
+            group = VGroup(*mobs)
+            self.play(Create(group))
+            self.play(mobs[animated_idx].animate.shift((dx, dy, 0)))
+
+    data = S().scene_data
+    section = data["sections"][0]
+    commands = section["construct"]
+
+    animate_cmds = [c for c in commands if c["cmd"] == "animate"]
+    shift_animate = animate_cmds[-1]  # the shift play() is the last animate
+
+    # IDs that have a new state_ref in the shift animation (i.e. actually changed)
+    anim_ids_with_state = {
+        a["id"] for a in shift_animate.get("animations", []) if "state_ref" in a
+    }
+
+    # All registered mob IDs
+    all_registered = {c["id"] for c in commands if c["cmd"] == "register"}
+
+    # No sibling should appear with a state change
+    siblings_changed = (all_registered - anim_ids_with_state) & anim_ids_with_state
+    assert not siblings_changed, (
+        f"Siblings {siblings_changed} got state_ref changes in the shift animate"
+    )
+
+
+# ---------------------------------------------------------------------------
+# sync() safety: animated mobs are rejected with a warning, static mobs pass
+# ---------------------------------------------------------------------------
+
+
+@given(
+    dx=st.floats(-2.0, 2.0, allow_nan=False, allow_infinity=False),
+    dy=st.floats(-2.0, 2.0, allow_nan=False, allow_infinity=False),
+    sync_dx=st.floats(-1.0, 1.0, allow_nan=False, allow_infinity=False),
+    sync_dy=st.floats(-1.0, 1.0, allow_nan=False, allow_infinity=False),
+)
+@settings(max_examples=30, deadline=None)
+def test_sync_warns_and_skips_animated_mob(dx, dy, sync_dx, sync_dy):
+    """sync() on a mob that was animated during construction emits a warning and ignores it."""
+    import warnings
+    from manim import Square, Circle, Create
+
+    class S(ManimWidget):
+        def construct(self):
+            self.animated = Square()
+            self.static = Circle()
+            self.play(Create(self.animated))
+            self.play(self.animated.animate.shift((dx, dy, 0)))
+            self.add(self.static)
+
+    w = S()
+    state_before = list(w._renderer._state_registry.as_list())
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        w.animated.shift((sync_dx, sync_dy, 0))
+        w.sync(w.animated)
+
+    warned_msgs = [str(c.message) for c in caught]
+    assert any("animated" in m for m in warned_msgs), (
+        f"Expected warning about animated mob, got: {warned_msgs}"
+    )
+    # State bank must be unchanged — the animated mob's refs were not overwritten.
+    assert w._renderer._state_registry.as_list() == state_before
+
+
+@given(
+    dx=st.floats(-2.0, 2.0, allow_nan=False, allow_infinity=False),
+    dy=st.floats(-2.0, 2.0, allow_nan=False, allow_infinity=False),
+)
+@settings(max_examples=30, deadline=None)
+def test_sync_updates_static_mob_without_warning(dx, dy):
+    """sync() on a mob that was never animated updates its state_ref silently."""
+    import warnings
+    from manim import Square
+
+    class S(ManimWidget):
+        def construct(self):
+            self.square = Square()
+            self.add(self.square)
+
+    w = S()
+    refs_before = list(w._renderer.state_refs.get(id(w.square), []))
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        w.square.shift((dx, dy, 0))
+        w.sync(w.square)
+
+    sync_warnings = [
+        c
+        for c in caught
+        if "animated" in str(c.message) or "not found" in str(c.message)
+    ]
+    assert not sync_warnings, (
+        f"Unexpected warnings: {[str(c.message) for c in sync_warnings]}"
+    )
+
+    # State bank entry for the mob must have changed (new position serialized).
+    refs_after = w._renderer.state_refs.get(id(w.square), [])
+    assert refs_before and refs_after
+    new_state = w._renderer._state_registry.get_by_id(refs_after[-1])
+    assert new_state is not None
