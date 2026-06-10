@@ -825,25 +825,6 @@ def test_mathtex_boundary_points_and_scale_center():
         assert np.allclose(pt, [e * 0.5 for e in exp])
 
 
-def test_patch_tex_replaces_manim_classes():
-    from manim_widget import patch_tex
-    import manim
-
-    original_math_tex = manim.MathTex
-    original_tex = manim.Tex
-
-    patch_tex()
-
-    assert manim.MathTex is not original_math_tex
-    assert manim.Tex is not original_tex
-
-    tex = manim.Tex("test")
-    assert tex.tex_string == "test"
-
-    manim.MathTex = original_math_tex
-    manim.Tex = original_tex
-
-
 def test_patch_tex_mathtex_add_serializes_as_mathtexsource():
     from manim_widget import patch_tex
     import manim

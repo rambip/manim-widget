@@ -25,5 +25,11 @@ def _():
     return
 
 
+def test(runner):
+    r = runner.check(CyclicReplaceDemo)
+    r.assert_ok()
+    assert len(r.scene_ids(0)) == 3
+
+
 if __name__ == "__main__":
     app.run()

@@ -103,5 +103,9 @@ def _():
     return
 
 
+def test(runner):
+    runner.check(ArrowDance).assert_ok()
+
+
 if __name__ == "__main__":
     app.run()

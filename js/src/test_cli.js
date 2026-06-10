@@ -82,12 +82,11 @@ function serializeRuntimeState(registry) {
       return seen.get(mob);
     }
 
-    const ctorName = mob.constructor?.name;
     const opacity = typeof mob.opacity === "number" ? mob.opacity : 1;
     const zIndex = typeof mob.zIndex === "number" ? mob.zIndex : undefined;
 
     let state;
-    if (ctorName === "VGroup" || ctorName === "Arrow") {
+    if (mob instanceof VGroup) {
       const children = Array.isArray(mob.submobjects)
         ? mob.submobjects.map(serializeMobject).filter((ref) => ref !== null)
         : [];
@@ -100,6 +99,7 @@ function serializeRuntimeState(registry) {
         state.z_index = zIndex;
       }
     } else {
+      const ctorName = mob.constructor?.name;
       const kind = VMOBJECT_KINDS.has(ctorName) ? ctorName : "VMobject";
       const points = typeof mob.getPoints === "function" ? normalizePoints(mob.getPoints()) : [];
 

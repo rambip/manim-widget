@@ -33,8 +33,8 @@ uv run pytest -q tests/test_widget.py
 # Slow (~1 min) — run before opening a PR
 uv run pytest -q tests/test_js_integration.py
 
-# Manual JS smoke test (use --conditions source to keep readable class names)
-cd js && bun run cli --conditions source < ../spec.json
+# Manual JS smoke test (add MANIM_WIDGET_JS_DEBUG=1 for source stack traces)
+python tests/js_runner.py --json < spec.json
 ```
 
 ---

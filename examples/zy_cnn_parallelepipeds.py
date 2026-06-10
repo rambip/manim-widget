@@ -128,5 +128,9 @@ def _():
     return
 
 
+def test(runner):
+    runner.check(ZYImageCNN).assert_ok()
+
+
 if __name__ == "__main__":
     app.run()

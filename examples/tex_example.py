@@ -33,5 +33,11 @@ def _():
     return
 
 
+def test(runner):
+    import pytest
+
+    pytest.skip("requires LaTeX")
+
+
 if __name__ == "__main__":
     app.run()

@@ -115,7 +115,7 @@ Families: `SimpleAnimation`, `TransformAnimation` (`Transform`, `MoveToTarget`),
 - Point arrays that are not `3n+1` will raise a JS-side playback error by design.
 - `_applyState` must apply points based on capability (`setPoints3D`) rather than `state.kind === "VMobject"`. Arrow/VGroup restore creates a body VMobject from VGroup state points; kind-gating drops body points and renders only tips.
 - Headless JS tests (`happy-dom`) can hang if image loading promises never resolve. Keep image-finalization logic non-blocking (timeouts/fallbacks) in `player.js`.
-- Bun/minified bundles can mangle `constructor.name` (e.g., `VGroup`→`e`). CLI integration tests should run Bun with `--conditions source` to keep deterministic end-state kind detection in `js/src/test_cli.js`.
+- `JSRunner` pre-builds `test_cli.js` into `js/node_modules/.cache/manim-widget-test/` once per session (typia baked in). Set `MANIM_WIDGET_JS_DEBUG=1` to skip the bundle and run against TypeScript source for readable stack traces.
 - Renderer command emission should prefer behavior/animation semantics over concrete class checks. Class-targeting can miss valid intro-animation mobjects (e.g., non-VMobject types).
 - Player ordering for textured/async mobjects matters: apply serialized geometry/state mutations before `scene.add(...)`. Mutating after add may only change logical state (`bbox`, `scaleVector`) without immediate visible sync in `manim-web` async render paths (e.g., `MathTexImage`).
 

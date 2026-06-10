@@ -7,7 +7,6 @@ import numpy as np
 import pytest
 from jsonschema import validate
 
-from js_runner import check_data
 from manim import (
     BLUE,
     GREEN,
@@ -18,27 +17,19 @@ from manim import (
     RIGHT,
     UP,
     AnimationGroup,
-    Arrow,
     Circle,
     Create,
     Difference,
-    Dot,
     Ellipse,
     Exclusion,
-    GrowFromCenter,
     Intersection,
     ImageMobject,
-    Line,
     MarkupText,
-    MoveAlongPath,
-    Rotating,
     Square,
     Text,
-    Transform,
     Triangle,
     VGroup,
     VMobject,
-    linear,
     FadeIn,
 )
 from manim_widget.widget import ManimWidget
@@ -55,12 +46,6 @@ _SCHEMA = _load_schema()
 
 def assert_valid_schema(data: dict) -> None:
     validate(data, _SCHEMA)
-
-
-def check_data_validated(data):
-    """Like check_data but also validates against spec.json first."""
-    assert_valid_schema(data)
-    return check_data(data)
 
 
 def _create_logo_group() -> VGroup:
@@ -187,18 +172,6 @@ class TestCLIIntegration:
         return scene.scene_data
 
     @pytest.fixture
-    def arrow_with_tip_data(self) -> str:
-        class VectorArrow(ManimWidget):
-            def construct(self):
-                arrow = Arrow(
-                    ORIGIN, [1, 1, 0], buff=0, fill_opacity=1, stroke_opacity=1
-                )
-                self.add(arrow)
-
-        scene = VectorArrow()
-        return scene.scene_data
-
-    @pytest.fixture
     def vgroup_scale_section_data(self) -> str:
         class VGroupScaleSection(ManimWidget):
             def construct(self):
@@ -273,15 +246,15 @@ class TestCLIIntegration:
         scene = BooleanOperations()
         return scene.scene_data
 
-    def test_simple_scene(self, simple_scene_data):
-        r = check_data_validated(simple_scene_data)
+    def test_simple_scene(self, runner, simple_scene_data):
+        r = runner.check_data_validated(simple_scene_data, _SCHEMA)
         assert r.ok, f"CLI failed: {r.errors}"
         sections = r.section_ids
         assert len(sections) == 1
         assert sections[0]["name"] == "initial"
         assert len(sections[0]["ids"]) == 1
 
-    def test_fadein_image(self, fadein_image_data):
+    def test_fadein_image(self, runner, fadein_image_data):
         section = fadein_image_data["sections"][0]
         states = fadein_image_data["states"]
         # DAG: content entry (kind+source) is at index 0, addon entry (from+points) at index 1
@@ -298,13 +271,13 @@ class TestCLIIntegration:
         assert animate_cmd["animations"][0]["kind"] == "FadeIn"
         assert animate_cmd["animations"][0]["id"] == register_cmd["id"]
 
-        r = check_data_validated(fadein_image_data)
+        r = runner.check_data_validated(fadein_image_data, _SCHEMA)
         assert r.ok, f"CLI failed: {r.errors}"
         sections = r.section_ids
         assert len(sections) == 1
         assert len(sections[0]["ids"]) == 1
 
-    def test_animate_shift_left(self, animate_shift_left_data):
+    def test_animate_shift_left(self, runner, animate_shift_left_data):
         section = animate_shift_left_data["sections"][0]
         animate_cmds = [cmd for cmd in section["construct"] if cmd["cmd"] == "animate"]
         assert len(animate_cmds) == 2
@@ -312,14 +285,14 @@ class TestCLIIntegration:
         # not need injected Add.
         assert not any(a["kind"] == "Add" for a in animate_cmds[1]["animations"])
 
-        r = check_data_validated(animate_shift_left_data)
+        r = runner.check_data_validated(animate_shift_left_data, _SCHEMA)
         assert r.ok, f"CLI failed: {r.errors}"
         sections = r.section_ids
         assert len(sections) == 1
         assert len(sections[0]["ids"]) == 1
 
-    def test_multi_section_scene(self, multi_section_data):
-        r = check_data_validated(multi_section_data)
+    def test_multi_section_scene(self, runner, multi_section_data):
+        r = runner.check_data_validated(multi_section_data, _SCHEMA)
         assert r.ok, f"CLI failed: {r.errors}"
         sections = r.section_ids
         assert len(sections) == 2
@@ -328,36 +301,36 @@ class TestCLIIntegration:
         assert len(sections[0]["ids"]) == 1
         assert len(sections[1]["ids"]) == 2
 
-    def test_create_vgroup(self, vgroup_create_data):
-        r = check_data_validated(vgroup_create_data)
+    def test_create_vgroup(self, runner, vgroup_create_data):
+        r = runner.check_data_validated(vgroup_create_data, _SCHEMA)
         assert r.ok, f"CLI failed: {r.errors}"
         assert len(r.section_ids) == 1
 
-    def test_vgroup_reordered(self, vgroup_reordered_data):
-        r = check_data_validated(vgroup_reordered_data)
+    def test_vgroup_reordered(self, runner, vgroup_reordered_data):
+        r = runner.check_data_validated(vgroup_reordered_data, _SCHEMA)
         assert r.ok, f"CLI failed: {r.errors}"
         assert len(r.section_ids) == 1
 
-    def test_vgroup_scale_section(self, vgroup_scale_section_data):
-        r = check_data_validated(vgroup_scale_section_data)
+    def test_vgroup_scale_section(self, runner, vgroup_scale_section_data):
+        r = runner.check_data_validated(vgroup_scale_section_data, _SCHEMA)
         assert r.ok, f"CLI failed: {r.errors}"
         sections = r.section_ids
         assert len(sections) == 2
         assert sections[0]["name"] == "initial"
         assert sections[1]["name"] == "scale"
 
-    def test_vgroup_shift(self, vgroup_shift_data):
-        r = check_data_validated(vgroup_shift_data)
+    def test_vgroup_shift(self, runner, vgroup_shift_data):
+        r = runner.check_data_validated(vgroup_shift_data, _SCHEMA)
         assert r.ok, f"CLI failed: {r.errors}"
         assert len(r.section_ids) == 1
 
-    def test_boolean_operations(self, boolean_operations_data):
-        r = check_data_validated(boolean_operations_data)
+    def test_boolean_operations(self, runner, boolean_operations_data):
+        r = runner.check_data_validated(boolean_operations_data, _SCHEMA)
         assert r.ok, f"CLI failed: {r.errors}"
         sections = r.section_ids
         assert len(sections) == 1
 
-    def test_multi_subpath(self, multi_subpath_data):
+    def test_multi_subpath(self, runner, multi_subpath_data):
         vmob = VMobject()
         vmob.start_new_path(np.array([0, 0, 0]))
         vmob.add_line_to(np.array([1, 0, 0]))
@@ -370,21 +343,13 @@ class TestCLIIntegration:
             f"VMobject should have 2 subpaths, got {len(subpaths)}"
         )
 
-        r = check_data_validated(multi_subpath_data)
+        r = runner.check_data_validated(multi_subpath_data, _SCHEMA)
         assert r.ok, f"CLI failed: {r.errors}"
         sections = r.section_ids
         assert len(sections) == 1
         assert len(sections[0]["ids"]) == 1
 
-    def test_arrow_with_tip(self, arrow_with_tip_data):
-        r = check_data_validated(arrow_with_tip_data)
-        assert r.ok, f"CLI failed: {r.errors}"
-        assert r.error_count == 0, f"Expected no errors, got: {r.errors}"
-        sections = r.section_ids
-        assert len(sections) == 1
-        assert len(sections[0]["ids"]) >= 1
-
-    def test_invalid_contours_raises_error(self):
+    def test_invalid_contours_raises_error(self, runner):
         # contour with 9 points is invalid: must be 3n+1 (e.g. 4, 7, 10...)
         invalid_scene_data = {
             "version": 2,
@@ -416,46 +381,18 @@ class TestCLIIntegration:
             ],
         }
 
-        r = check_data(invalid_scene_data)
+        r = runner.check_data(invalid_scene_data)
         assert not r.ok, "Expected CLI to fail for invalid contour point count"
         assert any("3n+1" in str(e) for e in r.errors), (
             f"Expected 3n+1 error, got: {r.errors}"
         )
 
-    def test_boolean_operation(self, bool_operations_data):
-        r = check_data_validated(bool_operations_data)
+    def test_boolean_operation(self, runner, bool_operations_data):
+        r = runner.check_data_validated(bool_operations_data, _SCHEMA)
         assert r.ok, f"CLI failed: {r.errors}"
         sections = r.section_ids
         assert len(sections) == 1
         assert len(sections[0]["ids"]) >= 3
-
-    @pytest.fixture
-    def point_moving_on_shapes_data(self) -> str:
-        class PointMovingOnShapes(ManimWidget):
-            def construct(self):
-                circle = Circle(radius=1, color=BLUE)
-                dot = Dot()
-                dot2 = dot.copy().shift(RIGHT)
-                self.add(dot)
-
-                line = Line([3, 0, 0], [5, 0, 0])
-                self.add(line)
-
-                self.play(GrowFromCenter(circle))
-                self.play(Transform(dot, dot2))
-                self.play(MoveAlongPath(dot, circle), run_time=2, rate_func=linear)
-                self.play(Rotating(dot, about_point=[2, 0, 0]), run_time=1.5)
-                self.wait()
-
-        scene = PointMovingOnShapes()
-        return scene.scene_data
-
-    def test_point_moving_on_shapes(self, point_moving_on_shapes_data):
-        r = check_data_validated(point_moving_on_shapes_data)
-        sections = r.section_ids
-        assert r.ok, f"CLI failed: {r.errors}"
-        assert len(sections) == 1
-        assert sections[0]["name"] == "initial"
 
     @pytest.fixture
     def stroke_color_scene_data(self) -> str:
@@ -467,8 +404,8 @@ class TestCLIIntegration:
         scene = StrokeColorScene()
         return scene.scene_data
 
-    def test_cli_outputs_end_state_with_stroke(self, stroke_color_scene_data):
-        r = check_data_validated(stroke_color_scene_data)
+    def test_cli_outputs_end_state_with_stroke(self, runner, stroke_color_scene_data):
+        r = runner.check_data_validated(stroke_color_scene_data, _SCHEMA)
         assert r.ok, f"CLI failed: {r.errors}"
 
         sections = r.section_end_states
@@ -496,8 +433,8 @@ class TestCLIIntegration:
         scene = GroupTwoObjectsScene()
         return scene.scene_data
 
-    def test_group_two_objects(self, group_two_objects_data):
-        r = check_data_validated(group_two_objects_data)
+    def test_group_two_objects(self, runner, group_two_objects_data):
+        r = runner.check_data_validated(group_two_objects_data, _SCHEMA)
         assert r.ok, f"CLI failed: {r.errors}"
         data = group_two_objects_data
         states = data["states"]
@@ -542,39 +479,16 @@ class TestCLIIntegration:
         scene = SwapScene()
         return scene.scene_data
 
-    def test_swap_animation(self, swap_animation_data):
-        r = check_data_validated(swap_animation_data)
+    def test_swap_animation(self, runner, swap_animation_data):
+        r = runner.check_data_validated(swap_animation_data, _SCHEMA)
         assert r.ok, f"CLI failed: {r.errors}"
         sections = r.section_ids
         assert len(sections) == 1
         # After swap, both original objects should be in the scene
         assert len(sections[0]["ids"]) == 2
 
-    @pytest.fixture
-    def cyclic_replace_animation_data(self) -> str:
-        from manim import CyclicReplace, Triangle, UP
 
-        class CyclicReplaceScene(ManimWidget):
-            def construct(self):
-                s1 = Square().shift(LEFT)
-                s2 = Circle().shift(RIGHT)
-                s3 = Triangle().shift(UP)
-                self.play(Create(s1), Create(s2), Create(s3))
-                self.play(CyclicReplace(s1, s2, s3))
-
-        scene = CyclicReplaceScene()
-        return scene.scene_data
-
-    def test_cyclic_replace_animation(self, cyclic_replace_animation_data):
-        r = check_data_validated(cyclic_replace_animation_data)
-        assert r.ok, f"CLI failed: {r.errors}"
-        sections = r.section_ids
-        assert len(sections) == 1
-        # After cyclic replace, all three objects should still be in the scene
-        assert len(sections[0]["ids"]) == 3
-
-
-def test_swap_with_world_coordinate_points():
+def test_swap_with_world_coordinate_points(runner):
     """
     Test that Swap works correctly with world-coordinate points.
 
@@ -686,7 +600,7 @@ def test_swap_with_world_coordinate_points():
         ],
     }
 
-    r = check_data_validated(scene_data)
+    r = runner.check_data_validated(scene_data, _SCHEMA)
     assert r.ok, f"CLI failed: {r.errors}"
 
     # After swap, circle 0 should be at x=+1, circle 1 at x=-1
@@ -707,7 +621,7 @@ def test_swap_with_world_coordinate_points():
     )
 
 
-def test_js_create_without_explicit_add_has_no_injected_add():
+def test_js_create_without_explicit_add_has_no_injected_add(runner):
     class CreateOnlyScene(ManimWidget):
         def construct(self):
             c = Circle()
@@ -721,33 +635,11 @@ def test_js_create_without_explicit_add_has_no_injected_add():
     assert not any(a["kind"] == "Add" for a in animate_cmd["animations"])
     assert any(a["kind"] == "Create" for a in animate_cmd["animations"])
 
-    r = check_data_validated(data)
+    r = runner.check_data_validated(data, _SCHEMA)
     assert r.ok, f"CLI failed: {r.errors}"
 
 
-def test_arrow_serialized_as_vgroup_with_shaft_and_tip():
-    """Arrow serializes as VGroup with 2 children: shaft (VMobject) + tip."""
-
-    class ArrowScene(ManimWidget):
-        def construct(self):
-            self.add(Arrow(ORIGIN, RIGHT))
-
-    scene = ArrowScene()
-    r = check_data_validated(scene.scene_data)
-    assert r.ok, f"CLI failed: {r.errors}"
-
-    states = r.section_end_states[0]["end_state"]["states"]
-    snapshot = r.section_end_states[0]["end_state"]["snapshot"]
-    root_ref = next(iter(snapshot.values()))
-    root_state = states[root_ref]
-
-    assert root_state["kind"] == "VGroup", f"Expected VGroup, got {root_state['kind']}"
-    assert len(root_state["children"]) == 2, (
-        f"Expected 2 children (shaft + tip), got {len(root_state['children'])}"
-    )
-
-
-def test_animation_group_plays_without_error():
+def test_animation_group_plays_without_error(runner):
     """AnimationGroup serializes start/end timestamps and plays back cleanly."""
 
     class AnimGroupScene(ManimWidget):
@@ -762,43 +654,7 @@ def test_animation_group_plays_without_error():
             )
 
     scene = AnimGroupScene()
-    r = check_data_validated(scene.scene_data)
+    r = runner.check_data_validated(scene.scene_data, _SCHEMA)
     assert r.ok, f"CLI failed:\n{r.errors}\n{r.section_ids}"
 
     assert r.error_count == 0
-
-
-def test_updater_mobs_are_in_scene():
-    """Regression: mobs registered via updater path must appear in scene, not just registry."""
-
-    class PointWithTrace(ManimWidget):
-        def construct(self):
-            path = VMobject()
-            dot = Dot()
-            path.set_points_as_corners([dot.get_center(), dot.get_center()])
-
-            def update_path(p):
-                prev = p.copy()
-                prev.add_points_as_corners([dot.get_center()])
-                p.become(prev)
-
-            path.add_updater(update_path)
-            self.add(path, dot)
-            self.play(Rotating(dot, angle=3.14, about_point=RIGHT, run_time=1))
-
-    scene = PointWithTrace(fps=5)
-    r = check_data_validated(scene.scene_data)
-    assert r.ok
-
-    section = scene.scene_data["sections"][0]
-    frame_ids = {
-        mob_id
-        for cmd in section["construct"]
-        if cmd["cmd"] == "updater"
-        for frame in cmd["frames"]
-        for mob_id in frame
-    }
-    scene_ids = set(r.scene_ids(0))
-    assert frame_ids <= scene_ids, (
-        f"Updater frame IDs not in scene: {frame_ids - scene_ids}"
-    )

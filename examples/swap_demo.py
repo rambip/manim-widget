@@ -26,5 +26,9 @@ def _():
     return
 
 
+def test(runner):
+    runner.check(SwapDemo).assert_ok()
+
+
 if __name__ == "__main__":
     app.run()

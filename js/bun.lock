@@ -8,6 +8,7 @@
         "katex": "^0.16.22",
         "manim-web": "file:../manim-web",
         "mathjax-full": "^3.2.2",
+        "opentype.js": "^2.0.0",
         "three": "^0.184.0",
       },
       "devDependencies": {

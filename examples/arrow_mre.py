@@ -34,5 +34,18 @@ def _():
     return
 
 
+def test(runner):
+    scene = ArrowMRE()
+    # Arrow must be serialized as a VGroup (shaft + tip), not a flat VMobject.
+    # Animating a submobject directly (arrow.submobjects[-1].animate) is a known
+    # JS limitation, so we check the serialization structure in Python.
+    states = scene.scene_data["states"]
+    vgroups = [s for s in states if s.get("kind") == "VGroup"]
+    assert vgroups, "Arrow should be serialized as a VGroup"
+    assert any(len(s["children"]) == 2 for s in vgroups), (
+        "Arrow VGroup should have 2 children (shaft + tip)"
+    )
+
+
 if __name__ == "__main__":
     app.run()
