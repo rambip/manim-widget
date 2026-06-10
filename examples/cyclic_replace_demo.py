@@ -25,6 +25,7 @@ def _():
     return
 
 
+@app.function(hide_code=True)
 def test(runner):
     r = runner.check(CyclicReplaceDemo)
     r.assert_ok()

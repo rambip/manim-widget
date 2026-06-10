@@ -708,8 +708,15 @@ export class Player {
       }
     }
 
-    // Play all accumulated animations together
+    // Play all accumulated animations together, honouring the command duration.
     if (animations.length > 0) {
+      for (const anim of animations) {
+        Object.defineProperty(anim, "duration", {
+          value: cmdDuration,
+          writable: true,
+          configurable: true,
+        });
+      }
       await this._scene.play(...animations);
     }
   }

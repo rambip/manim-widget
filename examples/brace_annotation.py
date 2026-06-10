@@ -30,6 +30,7 @@ def _():
     return
 
 
+@app.function(hide_code=True)
 def test(runner):
     import pytest
 

@@ -25,6 +25,7 @@ class PointWithTrace(ManimWidget):
         self.play(Rotating(dot, angle=3.14, about_point=RIGHT, run_time=2))
 
 
+@app.function(hide_code=True)
 def test(runner):
     scene = PointWithTrace(fps=5)
     r = runner.check_data(scene.scene_data)
