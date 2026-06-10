@@ -278,6 +278,10 @@ player.setfps(spec.fps || 10);
 player.setStates(spec.states || []);
 player.setSections(spec.sections || []);
 
+for (const w of player._warnings) {
+  warnings.push(w);
+}
+
 const sectionIds = [];
 const sectionEndStates = [];
 

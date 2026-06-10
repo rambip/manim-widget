@@ -79,6 +79,7 @@ export class Player {
     this._currentSectionIndex = 0;
     // state_ref → mob[] — populated during register commands, used by updateStates
     this._stateRefToMobs = new Map();
+    this._warnings = [];
   }
 
   setfps(fps) {
@@ -91,6 +92,18 @@ export class Player {
 
   setStates(states) {
     this._states = Array.isArray(states) ? states : [];
+    this._warnings = [];
+    for (let i = 0; i < this._states.length; i++) {
+      const entry = this._states[i];
+      if (entry && entry.kind === "Derived" && entry.from >= i) {
+        const msg =
+          `Derived state chain built out of order: state #${i} derives from #${entry.from}, ` +
+          `but 'from' must be strictly less than the entry's own index. ` +
+          `Only updater frame compression and image placement splits should create Derived states.`;
+        console.warn(msg);
+        this._warnings.push({ kind: "derived_out_of_order", index: i, from: entry.from, message: msg });
+      }
+    }
   }
 
   /** Re-apply mutated states to all registered mobs without replaying commands. */
@@ -154,11 +167,10 @@ export class Player {
       throw new Error(`Invalid state_ref: ${stateRef}`);
     }
     const entry = states[stateRef];
-    // DAG: if entry has a `from` pointer, merge parent content with this entry's fields
-    if (entry && typeof entry.from === 'number') {
+    if (entry && entry.kind === "Derived") {
       const parent = states[entry.from];
       if (parent) {
-        const { from: _, ...rest } = entry;
+        const { kind: _, from: __, ...rest } = entry;
         return { ...parent, ...rest };
       }
     }

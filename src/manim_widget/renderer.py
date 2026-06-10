@@ -322,7 +322,11 @@ class CaptureRenderer:
             ).model_dump(exclude_none=True)
         if kind == "img":
             _, content_ref, corners = state
-            return {"from": content_ref, "points": [list(p) for p in corners]}
+            return {
+                "kind": "Derived",
+                "from": content_ref,
+                "points": [list(p) for p in corners],
+            }
         if kind == "vgroup":
             _, child_refs = state
             return VGroupState(children=list(child_refs)).model_dump(exclude_none=True)

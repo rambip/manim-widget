@@ -97,7 +97,7 @@
       }
     },
     "MobjectState": {
-      "description": "State variant holding geometrical or textual data. Nature of data is determined by the 'kind' field: either 'VMobject', 'VGroup', 'MathTexSource', 'ImageMobject'. An entry may also be a DAG addon: an object with a 'from' integer pointer to a parent entry plus override fields (e.g. positional 'points' for an ImageMobject).",
+      "description": "State variant holding geometrical or textual data. Nature of data is determined by the 'kind' field: 'VMobject', 'VGroup', 'MathTexSource', 'ImageMobject', or 'Derived'. A 'Derived' entry inherits all fields from a parent state and overrides specific fields; its 'from' index must be less than its own index.",
       "oneOf": [
         {
           "$ref": "#/definitions/VMobjectState"
@@ -115,23 +115,27 @@
           "$ref": "#/definitions/ValueTrackerState"
         },
         {
-          "$ref": "#/definitions/DagAddonState"
+          "$ref": "#/definitions/DerivedState"
         }
       ]
     },
-    "DagAddonState": {
+    "DerivedState": {
       "type": "object",
-      "description": "DAG addon entry: inherits all fields from the parent state at index 'from', then overrides with its own fields. Used for ImageMobject to separate pixel data (parent) from positional data (addon).",
+      "description": "Derived entry: inherits all fields from the parent state at index 'from', then overrides with its own fields. The 'from' index must be strictly less than this entry's own index. Used for ImageMobject to separate pixel data (parent) from positional data (child), and for updater frame delta compression.",
       "required": [
-        "from",
-        "points"
+        "kind",
+        "from"
       ],
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["Derived"]
+        },
         "from": {
           "type": "integer",
           "minimum": 0,
-          "description": "Index into the global states bank of the parent entry whose fields are inherited."
+          "description": "Index into the global states bank of the parent entry whose fields are inherited. Must be less than this entry's own index."
         },
         "points": {
           "type": "array",
@@ -143,7 +147,7 @@
             "minItems": 3,
             "maxItems": 3
           },
-          "description": "Corner positions in scene coordinates [UL, UR, DL, DR]."
+          "description": "Corner positions in scene coordinates [UL, UR, DL, DR]. Used for ImageMobject placement overrides."
         }
       }
     },
@@ -518,71 +522,6 @@
         "camera_updates": {
           "$ref": "#/definitions/CameraUpdaterData",
           "description": "Per-frame camera state for 3D scenes."
-        }
-      }
-    },
-    "RawUpdaterData": {
-      "description": "Properties passed as a json array (uncompressed)",
-      "required": [
-        "scheme",
-        "value"
-      ],
-      "properties": {
-        "scheme": {
-          "type": "string",
-          "const": "raw"
-        },
-        "value": {
-          "type": "array"
-        }
-      }
-    },
-    "ZLibUpdaterData": {
-      "description": "String properties encoded as a new-line separated string, encoded with zlib",
-      "required": [
-        "scheme",
-        "value"
-      ],
-      "properties": {
-        "scheme": {
-          "type": "string",
-          "const": "zlib"
-        },
-        "value": {
-          "type": "string"
-        }
-      }
-    },
-    "DeltaPointUpdaterData": {
-      "description": "Encoding scheme for point arrays that vary across frames. Points are stored as three separate zlib-compressed base64 buffers, one per axis (x, y, z). Each buffer is a row-major float32 matrix of shape [F, W], where F is the number of frames and W is the length of the longest point array across all frames (the 'width' field). Each row corresponds to one frame; slots beyond the actual point count are set to NaN. Values are delta-encoded between frames: the stored value is the difference from the previous frame, or the absolute value if the previous frame was NaN.",
-      "required": [
-        "width",
-        "scheme",
-        "x",
-        "y",
-        "z"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "scheme": {
-          "type": "string",
-          "const": "delta"
-        },
-        "width": {
-          "type": "integer",
-          "description": "Length of the longest point array across all frames."
-        },
-        "x": {
-          "type": "string",
-          "description": "base64(zlib(float32[F, W])) for the x axis."
-        },
-        "y": {
-          "type": "string",
-          "description": "base64(zlib(float32[F, W])) for the y axis."
-        },
-        "z": {
-          "type": "string",
-          "description": "base64(zlib(float32[F, W])) for the z axis."
         }
       }
     },

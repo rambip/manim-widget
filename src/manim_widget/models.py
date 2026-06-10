@@ -67,6 +67,14 @@ class ValueTrackerState(BaseModel):
     value: float
 
 
+class DerivedState(BaseModel):
+    model_config = {"extra": "allow"}
+
+    kind: Literal["Derived"] = "Derived"
+    from_: int = Field(alias="from")
+    points: list[list[float]] | None = None
+
+
 MobjectState = (
     VMobjectState
     | VGroupState
@@ -74,6 +82,7 @@ MobjectState = (
     | MathTexSourceState
     | ImageMobjectState
     | ValueTrackerState
+    | DerivedState
 )
 
 
