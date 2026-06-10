@@ -85,5 +85,9 @@ def _():
     return
 
 
+def test(runner):
+    runner.check(PolygonOnAxes).assert_ok()
+
+
 if __name__ == "__main__":
     app.run()

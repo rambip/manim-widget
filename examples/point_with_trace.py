@@ -25,6 +25,24 @@ class PointWithTrace(ManimWidget):
         self.play(Rotating(dot, angle=3.14, about_point=RIGHT, run_time=2))
 
 
+def test(runner):
+    scene = PointWithTrace(fps=5)
+    r = runner.check_data(scene.scene_data)
+    r.assert_ok()
+    section = scene.scene_data["sections"][0]
+    frame_ids = {
+        mob_id
+        for cmd in section["construct"]
+        if cmd["cmd"] == "updater"
+        for frame in cmd["frames"]
+        for mob_id in frame
+    }
+    scene_ids = set(r.scene_ids(0))
+    assert frame_ids <= scene_ids, (
+        f"updater frame IDs not in scene: {frame_ids - scene_ids}"
+    )
+
+
 @app.cell
 def _():
     PointWithTrace()

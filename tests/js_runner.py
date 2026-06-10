@@ -4,8 +4,9 @@ Requires a manim-widget source checkout (js/ directory) and bun on PATH.
 
 API usage::
 
-    from js_runner import check, check_data
-    result = check(MyScene)
+    from js_runner import JSRunner
+    runner = JSRunner()          # bundles test_cli.js once
+    result = runner.check(MyScene)
     result.assert_ok()
     print(result.errors)
 
@@ -25,14 +26,18 @@ CLI usage::
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 _JS_ROOT = Path(__file__).parent.parent / "js"
+_BUILD_TEST = _JS_ROOT / "build-test.ts"
+_BUNDLE = _JS_ROOT / "node_modules" / ".cache" / "manim-widget-test" / "test_cli.js"
 _CLI = _JS_ROOT / "src" / "test_cli.js"
 _PRELOAD = _JS_ROOT / "src" / "preload-typia.ts"
 
@@ -95,70 +100,113 @@ class JSResult:
         return self.section_ids[section].get("scene_ids", [])
 
 
-def check_data(scene_data: str | dict[str, Any]) -> JSResult:
-    """Validate pre-serialized scene data through the JS headless runner.
+class JSRunner:
+    """Headless JS runner for validating manim-widget scenes against the JS player.
 
-    Args:
-        scene_data: Scene dict (or pre-serialized JSON string).
+    Two modes:
 
-    Returns:
-        JSResult with errors, warnings, section_ids, and section_end_states.
+    **Fast mode** (default, ``debug=False``):
+        Compiles ``js/src/test_cli.js`` + typia into a single bundle once on
+        construction (``js/node_modules/.cache/manim-widget-test/test_cli.js``).
+        Each ``check_data`` call pays only plain ``bun run`` startup (~0.2 s).
+        Use this for CI and normal test runs.
+
+    **Debug mode** (``debug=True``):
+        Skips compilation entirely.  Each call runs
+        ``bun run --preload src/preload-typia.ts --conditions source src/test_cli.js``
+        directly against the TypeScript source, so stack traces include original
+        file names and line numbers.  ~5 s per call — use only when diagnosing a
+        JS-side failure.
+
+    Pytest fixture::
+
+        # conftest.py or top of test file
+        @pytest.fixture(scope="session")
+        def runner():
+            debug = os.environ.get("MANIM_WIDGET_JS_DEBUG") == "1"
+            return JSRunner(debug=debug)
+
+    Then run with ``MANIM_WIDGET_JS_DEBUG=1 uv run pytest ...`` to get source
+    stack traces on a failing test.
     """
-    import tempfile
-    import os
 
-    _check_env()
-    scene_json = json.dumps(scene_data) if isinstance(scene_data, dict) else scene_data
+    def __init__(self, *, debug: bool = False) -> None:
+        _check_env()
+        self._debug = debug
+        if not debug:
+            self._build()
 
-    # Write input to a temp file to avoid pipe buffer limits on large scenes.
-    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
-        f.write(scene_json)
-        input_path = f.name
+    def _build(self) -> None:
+        subprocess.run(
+            ["bun", "run", str(_BUILD_TEST)],
+            check=True,
+            cwd=str(_JS_ROOT),
+            stderr=subprocess.PIPE,
+        )
 
-    out_path = input_path + ".out"
-    try:
-        args = [
-            "bun",
-            "run",
-            "--preload",
-            str(_PRELOAD),
-            "--conditions",
-            "source",
-            str(_CLI),
-            input_path,
-        ]
-        with open(out_path, "w") as outf:
-            proc = subprocess.run(
-                args, stdout=outf, stderr=subprocess.PIPE, text=True, cwd=str(_JS_ROOT)
-            )
-        with open(out_path) as f:
-            raw = f.read()
-    finally:
-        os.unlink(input_path)
-        if os.path.exists(out_path):
-            os.unlink(out_path)
+    def _bun_args(self, input_path: str) -> list[str]:
+        if self._debug:
+            return [
+                "bun",
+                "run",
+                "--preload",
+                str(_PRELOAD),
+                "--conditions",
+                "source",
+                str(_CLI),
+                input_path,
+            ]
+        return ["bun", "run", str(_BUNDLE), input_path]
 
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(
-            f"CLI produced non-JSON output (exit {proc.returncode}):\n{raw[:500]}\n{proc.stderr}"
-        ) from exc
-    return JSResult._from_json(data)
+    def check_data(self, scene_data: str | dict[str, Any]) -> JSResult:
+        """Validate pre-serialized scene data through the JS headless runner."""
+        scene_json = (
+            json.dumps(scene_data) if isinstance(scene_data, dict) else scene_data
+        )
 
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            f.write(scene_json)
+            input_path = f.name
 
-def check(scene_cls: type, fps: int = 10) -> JSResult:
-    """Instantiate scene_cls and validate it through the JS headless runner.
+        out_path = input_path + ".out"
+        try:
+            with open(out_path, "w") as outf:
+                proc = subprocess.run(
+                    self._bun_args(input_path),
+                    stdout=outf,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    cwd=str(_JS_ROOT),
+                )
+            with open(out_path) as f:
+                raw = f.read()
+        finally:
+            os.unlink(input_path)
+            if os.path.exists(out_path):
+                os.unlink(out_path)
 
-    Args:
-        scene_cls: A ManimWidget subclass.
-        fps: Frames per second for serialization.
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"CLI produced non-JSON output (exit {proc.returncode}):\n{raw[:500]}\n{proc.stderr}"
+            ) from exc
+        return JSResult._from_json(data)
 
-    Returns:
-        JSResult with errors, warnings, section_ids, and section_end_states.
-    """
-    scene = scene_cls(fps=fps)
-    return check_data(scene.scene_data)
+    def check_data_validated(
+        self, scene_data: str | dict[str, Any], schema: dict
+    ) -> JSResult:
+        """Validate against spec.json schema, then run through the JS headless runner."""
+        from jsonschema import validate
+
+        data = json.loads(scene_data) if isinstance(scene_data, str) else scene_data
+        validate(data, schema)
+        return self.check_data(data)
+
+    def check(self, scene_cls: type, fps: int = 10) -> JSResult:
+        """Instantiate scene_cls and validate it through the JS headless runner."""
+        scene = scene_cls(fps=fps)
+        return self.check_data(scene.scene_data)
 
 
 def _pretty_print(result: JSResult) -> None:
@@ -194,10 +242,10 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    runner = JSRunner(debug=True)
 
     if args.json:
-        scene_json = sys.stdin.read()
-        result = check_data(scene_json)
+        result = runner.check_data(sys.stdin.read())
     else:
         if not args.class_name:
             parser.error("class_name is required when providing an example file")
@@ -205,7 +253,7 @@ if __name__ == "__main__":
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         scene_cls = getattr(mod, args.class_name)
-        result = check(scene_cls)
+        result = runner.check(scene_cls)
 
     _pretty_print(result)
     sys.exit(0 if result.ok else 1)

@@ -64,5 +64,9 @@ def _(widget, x_slider, y_slider):
     return
 
 
+def test(runner):
+    runner.check(SyncDemo).assert_ok()
+
+
 if __name__ == "__main__":
     app.run()

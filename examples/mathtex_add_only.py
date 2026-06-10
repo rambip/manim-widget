@@ -7,3 +7,9 @@ class MathTexAddOnly(ManimWidget):
     def construct(self):
         tex = MathTex("x=1")
         self.add(tex)
+
+
+def test(runner):
+    import pytest
+
+    pytest.skip("requires LaTeX")

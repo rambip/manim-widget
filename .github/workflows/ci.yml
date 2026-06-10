@@ -60,13 +60,11 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v4
 
-
       - name: Install system dependencies (Linux)
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
           packages: python3-opengl libpango1.0-dev xvfb freeglut3-dev
           version: 1.0
-
 
       - name: Install Python deps
         run: uv sync
@@ -81,3 +79,35 @@ jobs:
       - name: JS integration tests
         timeout-minutes: 5
         run: uv run pytest -q tests/test_js_integration.py
+
+  examples:
+    name: Example tests
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install system dependencies (Linux)
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: python3-opengl libpango1.0-dev xvfb freeglut3-dev
+          version: 1.0
+
+      - name: Install Python deps
+        run: uv sync
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install JS deps
+        working-directory: js
+        run: bun install
+
+      - name: Example tests
+        timeout-minutes: 5
+        run: uv run pytest -q tests/test_examples.py
