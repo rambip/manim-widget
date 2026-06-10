@@ -405,6 +405,57 @@ class CaptureRenderer:
 
         return list(submobs)
 
+    def _grow_arrow_register_commands(
+        self, mob: Mobject, anim: GrowArrow
+    ) -> list[dict]:
+        """Register commands for GrowArrow: children get collapsed starting states,
+        parent gets a virtual collapsed VGroupState. The paired Transform descriptor
+        then animates from this collapsed state to the final state."""
+        starting = anim.create_starting_mobject()
+        actual_children = self._js_children(mob)
+        starting_children = self._js_children(starting)
+
+        child_cmds: list[dict] = []
+        child_ids: list[str] = []
+        collapsed_child_refs: list[int] = []
+
+        for actual, start in zip(actual_children, starting_children):
+            if isinstance(actual, _SubpathChild):
+                # Reuse actual mob's parent/id but swap in the collapsed subpath.
+                collapsed_sc = _SubpathChild(
+                    parent=actual.parent,
+                    parent_id=actual.parent_id,
+                    subpath_idx=actual.subpath_idx,
+                    subpath=start.subpath,
+                )
+                ref = self._subpath_child_state_ref(collapsed_sc)
+                child_cmds.append(
+                    {"cmd": "register", "id": actual.mob_id, "state_ref": ref}
+                )
+                child_ids.append(actual.mob_id)
+            else:
+                # VMobject submob: find corresponding submob in starting mob by index.
+                idx = mob.submobjects.index(actual)
+                start_submob = starting.submobjects[idx]
+                ref = self.state_ref_for(start_submob)
+                mob_id = self.short_id(actual)
+                child_cmds.append({"cmd": "register", "id": mob_id, "state_ref": ref})
+                child_ids.append(mob_id)
+            collapsed_child_refs.append(ref)
+
+        collapsed_vgroup_ref = self._state_registry.insert_raw(
+            VGroupState(children=collapsed_child_refs).model_dump(exclude_none=True)
+        )
+        return [
+            *child_cmds,
+            {
+                "cmd": "register",
+                "id": self.short_id(mob),
+                "state_ref": collapsed_vgroup_ref,
+                "child_ids": child_ids,
+            },
+        ]
+
     def _mob_register_commands(self, mob: Mobject) -> list[dict]:
         """Return register command(s) for mob and all its JS children."""
         js_children = self._js_children(mob)
@@ -875,15 +926,7 @@ class CaptureRenderer:
                 # (zero-scale) state so the paired Transform descriptor animates
                 # collapsed -> full.
                 if isinstance(anim, GrowArrow):
-                    pre_commands.append(
-                        {
-                            "cmd": "register",
-                            "id": self.short_id(mob),
-                            "state_ref": self.state_ref_for(
-                                anim.create_starting_mobject()
-                            ),
-                        }
-                    )
+                    pre_commands.extend(self._grow_arrow_register_commands(mob, anim))
                 else:
                     pre_commands.extend(self._mob_register_commands(mob))
 

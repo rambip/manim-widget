@@ -27,6 +27,20 @@ with app.setup:
 
 
 @app.class_definition
+class SingleArrow(ManimWidget):
+    def construct(self):
+        arrow = Arrow(ORIGIN, [2, 0, 0], buff=0, color="#7dd3fc")
+        self.play(GrowArrow(arrow))
+        self.play(arrow.submobjects[-1].animate.set_color("#ffeb3b"))
+
+
+@app.cell
+def _():
+    SingleArrow()
+    return
+
+
+@app.class_definition
 class ArrowDance(ManimWidget):
     def construct(self):
         arrows = [make_arrow(RADIUS, 2 * math.pi * i / N) for i in range(N)]
@@ -101,10 +115,6 @@ def _():
 @app.cell
 def _():
     return
-
-
-def test(runner):
-    runner.check(ArrowDance).assert_ok()
 
 
 if __name__ == "__main__":

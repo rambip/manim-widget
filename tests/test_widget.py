@@ -1318,11 +1318,12 @@ def _collect_register_invariants(section: dict, states: list) -> None:
         min_plays=1,
         max_plays=5,
         allow_groups=True,
+        allow_arrows=True,
     )
 )
 @settings(max_examples=40, deadline=None)
 def test_generated_scene_group_registration_invariants(args):
-    """For every generated scene with groups, all group registration invariants hold."""
+    """For every generated scene with groups and arrows, all group registration invariants hold."""
     mob_specs, commands = args
     data = run_generated_scene(mob_specs, commands, fps=5)
     for section in data["sections"]:
