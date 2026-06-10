@@ -6,6 +6,8 @@ const result = await Bun.build({
   naming: "[name].js",
   format: "esm",
   target: "bun",
+  conditions: ["source"],
+  external: ["opentype.js"],
   plugins: [UnpluginTypia({ cache: true, log: false })],
 });
 
