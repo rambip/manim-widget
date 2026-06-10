@@ -322,7 +322,11 @@ class CaptureRenderer:
             ).model_dump(exclude_none=True)
         if kind == "img":
             _, content_ref, corners = state
-            return {"from": content_ref, "points": [list(p) for p in corners]}
+            return {
+                "kind": "Derived",
+                "from": content_ref,
+                "points": [list(p) for p in corners],
+            }
         if kind == "vgroup":
             _, child_refs = state
             return VGroupState(children=list(child_refs)).model_dump(exclude_none=True)
@@ -1210,6 +1214,8 @@ class CaptureRenderer:
                     seen.add(member_id)
                     tracked.append(member)
 
+        self.flush_staged_adds()
+
         scene.animations = animations
         scene.last_t = 0.0
         self._suppress_stage_adds = True
@@ -1220,6 +1226,17 @@ class CaptureRenderer:
             self._suppress_stage_adds = False
         for anim in animations:
             anim.begin()
+
+        # Register any mob that is about to appear in frames but has not yet
+        # been registered (e.g. polygon added to scene by Create inside this call).
+        registered_ids = {
+            cmd["id"] for cmd in current.commands if cmd.get("cmd") == "register"
+        }
+        for mob in tracked:
+            mob_id = self.short_id(mob)
+            if mob_id not in registered_ids:
+                current.commands.extend(self._mob_register_commands(mob))
+                registered_ids.add(mob_id)
 
         n_frames = math.ceil(run_time * self.fps)
         frames: list[dict[str, Any]] = []

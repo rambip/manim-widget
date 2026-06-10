@@ -658,3 +658,77 @@ def test_animation_group_plays_without_error(runner):
     assert r.ok, f"CLI failed:\n{r.errors}\n{r.section_ids}"
 
     assert r.error_count == 0
+
+
+def _minimal_scene_data(states: list, *, state_ref: int = 0) -> dict:
+    """Build a minimal valid scene_data with a single register command."""
+    return {
+        "version": 1,
+        "fps": 10,
+        "states": states,
+        "sections": [
+            {
+                "name": "default",
+                "snapshot": {"0": state_ref},
+                "construct": [{"cmd": "register", "id": "0", "state_ref": state_ref}],
+            }
+        ],
+    }
+
+
+def test_derived_state_in_order_no_warning(runner):
+    """Valid image placement split: content at index 0, Derived at index 1 — no warning."""
+    states = [
+        {"kind": "ImageMobject", "source": "data:image/png;base64,abc"},
+        {
+            "kind": "Derived",
+            "from": 0,
+            "points": [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0]],
+        },
+    ]
+    data = _minimal_scene_data(states, state_ref=1)
+    r = runner.check_data(data)
+    assert r.ok, f"CLI failed: {r.errors}"
+    derived_warnings = [
+        w for w in r.warnings if w.get("kind") == "derived_out_of_order"
+    ]
+    assert derived_warnings == [], f"Unexpected warnings: {derived_warnings}"
+
+
+def test_derived_state_out_of_order_warns(runner):
+    """Derived entry whose 'from' points forward must trigger a warning."""
+    states = [
+        {
+            "kind": "Derived",
+            "from": 1,
+            "points": [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0]],
+        },
+        {"kind": "ImageMobject", "source": "data:image/png;base64,abc"},
+    ]
+    data = _minimal_scene_data(states, state_ref=0)
+    r = runner.check_data(data)
+    derived_warnings = [
+        w for w in r.warnings if w.get("kind") == "derived_out_of_order"
+    ]
+    assert len(derived_warnings) == 1
+    assert derived_warnings[0]["index"] == 0
+    assert derived_warnings[0]["from"] == 1
+
+
+def test_image_mobject_produces_no_derived_warning(runner):
+    """A real ImageMobject scene must not trigger any Derived ordering warning."""
+    import numpy as np
+
+    pixels = np.zeros((4, 4, 4), dtype=np.uint8)
+
+    class ImageScene(ManimWidget):
+        def construct(self):
+            img = ImageMobject(pixels)
+            self.add(img)
+
+    r = runner.check_data(ImageScene().scene_data)
+    assert r.ok, f"CLI failed: {r.errors}"
+    derived_warnings = [
+        w for w in r.warnings if w.get("kind") == "derived_out_of_order"
+    ]
+    assert derived_warnings == [], f"Unexpected warnings: {derived_warnings}"
