@@ -46,9 +46,9 @@ class ArrowDance(ManimWidget):
         arrows = [make_arrow(RADIUS, 2 * math.pi * i / N) for i in range(N)]
 
         for arrow in arrows:
-            self.play(GrowArrow(arrow), run_time=0.16)
+            self.play(GrowArrow(arrow), run_time=0.10)
 
-        self.wait(0.125)
+        self.wait(0.1)
 
         targets = []
         for i, arrow in enumerate(arrows):
