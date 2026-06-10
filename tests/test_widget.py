@@ -1304,6 +1304,13 @@ def _collect_register_invariants(section: dict, states: list) -> None:
                         f"animate descriptor id '{anim['id']}' not in prior registers"
                     )
 
+        elif cmd["cmd"] == "updater":
+            for frame in cmd.get("frames", []):
+                for mob_id in frame:
+                    assert mob_id in seen_register_ids, (
+                        f"updater frame references mob '{mob_id}' not in prior registers"
+                    )
+
     assert not duplicate_ids, f"Duplicate register IDs within section: {duplicate_ids}"
 
 
@@ -1315,11 +1322,12 @@ def _collect_register_invariants(section: dict, states: list) -> None:
         max_plays=5,
         allow_groups=True,
         allow_arrows=True,
+        allow_updaters=True,
     )
 )
 @settings(max_examples=40, deadline=None)
 def test_generated_scene_group_registration_invariants(args):
-    """For every generated scene with groups and arrows, all group registration invariants hold."""
+    """For every generated scene with groups, arrows and updaters, all registration invariants hold."""
     mob_specs, commands = args
     data = run_generated_scene(mob_specs, commands, fps=5)
     for section in data["sections"]:
