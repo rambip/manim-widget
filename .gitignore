@@ -20,3 +20,10 @@ js/node_modules
 notebooks/
 
 TODO.md
+
+# Editor swap/temp files
+*.swp
+*.swo
+
+# Standalone HTML demos
+examples/*.html
