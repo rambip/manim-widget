@@ -24,9 +24,7 @@ class ImageGradientDemo(ManimWidget):
         img = ImageMobject(data)
         img.height = 3.2
 
-        # self.add((img))
         self.play(FadeIn(img))
-        # self.play(img.animate.scale(1.35))
 
 
 @app.cell
