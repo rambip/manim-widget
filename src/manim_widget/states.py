@@ -57,7 +57,8 @@ class VMobjectState(BaseModel):
     """A vectorized mobject with outer contours and optional holes.
 
     SVG winding convention is enforced by the renderer:
-    - contours are CCW (outer filled regions)
+    - contours are CCW (outer filled regions); degenerate zero-area subpaths
+      also land here because _signed_area_2d == 0 ≤ 0 ⟹ 'CCW' per _contour_winding
     - holes are CW (cutouts, e.g. interior of 'O' or Difference)
 
     inv: all(_contour_winding(c) == 'CCW' for c in self.contours)
