@@ -27,7 +27,12 @@ from manim import (
 )
 
 from manim_widget.widget import ManimWidget
-from manim_widget.renderer import CaptureRenderer, _needs_camera_frame_loop
+from manim_widget.renderer import (
+    CaptureRenderer,
+    _classify_subpaths,
+    _needs_camera_frame_loop,
+)
+from manim_widget.states import _contour_winding
 from tests.scene_strategies import (
     construct_script,
     run_generated_scene,
@@ -1484,3 +1489,79 @@ def test_sync_updates_static_mob_without_warning(dx, dy):
     assert refs_before and refs_after
     new_state = w._renderer._state_registry.get_by_id(refs_after[-1])
     assert new_state is not None
+
+
+# ---------------------------------------------------------------------------
+# Contour / hole winding
+# ---------------------------------------------------------------------------
+
+
+@st.composite
+def _raw_subpath(draw, min_segments: int = 1, max_segments: int = 4):
+    """Numpy array of 4k points — raw manim bezier format consumed by _subpath_to_3n1."""
+    import numpy as np
+
+    k = draw(st.integers(min_value=min_segments, max_value=max_segments))
+    pts = draw(st.lists(point3, min_size=4 * k, max_size=4 * k))
+    return np.array(pts)
+
+
+@st.composite
+def _raw_subpath_list(draw, min_size: int = 1, max_size: int = 4):
+    n = draw(st.integers(min_value=min_size, max_value=max_size))
+    return [draw(_raw_subpath()) for _ in range(n)]
+
+
+@given(_raw_subpath_list())
+def test_classify_subpaths_winding_invariant(subpaths):
+    """_classify_subpaths: every contour is CCW, every hole is CW, nothing is dropped."""
+    contours, holes = _classify_subpaths(subpaths)
+    for c in contours:
+        assert _contour_winding(c) == "CCW"
+    for h in holes:
+        assert _contour_winding(h) == "CW"
+    assert len(contours) + len(holes) <= len(subpaths)
+
+
+_HOLE_CHARS = list("04689ABDOPQRbdgopq")
+
+
+@given(st.sampled_from(_HOLE_CHARS))
+def test_glyph_hole_serialized(char):
+    """Glyphs with interior holes must produce a VMobjectState with non-empty holes."""
+    from manim import Text
+    from manim_widget.tex_patch import patch_tex
+
+    patch_tex()
+
+    class S(ManimWidget):
+        def construct(self):
+            self.add(Text(char, font_size=200))
+
+    data = S(fps=10).scene_data
+    vmob_states = [s for s in data["states"] if s.get("kind") == "VMobject"]
+    assert any(s.get("holes") for s in vmob_states), (
+        f"No holes found in serialized states for '{char}'"
+    )
+
+
+@given(st.sampled_from(_HOLE_CHARS))
+def test_glyph_hole_winding(char):
+    """Serialized VMobjectState: all contours CCW, all holes CW."""
+    from manim import Text
+    from manim_widget.tex_patch import patch_tex
+
+    patch_tex()
+
+    class S(ManimWidget):
+        def construct(self):
+            self.add(Text(char, font_size=200))
+
+    data = S(fps=10).scene_data
+    for state in data["states"]:
+        if state.get("kind") != "VMobject":
+            continue
+        for c in state.get("contours", []):
+            assert _contour_winding(c) == "CCW"
+        for h in state.get("holes", []):
+            assert _contour_winding(h) == "CW"

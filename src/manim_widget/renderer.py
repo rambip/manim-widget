@@ -64,6 +64,8 @@ def _classify_subpaths(
         if not pts:
             continue
         area = _signed_area_2d(pts)
+        if area == 0.0:
+            continue  # degenerate path (collinear/point), no fill area
         if outer_sign is None:
             outer_sign = area
         is_outer = (area >= 0) == (outer_sign >= 0)
@@ -284,8 +286,6 @@ class CaptureRenderer:
 
         if isinstance(mob, VMobject) and not mob.submobjects:
             subpaths = mob.get_subpaths()
-            if len(subpaths) > 1:
-                return None  # multi-subpath: handled via insert_raw in state_ref_for
             contours, holes = _classify_subpaths(subpaths)
             fill_color = mob.get_fill_color()
             stroke_color = mob.get_stroke_color()
@@ -301,7 +301,7 @@ class CaptureRenderer:
                 getattr(mob, "z_index", None),
             )
 
-        return None  # multi-subpath with no submobjects: handled via insert_raw
+        return None
 
     def _make_from_content(self, content: PixelContent) -> dict:
         return {
@@ -557,14 +557,12 @@ class CaptureRenderer:
             self.state_refs.setdefault(id(mob), []).append(main_ref)
             return main_ref
 
-        # Multi-subpath or mixed (own subpaths + submobjects) VMobject.
+        # Mixed (own subpaths + submobjects) VMobject (e.g. Arrow).
         if isinstance(mob, VMobject):
             subpaths = mob.get_subpaths()
             if subpaths:
-                style = self._vmob_style(mob)
                 js_ch = self._js_children(mob)
                 if js_ch:
-                    # Mixed: own subpaths + submobjects → VGroupState driven by _js_children.
                     child_refs: list[int] = []
                     for jsc in js_ch:
                         if isinstance(jsc, _SubpathChild):
@@ -572,15 +570,11 @@ class CaptureRenderer:
                         else:
                             child_refs.append(self.state_ref_for(jsc))
                     vgroup_state = VGroupState(children=child_refs)
-                else:
-                    vgroup_state = self._serialize_vgroup(
-                        mob, subpaths, style, for_snapshot=False
+                    ref = self._state_registry.insert_raw(
+                        vgroup_state.model_dump(exclude_none=True)
                     )
-                ref = self._state_registry.insert_raw(
-                    vgroup_state.model_dump(exclude_none=True)
-                )
-                self.state_refs.setdefault(id(mob), []).append(ref)
-                return ref
+                    self.state_refs.setdefault(id(mob), []).append(ref)
+                    return ref
             # Empty VMobject with no submobjects: treat as invisible.
             if not mob.submobjects:
                 style = self._vmob_style(mob)
@@ -709,8 +703,8 @@ class CaptureRenderer:
         if isinstance(mob, VMobject):
             subpaths = mob.get_subpaths()
             if js_children:
-                # Mixed (own subpaths + submobs) or pure multi-subpath: emit VGroupState
-                # whose children match exactly what _js_children returned.
+                # Mixed (own subpaths + submobs): emit VGroupState whose children
+                # match exactly what _js_children returned.
                 child_refs: list[int] = []
                 for jsc in js_children:
                     if isinstance(jsc, _SubpathChild):
@@ -718,12 +712,8 @@ class CaptureRenderer:
                     else:
                         child_refs.append(self.state_ref_for(jsc))
                 return VGroupState(children=child_refs)
-            if len(subpaths) > 1:
-                return self._serialize_vgroup(
-                    mob, subpaths, style, for_snapshot=for_snapshot
-                )
             if subpaths:
-                contours, holes = _classify_subpaths(subpaths[:1])
+                contours, holes = _classify_subpaths(subpaths)
                 style["contours"] = contours
                 style["holes"] = holes
 
@@ -738,38 +728,6 @@ class CaptureRenderer:
             text_extras["font_size"] = mob.font_size
 
         return VMobjectState(**style, **text_extras)
-
-    def _serialize_vgroup(
-        self,
-        mob: Mobject,
-        subpaths: list,
-        style: dict[str, object],
-        *,
-        for_snapshot: bool,
-    ) -> VGroupState:
-        """Serialize a mob with multiple subpaths (no submobs) as a VGroup of subpath children.
-
-        Only called for pure multi-subpath VMobjects (no actual submobjects).
-        For mobs with both own subpaths and submobjects, _js_children / state_ref_for handle it.
-
-        post: isinstance(__return__, VGroupState)
-        """
-        child_refs: list[int] = []
-        for subpath in subpaths:
-            if len(subpath) == 0:
-                continue
-            points_3n1 = _subpath_to_3n1(subpath)
-            if not points_3n1:
-                continue
-            if _signed_area_2d(points_3n1) > 0:
-                points_3n1 = points_3n1[::-1]
-            subpath_state = VMobjectState(contours=[points_3n1], **style)
-            child_refs.append(
-                self._state_registry.insert_raw(
-                    subpath_state.model_dump(exclude_none=True)
-                )
-            )
-        return VGroupState(children=child_refs)
 
     def update_frame(
         self,
