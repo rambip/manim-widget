@@ -54,6 +54,19 @@ def _subpath_to_3n1(raw_points) -> list[list[float]]:
 def _classify_subpaths(
     subpaths,
 ) -> tuple[list[list[list[float]]], list[list[list[float]]]]:
+    """Classify raw manim subpaths into CCW contours and CW holes.
+
+    Winding convention (SVG even-odd / non-zero fill):
+    - The first non-degenerate subpath determines outer_sign.
+    - Subpaths with the same sign as outer_sign are outer contours (CCW after flip).
+    - Subpaths with the opposite sign are holes (CW after flip).
+    - Zero-area (degenerate/collinear) subpaths cannot be holes; they are appended
+      to contours as-is. _contour_winding returns 'CCW' for them (area ≤ 0).
+
+    post: all(_contour_winding(c) == 'CCW' for c in __return__[0])
+    post: all(_contour_winding(h) == 'CW'  for h in __return__[1])
+    post: len(__return__[0]) + len(__return__[1]) <= len(subpaths)
+    """
     contours: list[list[list[float]]] = []
     holes: list[list[list[float]]] = []
     outer_sign: float | None = None
@@ -65,7 +78,8 @@ def _classify_subpaths(
             continue
         area = _signed_area_2d(pts)
         if area == 0.0:
-            continue  # degenerate path (collinear/point), no fill area
+            contours.append(pts)  # degenerate/collinear: no winding, treat as contour
+            continue
         if outer_sign is None:
             outer_sign = area
         is_outer = (area >= 0) == (outer_sign >= 0)
