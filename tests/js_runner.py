@@ -158,11 +158,41 @@ class JSRunner:
             ]
         return ["bun", "run", str(_BUNDLE), input_path]
 
+    @staticmethod
+    def _strip_timing(data: dict[str, Any]) -> dict[str, Any]:
+        """Return a copy of scene_data with all durations collapsed to one frame
+        and Wait animations removed. Makes headless runs fast regardless of
+        run_time= or self.wait() calls in the original scene."""
+        fps = data.get("fps", 10) or 10
+        one_frame = 1.0 / fps
+
+        def process_cmd(cmd: dict) -> dict | None:
+            if cmd.get("cmd") == "animate":
+                anims = [
+                    a for a in cmd.get("animations", []) if a.get("kind") != "Wait"
+                ]
+                if not anims:
+                    return None
+                return {**cmd, "duration": one_frame, "animations": anims}
+            if cmd.get("cmd") == "updater":
+                frames = cmd.get("frames", [])
+                last = frames[-1:] if frames else []
+                return {**cmd, "duration": one_frame, "frames": last}
+            return cmd
+
+        sections = []
+        for section in data.get("sections", []):
+            cmds = [
+                c for cmd in section.get("construct", []) if (c := process_cmd(cmd))
+            ]
+            sections.append({**section, "construct": cmds})
+
+        return {**data, "sections": sections}
+
     def check_data(self, scene_data: str | dict[str, Any]) -> JSResult:
         """Validate pre-serialized scene data through the JS headless runner."""
-        scene_json = (
-            json.dumps(scene_data) if isinstance(scene_data, dict) else scene_data
-        )
+        data = json.loads(scene_data) if isinstance(scene_data, str) else scene_data
+        scene_json = json.dumps(self._strip_timing(data))
 
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
             f.write(scene_json)

@@ -17,7 +17,6 @@ class SquareToCircle(ManimWidget):
         b = Square(color=mn.BLUE)
         a = Circle(color=mn.RED)
 
-        # self.play(mn.Create(a))
         self.play(Transform(a, b), run_time=2)
 
 

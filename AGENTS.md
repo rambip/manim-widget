@@ -131,13 +131,21 @@ Families: `SimpleAnimation`, `TransformAnimation` (`Transform`, `MoveToTarget`),
 
 ### JS integration (`tests/test_js_integration.py`)
 
-Uses `tests/js_runner.py` to validate scenes through `js/src/test_cli.js` with `manim-web` headless mode (no WebGL/Three.js required).
-
 Uses `tests/js_runner.py` (`check(SceneClass)` / `check_data(scene_data)`) to validate scenes through `js/src/test_cli.js` headlessly. If you need more debug info, extend `test_cli.js` and `JSResult` — don't add Python-side logging.
 
 Coverage includes: simple scenes (Create, FadeIn), multi-section navigation, VGroup handling, error conditions (invalid point arrays, missing state refs), and ImageMobject intro animation playback.
 
 Runtime note: this suite is relatively slow (often around ~1 minute locally). Use reasonable command/test timeouts to avoid false hangs/failures.
+
+### Examples (`examples/`)
+
+Each example is a marimo notebook that must define at least one `test_*` function taking a `runner` fixture. The `runner` fixture is provided by the root `conftest.py` and wraps `JSRunner`. Run with:
+
+```sh
+uv run pytest -q examples/*.py
+```
+
+A pre-commit hook (`scripts/check_example_tests.py`) enforces that every marimo example has a test function. `JSRunner._strip_timing()` collapses animation durations to one frame before headless runs — tests validate correctness, not timing.
 
 ---
 
@@ -148,9 +156,9 @@ Runtime note: this suite is relatively slow (often around ~1 minute locally). Us
 - Widget bridge: `anywidget`
 
 ```sh
-uv run pytest -q
 uv run pytest -q tests/test_widget.py
 uv run pytest -q tests/test_js_integration.py
+uv run pytest -q examples/*.py
 ```
 
 ### JS build and CLI test
@@ -197,6 +205,11 @@ manim-widget/
   tests/
     test_widget.py
     test_js_integration.py
+    js_runner.py
+  examples/               # marimo notebooks; each must have a test_* function
+  scripts/
+    check_example_tests.py  # pre-commit hook
+  conftest.py             # pytest session fixture (JSRunner)
   spec.json
   pyproject.toml
   AGENTS.md

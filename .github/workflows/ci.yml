@@ -110,4 +110,4 @@ jobs:
 
       - name: Example tests
         timeout-minutes: 5
-        run: uv run pytest -q tests/test_examples.py
+        run: uv run pytest -q examples/*.py
