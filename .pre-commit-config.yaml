@@ -18,6 +18,15 @@ repos:
       - id: codespell
         files: ^.*\.(py|md|rst)$
 
+  - repo: local
+    hooks:
+      - id: check-example-tests
+        name: Check example tests
+        entry: python scripts/check_example_tests.py
+        language: python
+        pass_filenames: false
+        files: ^examples/.*\.py$
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.16
     hooks:
