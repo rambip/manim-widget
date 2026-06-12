@@ -41,6 +41,8 @@ from manim_widget.states import (
     VGroupState,
     ValueTrackerState,
 )
+import manim_widget.states as _states_mod
+import manim_widget.models as _models_mod
 
 
 _SPEC = json.loads((Path(__file__).parent.parent / "spec.json").read_text())
@@ -49,6 +51,15 @@ _SPEC = json.loads((Path(__file__).parent.parent / "spec.json").read_text())
 def assert_valid_scene(data: dict) -> None:
     validate(data, _SPEC)
     SceneData.model_validate(data)
+
+
+def _assert_valid_state(d: dict) -> None:
+    """Assert d is a valid MobjectState entry per spec.json.
+
+    Wraps d in a minimal scene payload so that $ref resolution works against
+    the full spec and the MobjectState oneOf discriminates correctly.
+    """
+    validate({"version": 2, "sections": [], "states": [d]}, _SPEC)
 
 
 def _fresh_renderer() -> CaptureRenderer:
@@ -192,13 +203,93 @@ def test_vmobject_state_round_trips_via_model_dump(state):
     for h in d.get("holes", []):
         assert (len(h) - 1) % 3 == 0
         assert all(len(p) == 3 for p in h)
+    # The dump must satisfy the wire contract and reconstruct identically.
+    _assert_valid_state(d)
+    assert VMobjectState.model_validate(d) == state
 
 
 @given(value_tracker_state())
-def test_value_tracker_state_serializes_kind(state):
+def test_value_tracker_state_round_trips_via_model_dump(state):
+    """∀ s: ValueTrackerState, model_validate(model_dump(s)) = s  and  dump ∈ spec."""
     d = state.model_dump(exclude_none=True)
     assert d["kind"] == "ValueTracker"
     assert "value" in d
+    _assert_valid_state(d)
+    assert ValueTrackerState.model_validate(d) == state
+
+
+# ---------------------------------------------------------------------------
+# Spec ↔ model structural alignment
+#
+# Two invariants for every (model type, spec definition) pair:
+#
+#   (I1)  spec.required  ⊆  model.wire_fields
+#         The model always expresses fields the spec mandates.
+#
+#   (I2)  model.wire_fields  ⊆  spec.properties   [closed types only]
+#         The renderer never emits a field the spec (and JS player) rejects.
+# ---------------------------------------------------------------------------
+
+
+def _wire_fields(cls) -> set[str]:
+    """Field names as they appear on the wire (alias takes precedence over Python name)."""
+    return {field.alias or name for name, field in cls.model_fields.items()}
+
+
+def _spec_props(def_name: str) -> set[str]:
+    return set(_SPEC["definitions"][def_name].get("properties", {}).keys())
+
+
+def _spec_required(def_name: str) -> set[str]:
+    return set(_SPEC["definitions"][def_name].get("required", []))
+
+
+# renderer-generated state types (states.py)  →  corresponding spec definition
+_STATES_SPEC_PAIRS = [
+    (_states_mod.VMobjectState, "VMobjectState"),
+    (_states_mod.VGroupState, "VGroupState"),
+    (_states_mod.ImageMobjectState, "ImageMobjectState"),
+    (_states_mod.MathTexState, "MathTexSourceState"),
+    (_states_mod.ValueTrackerState, "ValueTrackerState"),
+]
+
+# wire-format parser types (models.py)  →  corresponding spec definition
+_COMMAND_SPEC_PAIRS = [
+    (_models_mod.RegisterCommand, "RegisterCommand"),
+    (_models_mod.RemoveCommand, "RemoveCommand"),
+    (_models_mod.RebindCommand, "RebindCommand"),
+    (_models_mod.AnimateCommand, "AnimateCommand"),
+    (_models_mod.UpdaterCommand, "UpdaterDescriptor"),
+    (_models_mod.MoveCameraCommand, "MoveCameraCommand"),
+]
+
+
+@pytest.mark.parametrize(
+    "cls,def_name",
+    _STATES_SPEC_PAIRS + _COMMAND_SPEC_PAIRS,
+    ids=[s for _, s in _STATES_SPEC_PAIRS + _COMMAND_SPEC_PAIRS],
+)
+def test_spec_required_present_in_model(cls, def_name):
+    """(I1) spec.required ⊆ model.fields: no spec-mandated field is missing from the model."""
+    missing = _spec_required(def_name) - _wire_fields(cls)
+    assert not missing, (
+        f"{cls.__name__} missing spec-required fields: {sorted(missing)}"
+    )
+
+
+@pytest.mark.parametrize(
+    "cls,def_name",
+    _STATES_SPEC_PAIRS,
+    ids=[s for _, s in _STATES_SPEC_PAIRS],
+)
+def test_model_emits_only_spec_known_fields(cls, def_name):
+    """(I2) model.fields ⊆ spec.properties: the renderer never emits a field the spec rejects."""
+    if _SPEC["definitions"][def_name].get("additionalProperties") is not False:
+        pytest.skip("open type — additionalProperties: true allows extra fields")
+    extra = _wire_fields(cls) - _spec_props(def_name)
+    assert not extra, (
+        f"{cls.__name__} has fields absent from spec/{def_name}: {sorted(extra)}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -326,6 +417,72 @@ def test_serialize_value_tracker(value):
     result = r.serialize_mobject(mob, for_snapshot=False)
     assert isinstance(result, ValueTrackerState)
     assert abs(result.value - value) < 1e-9
+
+
+# ---------------------------------------------------------------------------
+# _extract_state / _make_from_state invariants
+#
+# _extract_state: Mobject → cache key (pure function of mob's observable state)
+# _make_from_state: cache key → wire dict
+#
+#   (D)  Determinism: _extract_state(mob) = _extract_state(mob)
+#   (S)  Sensitivity: geometry mutation ⟹ key changes
+#   (V)  Validity:    _make_from_state(key) ∈ spec.MobjectState
+# ---------------------------------------------------------------------------
+
+
+def test_extract_state_deterministic_for_common_shapes():
+    """(D) Same mob, same call — _extract_state is a pure function of mob state."""
+    r = _fresh_renderer()
+    for mob in [Circle(), Square(), Dot()]:
+        assert r._extract_state(mob) == r._extract_state(mob)
+
+
+@given(
+    dx=st.floats(-3.0, 3.0, allow_nan=False, allow_infinity=False),
+    dy=st.floats(-3.0, 3.0, allow_nan=False, allow_infinity=False),
+)
+def test_extract_state_changes_after_vmobject_shift(dx, dy):
+    """(S) Shifting a VMobject changes its cache key."""
+    assume(abs(dx) + abs(dy) > 1e-6)
+    r = _fresh_renderer()
+    mob = Circle()
+    k_before = r._extract_state(mob)
+    mob.shift((dx, dy, 0))
+    assert r._extract_state(mob) != k_before
+
+
+@given(st.floats(-100.0, 100.0, allow_nan=False, allow_infinity=False))
+def test_extract_state_changes_after_value_tracker_set(new_value):
+    """(S) Calling set_value on a ValueTracker changes its cache key."""
+    from manim import ValueTracker
+
+    assume(abs(new_value) > 1e-9)
+    r = _fresh_renderer()
+    vt = ValueTracker(0.0)
+    k_before = r._extract_state(vt)
+    vt.set_value(new_value)
+    assert r._extract_state(vt) != k_before
+
+
+@given(bezier_points_3n1(min_segments=1, max_segments=3))
+@settings(max_examples=20)
+def test_make_from_state_produces_spec_valid_dict(pts_list):
+    """(V) ∀ key produced by _extract_state, _make_from_state(key) ∈ spec.MobjectState."""
+    from manim import VMobject as ManimVMobject
+
+    mob = ManimVMobject()
+    n_segs = (len(pts_list) - 1) // 3
+    raw_pts = []
+    for i in range(n_segs):
+        raw_pts.extend(pts_list[i * 3 : i * 3 + 4])
+    assume(len(raw_pts) >= 4)
+    mob.set_points(np.array(raw_pts, dtype=float))
+
+    r = _fresh_renderer()
+    key = r._extract_state(mob)
+    assume(key is not None)
+    _assert_valid_state(r._make_from_state(key))
 
 
 def test_wait_with_vmobject():
