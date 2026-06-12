@@ -302,19 +302,11 @@ class CaptureRenderer:
 
         for anim in animations:
             if isinstance(anim, AnimationGroup):
-                scale = (
-                    anim.run_time / anim.max_end_time if anim.max_end_time > 0 else 1.0
-                )
+                animate_descriptors.extend(self._flatten_animation_group(anim))
                 for row in anim.anims_with_timings:
-                    sub: Animation = row["anim"]
-                    desc = self._descriptor_from_animation(sub)
-                    desc["start"] = round(float(row["start"]) * scale, 6)
-                    desc["end"] = round(float(row["end"]) * scale, 6)
-                    animate_descriptors.append(desc)
-                    self._process_leaf_anim(sub, pre_commands, post_commands)
+                    self._process_leaf_anim(row["anim"], pre_commands, post_commands)
             else:
-                desc = self._descriptor_from_animation(anim)
-                animate_descriptors.append(desc)
+                animate_descriptors.append(self._descriptor_from_animation(anim))
                 self._process_leaf_anim(anim, pre_commands, post_commands)
 
         if pre_commands:
@@ -410,6 +402,21 @@ class CaptureRenderer:
                         "state_ref": final_cam_ref,
                     }
                 )
+
+    def _flatten_animation_group(self, group: AnimationGroup) -> list[dict]:
+        """Expand an AnimationGroup into timestamped descriptors for the JS player.
+
+        Timestamps are scaled so the last sub-animation ends at group.run_time,
+        preserving lag_ratio spacing proportionally.
+        """
+        scale = group.run_time / group.max_end_time if group.max_end_time > 0 else 1.0
+        result = []
+        for row in group.anims_with_timings:
+            desc = self._descriptor_from_animation(row["anim"])
+            desc["start"] = round(float(row["start"]) * scale, 6)
+            desc["end"] = round(float(row["end"]) * scale, 6)
+            result.append(desc)
+        return result
 
     def _descriptor_from_animation(self, anim: Animation) -> dict[str, Any]:
         """Translate a single manim Animation into a wire-format descriptor dict.

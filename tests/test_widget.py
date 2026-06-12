@@ -491,6 +491,57 @@ def test_make_from_state_produces_spec_valid_dict(pts_list):
     _assert_valid_state(s._make_from_state(key))
 
 
+# ---------------------------------------------------------------------------
+# _descriptor_from_animation / _flatten_animation_group
+# ---------------------------------------------------------------------------
+
+
+def test_descriptor_swap_emits_ids_not_id():
+    """Swap descriptor must use 'ids' (list) not 'id' — JS player protocol."""
+    from manim import Swap
+
+    r = _fresh_renderer()
+    a, b = Circle(), Square()
+    r.register_mobject(a)
+    r.register_mobject(b)
+    desc = r._descriptor_from_animation(Swap(a, b))
+    assert desc["kind"] == "Swap"
+    assert "ids" in desc and len(desc["ids"]) == 2
+    assert "id" not in desc
+
+
+def test_descriptor_cyclic_replace_emits_ids_not_id():
+    """CyclicReplace descriptor must use 'ids' — same JS protocol as Swap."""
+    from manim import CyclicReplace
+
+    r = _fresh_renderer()
+    a, b, c = Circle(), Square(), Dot()
+    r.register_mobject(a)
+    r.register_mobject(b)
+    r.register_mobject(c)
+    desc = r._descriptor_from_animation(CyclicReplace(a, b, c))
+    assert desc["kind"] == "CyclicReplace"
+    assert "ids" in desc and len(desc["ids"]) == 3
+    assert "id" not in desc
+
+
+def test_flatten_animation_group_timestamps_scaled_by_lag_ratio():
+    """lag_ratio > 0 spreads sub-anim timings; _flatten_animation_group scales them
+    so the last end time equals the group run_time, not max_end_time."""
+    from manim import AnimationGroup, Create
+
+    r = _fresh_renderer()
+    a, b = Circle(), Square()
+    r.register_mobject(a)
+    r.register_mobject(b)
+    group = AnimationGroup(Create(a), Create(b), lag_ratio=0.5)
+    descs = r._flatten_animation_group(group)
+    assert len(descs) == 2
+    assert all("start" in d and "end" in d for d in descs)
+    assert descs[0]["start"] == 0.0
+    assert descs[-1]["end"] == pytest.approx(group.run_time, abs=1e-5)
+
+
 def test_wait_with_vmobject():
     class SceneWithWait(ManimWidget):
         def construct(self):
