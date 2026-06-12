@@ -174,6 +174,9 @@ class MobSerializer:
         Content (pixel data) is registered once.  The derived state
         ``{from: content_ref, points: corners}`` is keyed by ``(content_ref, corners)``
         so each unique position gets its own entry and identical positions are reused.
+
+        post: __return__[0] is not None
+        post: 0 <= __return__[0] < len(self._state_registry)
         """
         reg = self._state_registry
         if reg.get(mob) is None:
@@ -310,7 +313,10 @@ class MobSerializer:
         raise ValueError(msg)
 
     def _vmob_style(self, mob: VMobject) -> dict[str, object]:
-        """Extract fill/stroke style dict from a VMobject (not VGroup)."""
+        """Extract fill/stroke style dict from a VMobject (not VGroup).
+
+        post: implies(isinstance(mob, VGroup), not __return__)
+        """
         if isinstance(mob, VGroup):
             return {}
         style: dict[str, object] = {}
@@ -404,7 +410,12 @@ class MobSerializer:
     # ------------------------------------------------------------------
 
     def _mob_register_commands(self, mob: Mobject) -> list[dict]:
-        """Return register command(s) for mob and all its JS children."""
+        """Return register command(s) for mob and all its JS children.
+
+        post: len(__return__) >= 1
+        post: all(d["cmd"] == "register" for d in __return__)
+        post: __return__[-1]["id"] == self.short_id(mob)
+        """
         js_children = self._js_children(mob)
         if not js_children:
             return [
@@ -438,7 +449,12 @@ class MobSerializer:
         return cmds
 
     def _mob_remove_commands(self, mob: Mobject) -> list[dict]:
-        """Return remove command(s) for mob and all its JS children (deepest first)."""
+        """Return remove command(s) for mob and all its JS children (deepest first).
+
+        post: len(__return__) >= 1
+        post: all(d["cmd"] == "remove" for d in __return__)
+        post: __return__[-1]["id"] == self.short_id(mob)
+        """
         js_children = self._js_children(mob)
         cmds: list[dict] = []
         for child in js_children:

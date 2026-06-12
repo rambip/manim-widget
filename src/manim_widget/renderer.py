@@ -408,6 +408,11 @@ class CaptureRenderer:
 
         Timestamps are scaled so the last sub-animation ends at group.run_time,
         preserving lag_ratio spacing proportionally.
+
+        post: len(__return__) == len(group.anims_with_timings)
+        post: all("start" in d and "end" in d for d in __return__)
+        post: implies(len(__return__) > 0 and group.max_end_time > 0,
+                      abs(__return__[-1]["end"] - group.run_time) < 1e-5)
         """
         scale = group.run_time / group.max_end_time if group.max_end_time > 0 else 1.0
         result = []
