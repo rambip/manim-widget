@@ -3,7 +3,6 @@ from __future__ import annotations
 import base64
 import io
 import json
-import math
 import os
 
 import numpy as np
@@ -30,7 +29,7 @@ from manim_widget.widget import ManimWidget
 from manim_widget.renderer import (
     CaptureRenderer,
     _classify_subpaths,
-    _needs_camera_frame_loop,
+    _needs_camera_loop,
 )
 from manim_widget.states import _contour_winding
 from tests.scene_strategies import (
@@ -460,12 +459,6 @@ def test_updater_command_uses_state_refs_and_dedup_is_deterministic():
             {
                 "name": "initial",
                 "snapshot": {},
-                "camera": {
-                    "phi": 0.0,
-                    "theta": -1.5707963267948966,
-                    "distance": 5.0,
-                    "fov": 77.31961650818019,
-                },
                 "construct": [
                     {"cmd": "register", "id": "0", "state_ref": 0},
                     {"cmd": "register", "id": "1", "state_ref": 1},
@@ -518,12 +511,6 @@ def test_create_then_next_section_snapshot_only_second_section():
             {
                 "name": "initial",
                 "snapshot": {},
-                "camera": {
-                    "phi": 0.0,
-                    "theta": -1.5707963267948966,
-                    "distance": 5.0,
-                    "fov": 77.31961650818019,
-                },
                 "construct": [
                     {"cmd": "register", "id": "0", "state_ref": 0},
                     {
@@ -900,50 +887,32 @@ def test_cyclic_replace_animation_emits_group_animation():
     assert len(anim["ids"]) == 3
 
 
-def test_camera_fov_calculation():
-    """Test that FOV is correctly computed from Manim camera parameters."""
+def test_camera_state_is_in_state_bank():
+    """Camera states must be stored in the global state bank as kind='Camera'."""
 
     class SimpleScene(ManimWidget):
         def construct(self):
             s = Square()
             self.play(Create(s))
 
-    widget = SimpleScene(fps=10)
-    data = widget.scene_data
-
-    camera = data["sections"][0]["camera"]
-    assert "fov" in camera
-
-    expected_fov = 2 * math.degrees(math.atan(8 / (2 * 5)))
-    assert abs(camera["fov"] - expected_fov) < 0.001
-
-
-def test_camera_theta_attr_assignment_is_serialized():
-    class ZYImageCNN(ManimWidget):
-        def construct(self):
-            self.camera.theta = 0.2
-
-    scene = ZYImageCNN(fps=10)
-    data = scene.scene_data
+    data = SimpleScene(fps=10).scene_data
     assert_valid_scene(data)
+    cam_states = [s for s in data["states"] if s.get("kind") == "Camera"]
+    # Static scene — no camera movement, so no camera states in bank
+    assert cam_states == []
 
-    camera = data["sections"][0]["camera"]
-    assert abs(camera["theta"] - 0.2) < 1e-12
 
+def test_camera_state_has_four_points_and_focal_distance():
+    """A CameraState entry must have exactly 4 corner points and a focal_distance."""
+    from manim_widget.renderer import _serialize_camera
+    from manim.camera.three_d_camera import ThreeDCamera
 
-def test_camera_distance_and_fov_attr_assignment_is_serialized():
-    class ZYImageCNN(ManimWidget):
-        def construct(self):
-            self.camera.distance = 7.5
-            self.camera.fov = 52.0
-
-    scene = ZYImageCNN(fps=10)
-    data = scene.scene_data
-    assert_valid_scene(data)
-
-    camera = data["sections"][0]["camera"]
-    assert abs(camera["distance"] - 7.5) < 1e-12
-    assert abs(camera["fov"] - 52.0) < 1e-12
+    cam = ThreeDCamera()
+    pts, fd = _serialize_camera(cam, 14.222, 8.0)
+    assert len(pts) == 4
+    assert all(len(p) == 3 for p in pts)
+    assert isinstance(fd, float)
+    assert fd > 0
 
 
 def test_same_square_scaled_and_readded_serializes_only_scaled_state():
@@ -1020,24 +989,19 @@ def test_register_new_section_register_back_emits_two_registers_with_two_states(
     assert abs(p1[0] - 1.0) < 1e-9
 
 
-def test_camera_set_before_next_section_appears_in_first_and_second_sections():
-    """Test that camera parameters set before next_section() appear in both outgoing and new section entry."""
+def test_sections_have_no_camera_key():
+    """Sections must not have a top-level 'camera' key — camera is in the state bank now."""
 
     class CameraSetupScene(ManimWidget):
         def construct(self):
             self.camera.theta = 0.5
-            self.camera.phi = 0.3
-            self.camera.distance = 10.0
             self.next_section("after_camera_setup")
 
-    scene = CameraSetupScene(fps=10)
-    data = scene.scene_data
+    data = CameraSetupScene(fps=10).scene_data
+    assert_valid_scene(data)
 
     for section in data["sections"]:
-        cam = section["camera"]
-        assert abs(cam["theta"] - 0.5) < 1e-9
-        assert abs(cam["phi"] - 0.3) < 1e-9
-        assert abs(cam["distance"] - 10.0) < 1e-9
+        assert "camera" not in section
 
 
 def test_arrow_serializes_as_vgroup_container():
@@ -1122,19 +1086,19 @@ def test_vgroup_state_children_are_all_ints(child_states):
 
 def test_manim_camera_has_no_updaters_attribute():
     """Manim's ThreeDCamera has no 'updaters' attribute, so the camera-updater
-    branch of _needs_camera_frame_loop is currently unreachable for real scenes.
+    branch of _needs_camera_loop is currently unreachable for real scenes.
     If a future Manim version adds camera updaters this test will fail and we'll
     need to revisit the predicate."""
     from manim.camera.three_d_camera import ThreeDCamera
 
     cam = ThreeDCamera()
     assert not hasattr(cam, "updaters"), (
-        "ThreeDCamera now has 'updaters' — revisit _needs_camera_frame_loop"
+        "ThreeDCamera now has 'updaters' — revisit _needs_camera_loop"
     )
 
 
-def test_needs_camera_frame_loop_false_for_real_scene_with_real_animation():
-    """_needs_camera_frame_loop must return False for a typical non-camera play()
+def test_needs_camera_loop_false_for_real_scene_with_real_animation():
+    """_needs_camera_loop must return False for a typical non-camera play()
     so the optimised (no frame-loop) path is actually taken."""
 
     class SimpleScene(ManimWidget):
@@ -1143,7 +1107,7 @@ def test_needs_camera_frame_loop_false_for_real_scene_with_real_animation():
         def construct(self):
             c = Circle()
             anims = self.compile_animations(Create(c))
-            SimpleScene._captured = _needs_camera_frame_loop(self, anims)
+            SimpleScene._captured = _needs_camera_loop(self, anims)
             self.play(Create(c))
 
     SimpleScene()
@@ -1167,15 +1131,15 @@ def test_generated_scene_produces_valid_schema(args):
 
 @given(construct_script(min_mobs=1, max_mobs=4, min_plays=2, max_plays=5))
 @settings(max_examples=30, deadline=None)
-def test_generated_scene_no_camera_updates_in_animate_commands(args):
-    """Non-updater scenes must never emit camera_updates in animate commands
-    (frame loop skipped)."""
+def test_generated_scene_no_camera_frames_in_animate_commands(args):
+    """Non-updater scenes must never emit camera_frames in animate commands
+    (frame loop skipped when camera is static)."""
     mob_specs, commands = args
     data = run_generated_scene(mob_specs, commands, fps=5)
     for section in data["sections"]:
         for cmd in section["construct"]:
             if cmd["cmd"] == "animate":
-                assert "camera_updates" not in cmd
+                assert "camera_frames" not in cmd
 
 
 @given(

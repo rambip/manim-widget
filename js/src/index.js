@@ -3,6 +3,11 @@ import { MobjectRegistry } from "./registry.js";
 import { createPlayer } from "./player.js";
 import { diffSceneData } from "./diff.js";
 
+// Global registry for SharedCamera coordination across widget instances.
+// Key: camera_id string. Value: { listeners: Set<(state) => void> }
+// Camera state is a CameraState object {kind:"Camera", points, focal_distance}.
+const _sharedCameras = (globalThis.__MW_SHARED_CAMERAS ??= new Map());
+
 function buildUi(el) {
   el.innerHTML = `
     <div id="mw-wrapper" style="display:inline-flex;flex-direction:column;max-width:100%;">
@@ -33,6 +38,79 @@ function buildUi(el) {
     sectionsDiv: el.querySelector("#mw-section-buttons"),
     warning: el.querySelector("#mw-warning"),
     d3Checkbox: el.querySelector("#mw-3d-checkbox"),
+  };
+}
+
+function wireSharedCamera(model, getPlayer, getScene) {
+  const cameraId = model.get("shared_camera_id");
+  if (!cameraId) return;
+
+  if (!_sharedCameras.has(cameraId)) {
+    _sharedCameras.set(cameraId, { listeners: new Set() });
+  }
+  const entry = _sharedCameras.get(cameraId);
+
+  // Subscribe: when another widget pushes a camera state, apply it directly
+  // via the original (unpatched) method to avoid re-broadcasting.
+  let origApply = null;
+  const listener = (state) => {
+    if (origApply) {
+      origApply(state);
+    } else {
+      const p = getPlayer();
+      if (p) p._applyCameraState(state);
+    }
+  };
+  entry.listeners.add(listener);
+
+  let _orbitCleanup = null;
+
+  // Publish: patch the player's _applyCameraState to also broadcast.
+  // Called after getPlayer() is guaranteed non-null (after loadScene).
+  function patchPlayer() {
+    const p = getPlayer();
+    if (!p || p.__sharedCameraPatch) return;
+    p.__sharedCameraPatch = true;
+    const orig = p._applyCameraState.bind(p);
+    origApply = orig; // listener uses this to avoid calling the patched version
+    p._applyCameraState = (state) => {
+      orig(state);
+      // Broadcast to other subscribers, skipping ourselves.
+      for (const l of entry.listeners) {
+        if (l !== listener) l(state);
+      }
+    };
+
+    // Also broadcast when the user moves the orbit controls directly —
+    // those bypass _applyCameraState entirely.
+    const s = getScene?.();
+    if (s?.orbitControls) {
+      if (_orbitCleanup) _orbitCleanup();
+      const onOrbitChange = () => {
+        const angles = s.camera3D.getOrbitAngles();
+        const t = s.camera3D.lookAtTarget;
+        const state = {
+          kind: "OrbitState",
+          phi: angles.phi,
+          theta: angles.theta,
+          distance: angles.distance,
+          target: [t.x, t.y, t.z],
+        };
+        for (const l of entry.listeners) {
+          if (l !== listener) l(state);
+        }
+      };
+      s.orbitControls.addEventListener("change", onOrbitChange);
+      _orbitCleanup = () => s.orbitControls.removeEventListener("change", onOrbitChange);
+    }
+  }
+
+  return {
+    cleanup: () => {
+      entry.listeners.delete(listener);
+      _orbitCleanup?.();
+    },
+    patchPlayer,
   };
 }
 
@@ -67,6 +145,8 @@ async function render({ model, el }) {
   let sceneData = null;
   let scene = null;
   let registry = null;
+
+  const sharedCamWire = wireSharedCamera(model, () => player, () => scene);
 
   function updateSectionStyles(currentlyPlayingIndex = -1) {
     const labels = ui.sectionsDiv.querySelectorAll('.mw-section-label');
@@ -148,6 +228,8 @@ async function render({ model, el }) {
       : new Scene(ui.container, { width: pxWidth, height: pxHeight });
     registry = new MobjectRegistry();
     player = createPlayer(scene, registry);
+    // Allow patchPlayer to re-wire orbit controls on the new scene instance.
+    delete player.__sharedCameraPatch;
     player.setfps(data.fps || 10);
     player.setStates(data.states || []);
     player.setSections(data.sections);
@@ -160,6 +242,8 @@ async function render({ model, el }) {
       .join("");
 
     updateSectionStyles();
+
+    sharedCamWire?.patchPlayer();
 
     // Auto-play all sections on load
     await player.play();
