@@ -81,23 +81,19 @@
             "$ref": "#/definitions/Command"
           },
           "description": "Ordered list of commands to execute. Empty when unsupported=true."
-        },
-        "camera": {
-          "$ref": "#/definitions/CameraState",
-          "description": "Camera state at section entry (phi, theta, distance, look_at). Used for section jumps without replay."
         }
       }
     },
     "Snapshot": {
       "type": "object",
-      "description": "Scene state at the start of this section. It is a map of object_id -> index in the global states bank. Note that for groups, VGroup children are NOT included - the player must restore the children from VGroupState.children.",
+      "description": "Scene state at the start of this section. Maps object_id -> index in the global states bank. The special '#camera' key maps to a CameraState ref. VGroup children are NOT listed separately — referenced via VGroupState.children.",
       "additionalProperties": {
         "type": "integer",
         "minimum": 0
       }
     },
     "MobjectState": {
-      "description": "State variant holding geometrical or textual data. Nature of data is determined by the 'kind' field: 'VMobject', 'VGroup', 'MathTexSource', 'ImageMobject', or 'Derived'. A 'Derived' entry inherits all fields from a parent state and overrides specific fields; its 'from' index must be less than its own index.",
+      "description": "State variant holding geometrical or textual data. Nature of data is determined by the 'kind' field: 'VMobject', 'VGroup', 'MathTexSource', 'ImageMobject', 'Camera', or 'Derived'. A 'Derived' entry inherits all fields from a parent state and overrides specific fields; its 'from' index must be less than its own index.",
       "oneOf": [
         {
           "$ref": "#/definitions/VMobjectState"
@@ -113,6 +109,9 @@
         },
         {
           "$ref": "#/definitions/ValueTrackerState"
+        },
+        {
+          "$ref": "#/definitions/CameraState"
         },
         {
           "$ref": "#/definitions/DerivedState"
@@ -371,6 +370,9 @@
         },
         {
           "$ref": "#/definitions/UpdaterDescriptor"
+        },
+        {
+          "$ref": "#/definitions/MoveCameraCommand"
         }
       ]
     },
@@ -447,7 +449,7 @@
     },
     "AnimateCommand": {
       "type": "object",
-      "description": "One scene.play() call. All animations run in parallel by default",
+      "description": "One scene.play() call. All animations run in parallel by default. The special '#camera' mob_id may appear in animations as a MoveToTarget targeting a CameraState.",
       "required": [
         "cmd",
         "duration",
@@ -476,16 +478,12 @@
           "additionalProperties": {
             "$ref": "#/definitions/UpdaterDescriptor"
           }
-        },
-        "camera_updates": {
-          "$ref": "#/definitions/CameraUpdaterData",
-          "description": "Per-frame camera state. Captured when camera moves via move_camera() or camera updaters."
         }
       }
     },
     "UpdaterDescriptor": {
       "type": "object",
-      "description": "A scene.play() call driven by object updaters. Captures full scene state at every frame.",
+      "description": "A scene.play() call driven by object updaters. Captures full scene state at every frame. The special '#camera' key in each frame entry holds a CameraState ref.",
       "required": [
         "cmd",
         "duration",
@@ -503,7 +501,7 @@
         },
         "frames": {
           "type": "array",
-          "description": "Per-frame scene state. Each entry maps mob_id to a state_ref into the global states bank.",
+          "description": "Per-frame scene state. Each entry maps mob_id (or '#camera') to a state_ref into the global states bank.",
           "items": {
             "type": "object",
             "additionalProperties": {
@@ -518,10 +516,6 @@
               }
             }
           }
-        },
-        "camera_updates": {
-          "$ref": "#/definitions/CameraUpdaterData",
-          "description": "Per-frame camera state for 3D scenes."
         }
       }
     },
@@ -822,60 +816,46 @@
     },
     "CameraState": {
       "type": "object",
-      "description": "3D camera spherical coordinates at section entry.",
-      "required": [
-        "phi",
-        "theta",
-        "distance"
-      ],
+      "description": "Camera view rectangle stored in the global state bank. Points are 4 corners [UL, UR, DR, DL] of the view plane in world space. focal_distance=0 means orthographic (2D).",
+      "required": ["kind", "points"],
+      "additionalProperties": false,
       "properties": {
-        "phi": {
-          "type": "number",
-          "description": "Polar angle from Y axis (0 = top, PI = bottom)."
+        "kind": {
+          "type": "string",
+          "const": "Camera"
         },
-        "theta": {
-          "type": "number",
-          "description": "Azimuthal angle in XZ plane."
+        "points": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "type": "array",
+            "items": { "type": "number" },
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "description": "View rectangle corners [UL, UR, DR, DL] in world coordinates."
         },
-        "distance": {
+        "focal_distance": {
           "type": "number",
-          "description": "Distance from look-at point."
-        },
-        "fov": {
-          "type": "number",
-          "description": "Field of view in degrees. Defaults to 77.32 (matches Manim: frame_height=8 at distance=5)."
-        },
-        "look_at": {
-          "$ref": "#/definitions/Vec3",
-          "description": "Camera look-at target point. Defaults to [0, 0, 0]."
+          "description": "Perspective focal distance. 0 for orthographic / 2D scenes."
         }
       }
     },
-    "CameraUpdaterData": {
-      "type": "array",
-      "description": "Per-frame camera state. Array of camera states, one per frame. Deduplicated - only includes frames where camera changed.",
-      "items": {
-        "$ref": "#/definitions/CameraFrame"
-      }
-    },
-    "CameraFrame": {
+    "MoveCameraCommand": {
       "type": "object",
-      "description": "Single frame of camera state.",
+      "description": "Instantaneous camera placement. Applies camera state from the global states bank.",
+      "required": ["cmd", "state_ref"],
+      "additionalProperties": false,
       "properties": {
-        "phi": {
-          "type": "number"
+        "cmd": {
+          "type": "string",
+          "const": "move_camera"
         },
-        "theta": {
-          "type": "number"
-        },
-        "distance": {
-          "type": "number"
-        },
-        "fov": {
-          "type": "number"
-        },
-        "look_at": {
-          "$ref": "#/definitions/Vec3"
+        "state_ref": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Index into the global states bank for a CameraState entry."
         }
       }
     },

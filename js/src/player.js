@@ -120,13 +120,83 @@ export class Player {
     this._scene.render();
   }
 
-  /** Update the camera for a section by index. */
-  applyCamera(sectionIndex, camera) {
-    if (!camera) return;
-    const section = this._sections[sectionIndex];
-    if (section) section.camera = camera;
-    if (typeof this._scene.setCamera === "function") {
-      this._scene.setCamera(camera);
+  /** Apply a CameraState object (kind:"Camera", points, focal_distance) to the scene. */
+  _applyCameraState(state) {
+    if (!state) return;
+    // Live orbit-sync shortcut — no corner-point roundtrip needed.
+    if (state.kind === "OrbitState") {
+      if (typeof this._scene.setCameraOrientation === "function") {
+        this._scene.setCameraOrientation(state.phi, state.theta, state.distance);
+      }
+      if (typeof this._scene.setLookAt === "function" && state.target) {
+        this._scene.setLookAt(state.target);
+      }
+      return;
+    }
+    if (state.kind !== "Camera") return;
+    const { points, focal_distance } = state;
+    if (!Array.isArray(points) || points.length < 4) return;
+
+    const [UL, UR, , DL] = points;
+    const center = [
+      (UL[0] + points[2][0]) / 2,
+      (UL[1] + points[2][1]) / 2,
+      (UL[2] + points[2][2]) / 2,
+    ];
+
+    const fd = focal_distance || 0;
+
+    if (fd === 0) {
+      const camera = this._scene.camera;
+      if (camera) {
+        const frameWidth = Math.sqrt(
+          (UR[0] - UL[0]) ** 2 + (UR[1] - UL[1]) ** 2 + (UR[2] - UL[2]) ** 2,
+        );
+        const frameHeight = Math.sqrt(
+          (UL[0] - DL[0]) ** 2 + (UL[1] - DL[1]) ** 2 + (UL[2] - DL[2]) ** 2,
+        );
+        if (frameWidth > 0) camera.frameWidth = frameWidth;
+        if (frameHeight > 0) camera.frameHeight = frameHeight;
+        camera.moveTo([center[0], center[1], camera.position.z]);
+        this._scene.render();
+      }
+      return;
+    }
+
+    // Derive right and up from corner points, then camera direction
+    function norm(v) {
+      const len = Math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2);
+      return len > 0 ? [v[0] / len, v[1] / len, v[2] / len] : v;
+    }
+    function cross(a, b) {
+      return [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+      ];
+    }
+    const right = norm([UR[0] - UL[0], UR[1] - UL[1], UR[2] - UL[2]]);
+    const up = norm([UL[0] - DL[0], UL[1] - DL[1], UL[2] - DL[2]]);
+    const camDir = cross(right, up);
+
+    // Python Manim spherical: phi from Z axis, theta in XY plane
+    const phi = Math.acos(Math.max(-1, Math.min(1, camDir[2])));
+    const theta = Math.atan2(camDir[1], camDir[0]);
+
+    if (typeof this._scene.setCameraOrientation === "function") {
+      this._scene.setCameraOrientation(phi, theta, fd);
+    }
+    if (typeof this._scene.setLookAt === "function") {
+      this._scene.setLookAt(center);
+    }
+
+    // Set FOV from view rectangle width and focal distance
+    const rectWidth = Math.sqrt(
+      (UR[0] - UL[0]) ** 2 + (UR[1] - UL[1]) ** 2 + (UR[2] - UL[2]) ** 2,
+    );
+    if (rectWidth > 0 && fd > 0 && this._scene.camera3D) {
+      const fovDeg = (2 * Math.atan(rectWidth / (2 * fd)) * 180) / Math.PI;
+      this._scene.camera3D.setFov(fovDeg);
     }
   }
 
@@ -517,6 +587,12 @@ export class Player {
 
   async _restoreSnapshot(snapshot, section) {
     for (const [id, value] of Object.entries(snapshot)) {
+      if (id === "#camera") {
+        const state = this._stateFromRef(section, value);
+        this._applyCameraState(state);
+        this._registry.set("#camera", state);
+        continue;
+      }
       const state = this._stateFromRef(section, value);
       const mob = this._instantiateFromRef(section, value);
       this._registry.set(id, mob);
@@ -534,18 +610,6 @@ export class Player {
     this._registry.clear();
     await this._restoreSnapshot(section.snapshot || {}, section);
 
-    // Set initial camera state for section (3D scenes only)
-    if (
-      section.camera &&
-      typeof this._scene.setCameraOrientation === "function"
-    ) {
-      const { phi, theta, distance, fov } = section.camera;
-      this._scene.setCameraOrientation(phi, theta, distance);
-      if (fov !== undefined && this._scene.camera3D) {
-        this._scene.camera3D.setFov(fov);
-      }
-    }
-
     const commands = Array.isArray(section.construct) ? section.construct : [];
     for (const cmd of commands) {
       await this._executeCommand(cmd, section);
@@ -556,6 +620,12 @@ export class Player {
   async _executeCommand(cmd, section) {
     switch (cmd?.cmd) {
       case "register": {
+        if (cmd.id === "#camera") {
+          const state = this._stateFromRef(section, cmd.state_ref);
+          this._applyCameraState(state);
+          this._registry.set("#camera", state);
+          return;
+        }
         const state = this._stateFromRef(section, cmd.state_ref);
         let mob;
         if (Array.isArray(cmd.child_ids) && cmd.child_ids.length > 0) {
@@ -596,12 +666,18 @@ export class Player {
         await this._playAnimate(cmd, section);
         return;
       }
+      case "move_camera": {
+        const state = this._stateFromRef(section, cmd.state_ref);
+        this._applyCameraState(state);
+        return;
+      }
       case "updater": {
         // Ensure all mobs referenced by updater frames are in the scene.
         // These may have been registered without an introducing animation
         // (e.g. always_redraw mobs added via self.add).
         for (const frame of (cmd.frames || [])) {
           for (const id of Object.keys(frame)) {
+            if (id === "#camera") continue;
             const mob = this._registry.get(id);
             if (mob && !this._scene.mobjects.has(mob)) {
               this._scene.add(mob);
@@ -675,71 +751,114 @@ export class Player {
     return buildSimpleAnimation(mob, desc, this._registry);
   }
 
+  _getRateFunc(name) {
+    switch (name) {
+      case "linear": return (t) => t;
+      case "rush_into": return (t) => 2 * t * t;
+      case "rush_from": return (t) => 1 - 2 * (1 - t) * (1 - t);
+      default: return (t) => t * t * (3 - 2 * t); // smooth
+    }
+  }
+
+  async _runCameraAnimation(startState, endState, duration, rateFuncName = "smooth") {
+    const rateFunc = this._getRateFunc(rateFuncName);
+    const numFrames = Math.max(1, Math.ceil(duration * this._fps));
+    const dt = (duration * 1000) / numFrames;
+    for (let i = 1; i <= numFrames; i++) {
+      const alpha = rateFunc(i / numFrames);
+      const pts = startState.points.map((sp, pi) =>
+        sp.map((sv, si) => sv + (endState.points[pi][si] - sv) * alpha),
+      );
+      const fd =
+        (startState.focal_distance || 0) +
+        ((endState.focal_distance || 0) - (startState.focal_distance || 0)) * alpha;
+      this._applyCameraState({ kind: "Camera", points: pts, focal_distance: fd });
+      await new Promise((r) => setTimeout(r, dt));
+    }
+    this._registry.set("#camera", endState);
+  }
+
   async _playAnimate(cmd, section) {
     const descriptors = Array.isArray(cmd.animations) ? cmd.animations : [];
     const cmdDuration = typeof cmd.duration === "number" ? cmd.duration : 1;
 
-    // Check if any descriptor carries explicit start/end timestamps.
-    const hasTimestamps = descriptors.some(
+    const cameraDescs = descriptors.filter(
+      (d) => d.id === "#camera" && "state_ref" in d,
+    );
+    const nonCameraDescs = descriptors.filter((d) => d.id !== "#camera");
+
+    const hasTimestamps = nonCameraDescs.some(
       (d) => d.start !== undefined || d.end !== undefined,
     );
 
-    if (hasTimestamps) {
-      const entries = [];
-      for (const desc of descriptors) {
-        if (desc.kind === "Wait") continue;
+    const runRegular = async () => {
+      if (hasTimestamps) {
+        const entries = [];
+        for (const desc of nonCameraDescs) {
+          if (desc.kind === "Wait") continue;
+          const animation = await this._buildAnimation(desc, section);
+          if (animation) {
+            entries.push({
+              animation,
+              start: desc.start ?? 0,
+              end: desc.end ?? cmdDuration,
+            });
+          }
+        }
+        if (entries.length > 0) {
+          await this._scene.playWithTimestamps(entries);
+        }
+        return;
+      }
+
+      const animations = [];
+      for (const desc of nonCameraDescs) {
+        if (desc.kind === "Wait") {
+          if (animations.length > 0) {
+            await this._scene.play(...animations);
+            animations.length = 0;
+          }
+          await this._scene.wait(cmdDuration);
+          continue;
+        }
         const animation = await this._buildAnimation(desc, section);
         if (animation) {
-          entries.push({
-            animation,
-            start: desc.start ?? 0,
-            end: desc.end ?? cmdDuration,
+          animations.push(animation);
+        }
+      }
+      if (animations.length > 0) {
+        for (const anim of animations) {
+          Object.defineProperty(anim, "duration", {
+            value: cmdDuration,
+            writable: true,
+            configurable: true,
           });
         }
+        await this._scene.play(...animations);
       }
-      if (entries.length > 0) {
-        await this._scene.playWithTimestamps(entries);
-      }
-      return;
-    }
+    };
 
-    const animations = [];
-    for (const desc of descriptors) {
-      if (desc.kind === "Wait") {
-        // Wait needs to be handled separately - play accumulated animations first
-        if (animations.length > 0) {
-          await this._scene.play(...animations);
-          animations.length = 0;
+    const runCamera = async () => {
+      for (const desc of cameraDescs) {
+        const startState = this._registry.get("#camera");
+        const endState = this._stateFromRef(section, desc.state_ref);
+        if (startState && endState) {
+          await this._runCameraAnimation(
+            startState,
+            endState,
+            cmdDuration,
+            desc.rate_func,
+          );
         }
-        await this._scene.wait(cmdDuration);
-        continue;
       }
-      const animation = await this._buildAnimation(desc, section);
-      if (animation) {
-        animations.push(animation);
-      }
-    }
+    };
 
-    // Play all accumulated animations together, honouring the command duration.
-    if (animations.length > 0) {
-      for (const anim of animations) {
-        Object.defineProperty(anim, "duration", {
-          value: cmdDuration,
-          writable: true,
-          configurable: true,
-        });
-      }
-      await this._scene.play(...animations);
-    }
+    await Promise.all([runRegular(), runCamera()]);
   }
 
   async _playUpdater(cmd, section) {
     const frames = Array.isArray(cmd.frames) ? cmd.frames : [];
-    const cameraUpdates = Array.isArray(cmd.camera_updates)
-      ? cmd.camera_updates
-      : [];
-    const hasCameraUpdates = cameraUpdates.length > 0;
-    const numFrames = Math.max(frames.length, cameraUpdates.length);
+    const numFrames = frames.length;
 
     if (numFrames === 0) {
       return;
@@ -749,29 +868,18 @@ export class Player {
     const frameDuration = duration / numFrames;
 
     for (let i = 0; i < numFrames; i++) {
-      // Apply mobject frame
-      if (i < frames.length) {
-        for (const [id, frameEntry] of Object.entries(frames[i])) {
-          const mob = this._registry.get(id);
-          if (!mob) {
-            continue;
-          }
+      for (const [id, frameEntry] of Object.entries(frames[i])) {
+        if (id === "#camera") {
           const state = this._stateFromRef(section, frameEntry.state_ref);
-          this._applyState(mob, state);
+          this._applyCameraState(state);
+          this._registry.set("#camera", state);
+          continue;
         }
+        const mob = this._registry.get(id);
+        if (!mob) continue;
+        const state = this._stateFromRef(section, frameEntry.state_ref);
+        this._applyState(mob, state);
       }
-
-      // Apply camera frame
-      if (hasCameraUpdates && i < cameraUpdates.length) {
-        const cam = cameraUpdates[i];
-        if (typeof this._scene.setCameraOrientation === "function") {
-          this._scene.setCameraOrientation(cam.phi, cam.theta, cam.distance);
-          if (cam.fov !== undefined && this._scene.camera3D) {
-            this._scene.camera3D.setFov(cam.fov);
-          }
-        }
-      }
-
       await this._scene.wait(frameDuration);
     }
   }

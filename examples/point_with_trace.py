@@ -37,6 +37,7 @@ def test(runner):
         if cmd["cmd"] == "updater"
         for frame in cmd["frames"]
         for mob_id in frame
+        if not mob_id.startswith("#")
     }
     scene_ids = set(r.scene_ids(0))
     assert frame_ids <= scene_ids, (

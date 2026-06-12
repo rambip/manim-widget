@@ -64,7 +64,14 @@ class ImageMobjectState(BaseModel):
 
 
 class ValueTrackerState(BaseModel):
+    kind: Literal["ValueTracker"] = "ValueTracker"
     value: float
+
+
+class CameraState(BaseModel):
+    kind: Literal["Camera"] = "Camera"
+    points: list[list[float]]
+    focal_distance: float = 0.0
 
 
 class DerivedState(BaseModel):
@@ -82,6 +89,7 @@ MobjectState = (
     | MathTexSourceState
     | ImageMobjectState
     | ValueTrackerState
+    | CameraState
     | DerivedState
 )
 
@@ -142,13 +150,14 @@ class UpdaterCommand(BaseModel):
     cmd: Literal["updater"] = "updater"
     duration: float
     frames: list[dict[str, UpdaterFrame]]
+    camera_frames: list[int] | None = None
 
 
 class AnimateCommand(BaseModel):
     cmd: Literal["animate"] = "animate"
     duration: float
     animations: list[AnimationDescriptor]
-    camera_updates: list[dict[str, float]] | None = None
+    camera_frames: list[int] | None = None
 
     @model_validator(mode="after")
     def check_animation_bounds(self) -> AnimateCommand:
@@ -160,8 +169,18 @@ class AnimateCommand(BaseModel):
         return self
 
 
+class MoveCameraCommand(BaseModel):
+    cmd: Literal["move_camera"] = "move_camera"
+    state_ref: int
+
+
 Command = (
-    RegisterCommand | RemoveCommand | RebindCommand | AnimateCommand | UpdaterCommand
+    RegisterCommand
+    | RemoveCommand
+    | RebindCommand
+    | AnimateCommand
+    | UpdaterCommand
+    | MoveCameraCommand
 )
 
 
@@ -176,7 +195,6 @@ class SectionData(BaseModel):
     name: str
     snapshot: dict[str, int] = Field(default_factory=dict)
     commands: list[dict[str, Any]] = Field(alias="construct", default_factory=list)
-    camera: dict[str, float] | None = None
 
 
 class SceneData(BaseModel):

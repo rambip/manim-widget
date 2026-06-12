@@ -94,45 +94,73 @@ def _classify_subpaths(
     return contours, holes
 
 
-def _needs_camera_frame_loop(scene: Scene, animations: list) -> bool:
-    """Return True when the per-frame camera-capture loop must run.
-
-    The loop is the only reason _play_animate_path ticks through time at all
-    (mobject updaters are handled by _play_data_path). It is safe to skip when:
-
-    - The camera has no updaters of its own.
-    - No animation in the batch directly targets the camera object.
-
-    This is 2D/3D-agnostic: a 3D scene whose camera is static during a given
-    play() call gains the same speedup as a 2D scene.
-
-    NOTE: camera animations (self.play(self.camera.animate.set_phi(...))) are
-    not yet a first-class supported feature — they would need a dedicated
-    command type in the wire format. The check below handles the case where
-    they appear anyway so the frame loop still runs rather than silently
-    dropping camera movement.
-    """
-    camera = getattr(scene, "camera", None)
-    if camera is None:
+def _needs_camera_loop(scene: Scene, animations: list) -> bool:
+    """Return True when camera is being animated and needs per-frame capture."""
+    cam = getattr(scene, "camera", None)
+    if cam is None:
         return False
-    if getattr(camera, "updaters", []):
+    if getattr(cam, "updaters", []):
         return True
-    if any(getattr(a, "mobject", None) is camera for a in animations):
+    # Collect all objects belonging to the camera
+    cam_objects: set = {cam}
+    # ThreeDCamera: value trackers and frame_center point
+    for attr in (
+        "phi_tracker",
+        "theta_tracker",
+        "focal_distance_tracker",
+        "gamma_tracker",
+        "zoom_tracker",
+        "_frame_center",
+    ):
+        obj = getattr(cam, attr, None)
+        if obj is not None:
+            cam_objects.add(obj)
+    # MovingCamera: the frame rectangle
+    frame = getattr(cam, "frame", None)
+    if frame is not None:
+        cam_objects.add(frame)
+        if getattr(frame, "updaters", []):
+            return True
+    if any(getattr(a, "mobject", None) in cam_objects for a in animations):
         return True
     return False
 
 
-def _compute_camera_state(cam) -> dict[str, float]:
-    """Extract camera state including computed FOV from Manim camera."""
-    distance = float(getattr(cam, "default_distance", 5))
-    frame_height = float(getattr(cam, "frame_height", 8))
-    fov_deg = 2 * math.degrees(math.atan(frame_height / (2 * distance)))
-    return {
-        "phi": float(cam.get_phi()),
-        "theta": float(cam.get_theta()),
-        "distance": distance,
-        "fov": fov_deg,
-    }
+def _serialize_camera(
+    cam, frame_width: float, frame_height: float
+) -> tuple[list[list[float]], float]:
+    """Return (4-corner points [UL,UR,DR,DL], focal_distance) for any camera."""
+    from manim.camera.moving_camera import MovingCamera
+    from manim.camera.three_d_camera import ThreeDCamera
+
+    if isinstance(cam, MovingCamera):
+        # get_vertices() returns [UR, UL, DL, DR]; reorder to [UL, UR, DR, DL]
+        verts = cam.frame.get_vertices()
+        return [
+            verts[1].tolist(),
+            verts[0].tolist(),
+            verts[3].tolist(),
+            verts[2].tolist(),
+        ], 0.0
+
+    if isinstance(cam, ThreeDCamera):
+        rot = cam.generate_rotation_matrix()
+        right = rot[0, :]
+        up = rot[1, :]
+        center = np.array(cam.frame_center, dtype=float)
+        zoom = float(cam.get_zoom())
+        hw = (frame_width / zoom) / 2
+        hh = (frame_height / zoom) / 2
+        return [
+            (center - hw * right + hh * up).tolist(),
+            (center + hw * right + hh * up).tolist(),
+            (center + hw * right - hh * up).tolist(),
+            (center - hw * right - hh * up).tolist(),
+        ], float(cam.get_focal_distance())
+
+    hw = frame_width / 2
+    hh = frame_height / 2
+    return [[-hw, hh, 0], [hw, hh, 0], [hw, -hh, 0], [-hw, -hh, 0]], 0.0
 
 
 @dataclass
@@ -837,10 +865,17 @@ class CaptureRenderer:
 
         run_time = scene.get_run_time(animations)
         suspend = kwargs.get("suspend_mobject_updating", False)
+        _cam_frame_for_updater_check = getattr(
+            getattr(scene, "camera", None), "frame", None
+        )
+        cam_frame_has_updaters = bool(
+            _cam_frame_for_updater_check is not None
+            and getattr(_cam_frame_for_updater_check, "updaters", [])
+        )
         has_updaters = (
             any(len(m.updaters) > 0 for m in scene.get_mobject_family_members())
-            and not suspend
-        )
+            or cam_frame_has_updaters
+        ) and not suspend
 
         if has_updaters:
             self._play_data_path(scene, animations, run_time)
@@ -959,13 +994,14 @@ class CaptureRenderer:
             self._suppress_stage_adds = False
 
         n_frames = math.ceil(run_time * self.fps)
-        camera_frames: list[dict[str, float]] = []
-        needs_frame_loop = _needs_camera_frame_loop(scene, animations)
+        needs_cam_anim = _needs_camera_loop(scene, animations)
 
-        initial_cam_state: dict[str, float] | None = None
-        if needs_frame_loop:
-            initial_cam_state = _compute_camera_state(scene.camera)
-        last_cam_state = initial_cam_state
+        fw = float(getattr(scene.camera, "frame_width", 14.222))
+        fh = float(getattr(scene.camera, "frame_height", 8.0))
+        initial_cam_pts: list | None = None
+        initial_cam_focal: float = 0.0
+        if needs_cam_anim:
+            initial_cam_pts, initial_cam_focal = _serialize_camera(scene.camera, fw, fh)
 
         # Run the animation lifecycle so mobjects reach their end state.
         # Some transforms (e.g. between ImageMobjects of different pixel
@@ -994,20 +1030,21 @@ class CaptureRenderer:
                     force_end_state(anim)
 
         if not begin_failed:
-            if needs_frame_loop:
+            if needs_cam_anim:
                 scene.animations = animations
                 scene.last_t = 0.0
 
+                _cam_frame = getattr(getattr(scene, "camera", None), "frame", None)
+                _frame_dt = 1.0 / self.fps
                 for i in range(n_frames):
                     t = (i + 1) / self.fps
                     if t > run_time:
                         t = run_time
                     scene.update_to_time(t)
-
-                    cam_state = _compute_camera_state(scene.camera)
-                    if cam_state != initial_cam_state and cam_state != last_cam_state:
-                        camera_frames.append(cam_state)
-                        last_cam_state = cam_state
+                    # camera.frame is not a scene mobject so update_mobjects() skips it;
+                    # drive its updaters explicitly so follow-camera patterns work.
+                    if _cam_frame is not None:
+                        _cam_frame.update(_frame_dt)
 
                 scene.animations = None
 
@@ -1021,9 +1058,23 @@ class CaptureRenderer:
             anim.clean_up_from_scene(scene)
         scene.update_mobjects(0)
 
-        # Add camera updates to animate command if any
-        if camera_frames:
-            current.commands[-1]["camera_updates"] = camera_frames
+        if needs_cam_anim:
+            final_cam_pts, final_cam_focal = _serialize_camera(scene.camera, fw, fh)
+            if final_cam_pts != initial_cam_pts:
+                final_cam_ref = self._state_registry.insert_raw(
+                    {
+                        "kind": "Camera",
+                        "points": final_cam_pts,
+                        "focal_distance": final_cam_focal,
+                    }
+                )
+                animate_descriptors.append(
+                    {
+                        "kind": "MoveToTarget",
+                        "id": "#camera",
+                        "state_ref": final_cam_ref,
+                    }
+                )
 
     def _descriptor_from_animation(self, anim: Animation) -> dict[str, Any]:
         """Translate a single manim Animation into a wire-format descriptor dict.
@@ -1212,32 +1263,43 @@ class CaptureRenderer:
 
         n_frames = math.ceil(run_time * self.fps)
         frames: list[dict[str, Any]] = []
-        camera_frames: list[dict[str, float]] = []
-        is_3d = hasattr(scene, "camera") and hasattr(scene.camera, "get_phi")
 
-        # Capture initial camera state
-        initial_cam_state: dict[str, float] | None = None
-        if is_3d:
-            initial_cam_state = _compute_camera_state(scene.camera)
-        last_cam_state = initial_cam_state
+        fw = float(getattr(scene.camera, "frame_width", 14.222))
+        fh = float(getattr(scene.camera, "frame_height", 8.0))
+        initial_cam_pts, initial_cam_focal = _serialize_camera(scene.camera, fw, fh)
+        last_cam_pts = initial_cam_pts
+        last_cam_ref = self._state_registry.insert_raw(
+            {
+                "kind": "Camera",
+                "points": initial_cam_pts,
+                "focal_distance": initial_cam_focal,
+            }
+        )
+        _cam_frame = getattr(getattr(scene, "camera", None), "frame", None)
+        _frame_dt = 1.0 / self.fps
 
         for i in range(n_frames):
             t = (i + 1) / self.fps
             if t > run_time:
                 t = run_time
             scene.update_to_time(t)
+            # camera.frame updaters are not driven by update_mobjects(); do it explicitly.
+            if _cam_frame is not None:
+                _cam_frame.update(_frame_dt)
             frame: dict[str, Any] = {}
             for mob in tracked:
                 mob_id = self.short_id(mob)
                 frame[mob_id] = {"state_ref": self.state_ref_for(mob)}
-            frames.append(frame)
 
-            # Capture camera state for 3D scenes (only if changed from initial)
-            if is_3d:
-                cam_state = _compute_camera_state(scene.camera)
-                if cam_state != initial_cam_state and cam_state != last_cam_state:
-                    camera_frames.append(cam_state)
-                    last_cam_state = cam_state
+            cam_pts, cam_focal = _serialize_camera(scene.camera, fw, fh)
+            if cam_pts != last_cam_pts:
+                last_cam_ref = self._state_registry.insert_raw(
+                    {"kind": "Camera", "points": cam_pts, "focal_distance": cam_focal}
+                )
+                last_cam_pts = cam_pts
+            frame["#camera"] = {"state_ref": last_cam_ref}
+
+            frames.append(frame)
 
         for anim in animations:
             anim.finish()
@@ -1245,14 +1307,13 @@ class CaptureRenderer:
             anim.clean_up_from_scene(scene)
         scene.update_mobjects(0)
 
-        cmd: dict[str, Any] = {
-            "cmd": "updater",
-            "duration": run_time,
-            "frames": frames,
-        }
-        if camera_frames:
-            cmd["camera_updates"] = camera_frames
-        current.commands.append(cmd)
+        current.commands.append(
+            {
+                "cmd": "updater",
+                "duration": run_time,
+                "frames": frames,
+            }
+        )
 
     def _image_source_from_pixel_array(self, pixel_array: object) -> str:
         arr = np.asarray(pixel_array)

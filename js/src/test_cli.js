@@ -152,6 +152,7 @@ function serializeRuntimeState(registry) {
   const snapshot = {};
   const sortedIds = Array.from(registry._registry.keys()).sort();
   for (const id of sortedIds) {
+    if (id === "#camera") continue;
     const mob = registry._registry.get(id);
     const ref = serializeMobject(mob);
     if (ref !== null) {
@@ -159,7 +160,17 @@ function serializeRuntimeState(registry) {
     }
   }
 
-  return { snapshot, states };
+  let cameraCenter = null;
+  const cameraEntry = registry._registry.get("#camera");
+  if (cameraEntry && Array.isArray(cameraEntry.points) && cameraEntry.points.length === 4) {
+    const pts = cameraEntry.points;
+    cameraCenter = [
+      pts.reduce((s, p) => s + p[0], 0) / 4,
+      pts.reduce((s, p) => s + p[1], 0) / 4,
+    ];
+  }
+
+  return { snapshot, states, camera_center: cameraCenter };
 }
 
 async function readInput() {
@@ -303,6 +314,7 @@ for (let i = 0; i < spec.sections.length; i++) {
     validateSceneGraph(scene, `section:${section.name || i}`);
 
     for (const [mobId, mob] of registry._registry.entries()) {
+      if (mobId === "#camera") continue;
       validateMobjectTree(mob, `registry:${mobId}`);
     }
 
@@ -312,7 +324,7 @@ for (let i = 0; i < spec.sections.length; i++) {
 
     operations.push({ type: "section_end", index: i, name: section.name });
 
-    const registryIds = Array.from(registry._registry.keys()).sort();
+    const registryIds = Array.from(registry._registry.keys()).filter(id => !id.startsWith("#")).sort();
     const sceneIdSet = new Set();
     for (const mob of scene.mobjects) {
       for (const [id, m] of registry._registry.entries()) {

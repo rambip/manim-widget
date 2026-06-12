@@ -257,15 +257,19 @@ class TestCLIIntegration:
     def test_fadein_image(self, runner, fadein_image_data):
         section = fadein_image_data["sections"][0]
         states = fadein_image_data["states"]
-        # DAG: content entry (kind+source) is at index 0, addon entry (from+points) at index 1
-        assert states[0]["kind"] == "ImageMobject"
-        assert "from" in states[1]
+        # DAG: content entry (kind+source) and addon entry (from+points)
+        image_idx = next(
+            i for i, s in enumerate(states) if s.get("kind") == "ImageMobject"
+        )
+        addon_idx = next(i for i, s in enumerate(states) if "from" in s)
+        assert states[image_idx]["kind"] == "ImageMobject"
+        assert "from" in states[addon_idx]
 
         register_cmd = section["construct"][0]
         animate_cmd = section["construct"][1]
         assert register_cmd["cmd"] == "register"
         # register points to the addon state (which has positional data)
-        assert states[register_cmd["state_ref"]].get("from") == 0
+        assert states[register_cmd["state_ref"]].get("from") == image_idx
 
         assert animate_cmd["cmd"] == "animate"
         assert animate_cmd["animations"][0]["kind"] == "FadeIn"
@@ -440,8 +444,9 @@ class TestCLIIntegration:
         states = data["states"]
         construct = data["sections"][0]["construct"]
 
-        assert len(states) == 3, (
-            f"Expected 3 states (2 children + Group), got {len(states)}"
+        mob_states = [s for s in states if s.get("kind") != "Camera"]
+        assert len(mob_states) == 3, (
+            f"Expected 3 states (2 children + Group), got {len(mob_states)}"
         )
 
         register_cmd = next(

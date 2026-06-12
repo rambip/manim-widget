@@ -35,7 +35,7 @@
 - **`renderer.py`** — Custom capture renderer integrated with Manim's `Scene.play` lifecycle. Emits commands and animation descriptors. Maintains per-section deduplicated state banks and allocates `state_ref` values. Handles `rebind` for replacement-style transforms.
 - **`snapshot.py`** — Short-id generation and mobject serialization primitives.
 
-### JavaScript (`js/src/`)
+### JavaScript (`js/src/`) — **edit source here, never `src/manim_widget/static/index.js` directly**
 
 - **`index.js`** — anywidget entry point. Creates scene, registry, player, wires controls.
 - **`registry.js`** — Runtime mobject registry keyed by stable IDs.
@@ -48,7 +48,7 @@ Built from `js/src/*` via Bun with the typia transform applied. This is what pac
 
 ### manim-web
 
-`manim-web` is a git submodule and a maintained fork. Upstream PRs are sent when bugs are found. The JS side of `manim-widget` may eventually move into `manim-web` directly, making the JSON spec a first-class concept there.
+`manim-web` is a git submodule at `manim-web/` (repo root). **Always read its source from `manim-web/src/`, never from `js/node_modules/manim-web/`.** The node_modules copy is a build artifact and may be stale. Upstream PRs are sent when bugs are found. The JS side of `manim-widget` may eventually move into `manim-web` directly, making the JSON spec a first-class concept there.
 
 ---
 
@@ -87,7 +87,10 @@ Built from `js/src/*` via Bun with the typia transform applied. This is what pac
 | `register` | bind `id → state_ref` in scene graph and show in scene |
 | `remove` | free `id` from registry (emitted after `FadeOut`, `ReplacementTransform`) |
 | `rebind` | remap `source_id → target_id` (emitted after `ReplacementTransform`) |
-| `animate` | one `scene.play()`; contains both parallel animations and updaters for specific objects|
+| `animate` | one `scene.play()` with no active mobject updaters; contains animation descriptors |
+| `updater` | one `scene.play()` where at least one mobject or `camera.frame` has active updaters; contains a `frames` array (one entry per FPS tick) where each frame maps `mob_id → {state_ref}` |
+
+The special id `#camera` is used in both `snapshot` and `updater` frames to carry `CameraState`. In `animate` commands, camera changes are emitted as a `MoveToTarget` descriptor with `id: "#camera"`. `#camera` is not a real mobject — it routes to `_applyCameraState` in the JS player.
 
 ### Animation descriptors
 
@@ -104,6 +107,7 @@ Families: `SimpleAnimation`, `TransformAnimation` (`Transform`, `MoveToTarget`),
 | `VGroup` | `children: [state_ref, ...]` — uniform representation everywhere |
 | `MathTexSource` | latex string + 4 corner points for transform support |
 | `ValueTracker` | scalar `value` only; not rendered |
+| `Camera` | `{points: [UL,UR,DR,DL], focal_distance}` — camera frame corners; `focal_distance==0` means 2D |
 
 ---
 
@@ -138,6 +142,8 @@ Coverage includes: simple scenes (Create, FadeIn), multi-section navigation, VGr
 Runtime note: this suite is relatively slow (often around ~1 minute locally). Use reasonable command/test timeouts to avoid false hangs/failures.
 
 ### Examples (`examples/`)
+
+**No star imports.** Marimo forbids `from manim import *`. Always import names explicitly: `from manim import Circle, Create, DEGREES, ...`.
 
 Each example is a marimo notebook that must define at least one `test_*` function taking a `runner` fixture. The `runner` fixture is provided by the root `conftest.py` and wraps `JSRunner`. Run with:
 
