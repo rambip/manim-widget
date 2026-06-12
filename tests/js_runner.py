@@ -133,6 +133,10 @@ class JSRunner:
     def __init__(self, *, debug: bool = False) -> None:
         _check_env()
         self._debug = debug
+        self._schema: dict | None = None
+        _spec = Path(__file__).parent.parent / "spec.json"
+        if _spec.exists():
+            self._schema = json.loads(_spec.read_text())
         if not debug:
             self._build()
 
@@ -190,8 +194,12 @@ class JSRunner:
         return {**data, "sections": sections}
 
     def check_data(self, scene_data: str | dict[str, Any]) -> JSResult:
-        """Validate pre-serialized scene data through the JS headless runner."""
+        """Validate pre-serialized scene data against spec.json, then run through the JS headless runner."""
+        from jsonschema import validate
+
         data = json.loads(scene_data) if isinstance(scene_data, str) else scene_data
+        if self._schema is not None:
+            validate(data, self._schema)
         scene_json = json.dumps(self._strip_timing(data))
 
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
@@ -222,16 +230,6 @@ class JSRunner:
                 f"CLI produced non-JSON output (exit {proc.returncode}):\n{raw[:500]}\n{proc.stderr}"
             ) from exc
         return JSResult._from_json(data)
-
-    def check_data_validated(
-        self, scene_data: str | dict[str, Any], schema: dict
-    ) -> JSResult:
-        """Validate against spec.json schema, then run through the JS headless runner."""
-        from jsonschema import validate
-
-        data = json.loads(scene_data) if isinstance(scene_data, str) else scene_data
-        validate(data, schema)
-        return self.check_data(data)
 
     def check(self, scene_cls: type, fps: int = 10) -> JSResult:
         """Instantiate scene_cls and validate it through the JS headless runner."""

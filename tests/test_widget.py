@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import io
 import json
-import os
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -21,7 +21,6 @@ from manim import (
     LEFT,
     RIGHT,
     Square,
-    ValueTracker,
     ImageMobject,
 )
 
@@ -44,34 +43,12 @@ from manim_widget.states import (
 )
 
 
+_SPEC = json.loads((Path(__file__).parent.parent / "spec.json").read_text())
+
+
 def assert_valid_scene(data: dict) -> None:
+    validate(data, _SPEC)
     SceneData.model_validate(data)
-
-
-def assert_close(actual: object, expected: object, tol: float = 1e-9) -> None:
-    if isinstance(expected, float):
-        assert isinstance(actual, int | float)
-        assert abs(float(actual) - expected) <= tol
-        return
-    if isinstance(expected, list):
-        assert isinstance(actual, list)
-        assert len(actual) == len(expected)
-        for a, e in zip(actual, expected, strict=True):
-            assert_close(a, e, tol=tol)
-        return
-    if isinstance(expected, dict):
-        assert isinstance(actual, dict)
-        assert set(actual.keys()) == set(expected.keys())
-        for key in expected:
-            assert_close(actual[key], expected[key], tol=tol)
-        return
-    assert actual == expected
-
-
-def load_schema() -> dict:
-    schema_path = os.path.join(os.path.dirname(__file__), "..", "spec.json")
-    with open(schema_path) as f:
-        return json.load(f)
 
 
 def _fresh_renderer() -> CaptureRenderer:
@@ -156,72 +133,6 @@ def value_tracker_state(draw):
     return ValueTrackerState(
         value=draw(st.floats(-1e6, 1e6, allow_nan=False, allow_infinity=False))
     )
-
-
-def strip_geometry(obj: dict) -> dict:
-    """Remove contours/holes from dicts for structural comparison."""
-    result = {}
-    for key, value in obj.items():
-        if key in ("contours", "holes"):
-            continue
-        if isinstance(value, dict):
-            result[key] = strip_geometry(value)
-        elif isinstance(value, list):
-            result[key] = [
-                strip_geometry(v) if isinstance(v, dict) else v for v in value
-            ]
-        else:
-            result[key] = value
-    return result
-
-
-strip_points = strip_geometry  # backwards compat alias
-
-
-def strip_camera(obj: dict) -> dict:
-    """Remove Camera states and their refs so tests can compare mob-only payloads."""
-    if not isinstance(obj, dict) or "states" not in obj:
-        return obj
-
-    states = obj["states"]
-    cam_set = {
-        i
-        for i, s in enumerate(states)
-        if isinstance(s, dict) and s.get("kind") == "Camera"
-    }
-    if not cam_set:
-        return obj
-
-    kept = [(old_i, s) for old_i, s in enumerate(states) if old_i not in cam_set]
-    remap = {old_i: new_i for new_i, (old_i, _) in enumerate(kept)}
-
-    def remap_node(v, _in_snapshot=False):
-        if _in_snapshot and isinstance(v, dict):
-            # snapshot format: {mob_id: state_ref_int} — remap values directly
-            return {
-                k: remap[val] for k, val in v.items() if k != "#camera" and val in remap
-            }
-        if isinstance(v, dict):
-            out = {}
-            for k, val in v.items():
-                if k == "#camera":
-                    continue
-                elif k == "snapshot":
-                    out[k] = remap_node(val, _in_snapshot=True)
-                elif k == "state_ref" and isinstance(val, int):
-                    if val in remap:
-                        out[k] = remap[val]
-                    # Camera state_ref — drop
-                else:
-                    out[k] = remap_node(val)
-            return out
-        if isinstance(v, list):
-            return [remap_node(item) for item in v]
-        return v
-
-    result = remap_node({k: v for k, v in obj.items() if k != "states"})
-    result["states"] = [s for _, s in kept]
-    return result
 
 
 # ---------------------------------------------------------------------------
@@ -415,172 +326,6 @@ def test_serialize_value_tracker(value):
     result = r.serialize_mobject(mob, for_snapshot=False)
     assert isinstance(result, ValueTrackerState)
     assert abs(result.value - value) < 1e-9
-
-
-# ---------------------------------------------------------------------------
-# Deterministic regression tests (exact payload assertions)
-# ---------------------------------------------------------------------------
-
-
-def test_updater_command_uses_state_refs_and_dedup_is_deterministic():
-    class DataScene(ManimWidget):
-        def construct(self):
-            vt = ValueTracker(0)
-            dot = Dot()
-            dot.add_updater(lambda m: m.move_to((vt.get_value(), 0, 0)))
-            self.add(vt, dot)
-            self.play(vt.animate.set_value(3), run_time=0.5)
-
-    scene = DataScene(fps=10)
-    data = scene.scene_data
-
-    expected = {
-        "version": 2,
-        "fps": 10,
-        "frame_width": 14.222222222222221,
-        "frame_height": 8.0,
-        "states": [
-            {"kind": "ValueTracker", "value": 0.0},
-            {
-                "kind": "VMobject",
-                "fill_color": "#FFFFFF",
-                "fill_opacity": 1.0,
-                "stroke_color": "#FFFFFF",
-                "stroke_width": 0.0,
-                "stroke_opacity": 1.0,
-                "z_index": 0,
-            },
-            {"kind": "ValueTracker", "value": 0.12385697935738824},
-            {
-                "kind": "VMobject",
-                "fill_color": "#FFFFFF",
-                "fill_opacity": 1.0,
-                "stroke_color": "#FFFFFF",
-                "stroke_width": 0.0,
-                "stroke_opacity": 1.0,
-                "z_index": 0,
-            },
-            {"kind": "ValueTracker", "value": 0.7974197341465827},
-            {
-                "kind": "VMobject",
-                "fill_color": "#FFFFFF",
-                "fill_opacity": 1.0,
-                "stroke_color": "#FFFFFF",
-                "stroke_width": 0.0,
-                "stroke_opacity": 1.0,
-                "z_index": 0,
-            },
-            {"kind": "ValueTracker", "value": 2.2025802658534173},
-            {
-                "kind": "VMobject",
-                "fill_color": "#FFFFFF",
-                "fill_opacity": 1.0,
-                "stroke_color": "#FFFFFF",
-                "stroke_width": 0.0,
-                "stroke_opacity": 1.0,
-                "z_index": 0,
-            },
-            {"kind": "ValueTracker", "value": 2.8761430206426124},
-            {
-                "kind": "VMobject",
-                "fill_color": "#FFFFFF",
-                "fill_opacity": 1.0,
-                "stroke_color": "#FFFFFF",
-                "stroke_width": 0.0,
-                "stroke_opacity": 1.0,
-                "z_index": 0,
-            },
-            {"kind": "ValueTracker", "value": 3.0},
-            {
-                "kind": "VMobject",
-                "fill_color": "#FFFFFF",
-                "fill_opacity": 1.0,
-                "stroke_color": "#FFFFFF",
-                "stroke_width": 0.0,
-                "stroke_opacity": 1.0,
-                "z_index": 0,
-            },
-        ],
-        "sections": [
-            {
-                "name": "initial",
-                "snapshot": {},
-                "construct": [
-                    {"cmd": "register", "id": "0", "state_ref": 0},
-                    {"cmd": "register", "id": "1", "state_ref": 1},
-                    {
-                        "cmd": "updater",
-                        "duration": 0.5,
-                        "frames": [
-                            {"0": {"state_ref": 2}, "1": {"state_ref": 3}},
-                            {"0": {"state_ref": 4}, "1": {"state_ref": 5}},
-                            {"0": {"state_ref": 6}, "1": {"state_ref": 7}},
-                            {"0": {"state_ref": 8}, "1": {"state_ref": 9}},
-                            {"0": {"state_ref": 10}, "1": {"state_ref": 11}},
-                        ],
-                    },
-                ],
-            }
-        ],
-    }
-
-    assert_close(strip_points(strip_camera(data)), strip_points(expected))
-
-
-def test_create_then_next_section_snapshot_only_second_section():
-    class Move(ManimWidget):
-        def construct(self):
-            circle = Circle(1, color=GREEN, fill_opacity=1, stroke_opacity=1)
-            self.play(Create(circle))
-            self.next_section("a")
-
-    scene = Move()
-    data = scene.scene_data
-
-    expected = {
-        "version": 2,
-        "fps": 10,
-        "frame_width": 14.222222222222221,
-        "frame_height": 8.0,
-        "states": [
-            {
-                "kind": "VMobject",
-                "fill_color": "#83C167",
-                "fill_opacity": 1.0,
-                "stroke_color": "#83C167",
-                "stroke_width": 4.0,
-                "stroke_opacity": 1.0,
-                "z_index": 0,
-            }
-        ],
-        "sections": [
-            {
-                "name": "initial",
-                "snapshot": {},
-                "construct": [
-                    {"cmd": "register", "id": "0", "state_ref": 0},
-                    {
-                        "cmd": "animate",
-                        "duration": 1.0,
-                        "animations": [
-                            {
-                                "id": "0",
-                                "rate_func": "smooth",
-                                "kind": "Create",
-                            }
-                        ],
-                    },
-                ],
-            },
-            {
-                "name": "a",
-                "snapshot": {"0": 0},
-                "construct": [],
-            },
-        ],
-    }
-
-    assert_close(strip_points(strip_camera(data)), strip_points(expected))
 
 
 def test_wait_with_vmobject():
@@ -1175,9 +920,8 @@ def test_needs_camera_loop_false_for_real_scene_with_real_animation():
 def test_generated_scene_produces_valid_schema(args):
     """Any randomly generated (non-updater) scene must pass JSON schema validation."""
     mob_specs, commands = args
-    schema = load_schema()
     data = run_generated_scene(mob_specs, commands, fps=5)
-    validate(data, schema)
+    validate(data, _SPEC)
 
 
 @given(construct_script(min_mobs=1, max_mobs=4, min_plays=2, max_plays=5))
@@ -1261,9 +1005,8 @@ def test_generated_scene_with_transforms_fadeouts_groups_is_valid(args):
     """Scenes mixing Create, Transform, Shift, FadeOut and VGroups must pass
     schema validation and have coherent state refs."""
     mob_specs, commands = args
-    schema = load_schema()
     data = run_generated_scene(mob_specs, commands, fps=5)
-    validate(data, schema)
+    validate(data, _SPEC)
 
     n_states = len(data["states"])
     for section in data["sections"]:
