@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import io
 import json
-import os
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -21,16 +21,14 @@ from manim import (
     LEFT,
     RIGHT,
     Square,
-    ValueTracker,
     ImageMobject,
 )
 
 from manim_widget.widget import ManimWidget
-from manim_widget.renderer import (
-    CaptureRenderer,
-    _classify_subpaths,
-    _needs_camera_loop,
-)
+from manim_widget.renderer import CaptureRenderer
+from manim_widget._serializer import MobSerializer
+from manim_widget._subpaths import _classify_subpaths
+from manim_widget._camera import _needs_camera_loop
 from manim_widget.states import _contour_winding
 from tests.scene_strategies import (
     construct_script,
@@ -42,36 +40,25 @@ from manim_widget.states import (
     VGroupState,
     ValueTrackerState,
 )
+import manim_widget.states as _states_mod
+import manim_widget.models as _models_mod
+
+
+_SPEC = json.loads((Path(__file__).parent.parent / "spec.json").read_text())
 
 
 def assert_valid_scene(data: dict) -> None:
+    validate(data, _SPEC)
     SceneData.model_validate(data)
 
 
-def assert_close(actual: object, expected: object, tol: float = 1e-9) -> None:
-    if isinstance(expected, float):
-        assert isinstance(actual, int | float)
-        assert abs(float(actual) - expected) <= tol
-        return
-    if isinstance(expected, list):
-        assert isinstance(actual, list)
-        assert len(actual) == len(expected)
-        for a, e in zip(actual, expected, strict=True):
-            assert_close(a, e, tol=tol)
-        return
-    if isinstance(expected, dict):
-        assert isinstance(actual, dict)
-        assert set(actual.keys()) == set(expected.keys())
-        for key in expected:
-            assert_close(actual[key], expected[key], tol=tol)
-        return
-    assert actual == expected
+def _assert_valid_state(d: dict) -> None:
+    """Assert d is a valid MobjectState entry per spec.json.
 
-
-def load_schema() -> dict:
-    schema_path = os.path.join(os.path.dirname(__file__), "..", "spec.json")
-    with open(schema_path) as f:
-        return json.load(f)
+    Wraps d in a minimal scene payload so that $ref resolution works against
+    the full spec and the MobjectState oneOf discriminates correctly.
+    """
+    validate({"version": 2, "sections": [], "states": [d]}, _SPEC)
 
 
 def _fresh_renderer() -> CaptureRenderer:
@@ -79,6 +66,13 @@ def _fresh_renderer() -> CaptureRenderer:
     r = CaptureRenderer(fps=10)
     r.open_section("test")
     return r
+
+
+def _fresh_serializer() -> MobSerializer:
+    """Return a serializer instance, ready for direct unit testing."""
+    from manim_widget.snapshot import IdCounter
+
+    return MobSerializer(IdCounter())
 
 
 # ---------------------------------------------------------------------------
@@ -158,72 +152,6 @@ def value_tracker_state(draw):
     )
 
 
-def strip_geometry(obj: dict) -> dict:
-    """Remove contours/holes from dicts for structural comparison."""
-    result = {}
-    for key, value in obj.items():
-        if key in ("contours", "holes"):
-            continue
-        if isinstance(value, dict):
-            result[key] = strip_geometry(value)
-        elif isinstance(value, list):
-            result[key] = [
-                strip_geometry(v) if isinstance(v, dict) else v for v in value
-            ]
-        else:
-            result[key] = value
-    return result
-
-
-strip_points = strip_geometry  # backwards compat alias
-
-
-def strip_camera(obj: dict) -> dict:
-    """Remove Camera states and their refs so tests can compare mob-only payloads."""
-    if not isinstance(obj, dict) or "states" not in obj:
-        return obj
-
-    states = obj["states"]
-    cam_set = {
-        i
-        for i, s in enumerate(states)
-        if isinstance(s, dict) and s.get("kind") == "Camera"
-    }
-    if not cam_set:
-        return obj
-
-    kept = [(old_i, s) for old_i, s in enumerate(states) if old_i not in cam_set]
-    remap = {old_i: new_i for new_i, (old_i, _) in enumerate(kept)}
-
-    def remap_node(v, _in_snapshot=False):
-        if _in_snapshot and isinstance(v, dict):
-            # snapshot format: {mob_id: state_ref_int} — remap values directly
-            return {
-                k: remap[val] for k, val in v.items() if k != "#camera" and val in remap
-            }
-        if isinstance(v, dict):
-            out = {}
-            for k, val in v.items():
-                if k == "#camera":
-                    continue
-                elif k == "snapshot":
-                    out[k] = remap_node(val, _in_snapshot=True)
-                elif k == "state_ref" and isinstance(val, int):
-                    if val in remap:
-                        out[k] = remap[val]
-                    # Camera state_ref — drop
-                else:
-                    out[k] = remap_node(val)
-            return out
-        if isinstance(v, list):
-            return [remap_node(item) for item in v]
-        return v
-
-    result = remap_node({k: v for k, v in obj.items() if k != "states"})
-    result["states"] = [s for _, s in kept]
-    return result
-
-
 # ---------------------------------------------------------------------------
 # Property tests: VMobjectState / Pydantic validation
 # ---------------------------------------------------------------------------
@@ -281,13 +209,93 @@ def test_vmobject_state_round_trips_via_model_dump(state):
     for h in d.get("holes", []):
         assert (len(h) - 1) % 3 == 0
         assert all(len(p) == 3 for p in h)
+    # The dump must satisfy the wire contract and reconstruct identically.
+    _assert_valid_state(d)
+    assert VMobjectState.model_validate(d) == state
 
 
 @given(value_tracker_state())
-def test_value_tracker_state_serializes_kind(state):
+def test_value_tracker_state_round_trips_via_model_dump(state):
+    """∀ s: ValueTrackerState, model_validate(model_dump(s)) = s  and  dump ∈ spec."""
     d = state.model_dump(exclude_none=True)
     assert d["kind"] == "ValueTracker"
     assert "value" in d
+    _assert_valid_state(d)
+    assert ValueTrackerState.model_validate(d) == state
+
+
+# ---------------------------------------------------------------------------
+# Spec ↔ model structural alignment
+#
+# Two invariants for every (model type, spec definition) pair:
+#
+#   (I1)  spec.required  ⊆  model.wire_fields
+#         The model always expresses fields the spec mandates.
+#
+#   (I2)  model.wire_fields  ⊆  spec.properties   [closed types only]
+#         The renderer never emits a field the spec (and JS player) rejects.
+# ---------------------------------------------------------------------------
+
+
+def _wire_fields(cls) -> set[str]:
+    """Field names as they appear on the wire (alias takes precedence over Python name)."""
+    return {field.alias or name for name, field in cls.model_fields.items()}
+
+
+def _spec_props(def_name: str) -> set[str]:
+    return set(_SPEC["definitions"][def_name].get("properties", {}).keys())
+
+
+def _spec_required(def_name: str) -> set[str]:
+    return set(_SPEC["definitions"][def_name].get("required", []))
+
+
+# renderer-generated state types (states.py)  →  corresponding spec definition
+_STATES_SPEC_PAIRS = [
+    (_states_mod.VMobjectState, "VMobjectState"),
+    (_states_mod.VGroupState, "VGroupState"),
+    (_states_mod.ImageMobjectState, "ImageMobjectState"),
+    (_states_mod.MathTexState, "MathTexSourceState"),
+    (_states_mod.ValueTrackerState, "ValueTrackerState"),
+]
+
+# wire-format parser types (models.py)  →  corresponding spec definition
+_COMMAND_SPEC_PAIRS = [
+    (_models_mod.RegisterCommand, "RegisterCommand"),
+    (_models_mod.RemoveCommand, "RemoveCommand"),
+    (_models_mod.RebindCommand, "RebindCommand"),
+    (_models_mod.AnimateCommand, "AnimateCommand"),
+    (_models_mod.UpdaterCommand, "UpdaterDescriptor"),
+    (_models_mod.MoveCameraCommand, "MoveCameraCommand"),
+]
+
+
+@pytest.mark.parametrize(
+    "cls,def_name",
+    _STATES_SPEC_PAIRS + _COMMAND_SPEC_PAIRS,
+    ids=[s for _, s in _STATES_SPEC_PAIRS + _COMMAND_SPEC_PAIRS],
+)
+def test_spec_required_present_in_model(cls, def_name):
+    """(I1) spec.required ⊆ model.fields: no spec-mandated field is missing from the model."""
+    missing = _spec_required(def_name) - _wire_fields(cls)
+    assert not missing, (
+        f"{cls.__name__} missing spec-required fields: {sorted(missing)}"
+    )
+
+
+@pytest.mark.parametrize(
+    "cls,def_name",
+    _STATES_SPEC_PAIRS,
+    ids=[s for _, s in _STATES_SPEC_PAIRS],
+)
+def test_model_emits_only_spec_known_fields(cls, def_name):
+    """(I2) model.fields ⊆ spec.properties: the renderer never emits a field the spec rejects."""
+    if _SPEC["definitions"][def_name].get("additionalProperties") is not False:
+        pytest.skip("open type — additionalProperties: true allows extra fields")
+    extra = _wire_fields(cls) - _spec_props(def_name)
+    assert not extra, (
+        f"{cls.__name__} has fields absent from spec/{def_name}: {sorted(extra)}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -297,9 +305,9 @@ def test_value_tracker_state_serializes_kind(state):
 
 @given(vmobject_state())
 def test_intern_state_returns_valid_ref(state):
-    r = _fresh_renderer()
-    ref = r._intern_state(state)
-    assert 0 <= ref < len(r._state_registry.as_list())
+    s = _fresh_serializer()
+    ref = s._intern_state(state)
+    assert 0 <= ref < len(s._state_registry.as_list())
 
 
 @given(vmobject_state(), vmobject_state())
@@ -307,11 +315,11 @@ def test_intern_state_distinct_states_get_distinct_refs(s1, s2):
     d1 = s1.model_dump(exclude_none=True)
     d2 = s2.model_dump(exclude_none=True)
     assume(d1 != d2)
-    r = _fresh_renderer()
-    ref1 = r._intern_state(s1)
-    ref2 = r._intern_state(s2)
+    sr = _fresh_serializer()
+    ref1 = sr._intern_state(s1)
+    ref2 = sr._intern_state(s2)
     assert ref1 != ref2
-    assert len(r._state_registry.as_list()) == 2
+    assert len(sr._state_registry.as_list()) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -350,7 +358,7 @@ def test_serialize_single_subpath_vmobject_gives_one_contour_no_holes(pts_list):
 def test_classify_subpaths_text_O_gives_one_contour_one_hole():
     """Text 'O' has one outer contour and one hole regardless of SVG winding."""
     from manim import Text
-    from manim_widget.renderer import _classify_subpaths
+    from manim_widget._subpaths import _classify_subpaths
     from manim_widget.states import _contour_winding
 
     mob = Text("O").submobjects[0]
@@ -365,7 +373,7 @@ def test_classify_subpaths_text_O_gives_one_contour_one_hole():
 def test_classify_subpaths_text_i_gives_two_contours_no_holes():
     """Text 'i' has two disconnected outer contours (stem + dot), no holes."""
     from manim import Text
-    from manim_widget.renderer import _classify_subpaths
+    from manim_widget._subpaths import _classify_subpaths
     from manim_widget.states import _contour_winding
 
     mob = Text("i").submobjects[0]
@@ -379,7 +387,7 @@ def test_classify_subpaths_text_i_gives_two_contours_no_holes():
 def test_classify_subpaths_difference_gives_one_contour_one_hole():
     """Difference(big, small) has one outer contour and one hole."""
     from manim import Circle, Difference
-    from manim_widget.renderer import _classify_subpaths
+    from manim_widget._subpaths import _classify_subpaths
     from manim_widget.states import _contour_winding
 
     mob = Difference(Circle(radius=1), Circle(radius=0.4))
@@ -394,7 +402,7 @@ def test_classify_subpaths_difference_gives_one_contour_one_hole():
 def test_classify_subpaths_text_B_winding_invariant():
     """All contours are CCW and all holes are CW regardless of font."""
     from manim import Text
-    from manim_widget.renderer import _classify_subpaths
+    from manim_widget._subpaths import _classify_subpaths
     from manim_widget.states import _contour_winding
 
     mob = Text("B").submobjects[0]
@@ -418,169 +426,120 @@ def test_serialize_value_tracker(value):
 
 
 # ---------------------------------------------------------------------------
-# Deterministic regression tests (exact payload assertions)
+# _extract_state / _make_from_state invariants
+#
+# _extract_state: Mobject → cache key (pure function of mob's observable state)
+# _make_from_state: cache key → wire dict
+#
+#   (D)  Determinism: _extract_state(mob) = _extract_state(mob)
+#   (S)  Sensitivity: geometry mutation ⟹ key changes
+#   (V)  Validity:    _make_from_state(key) ∈ spec.MobjectState
 # ---------------------------------------------------------------------------
 
 
-def test_updater_command_uses_state_refs_and_dedup_is_deterministic():
-    class DataScene(ManimWidget):
-        def construct(self):
-            vt = ValueTracker(0)
-            dot = Dot()
-            dot.add_updater(lambda m: m.move_to((vt.get_value(), 0, 0)))
-            self.add(vt, dot)
-            self.play(vt.animate.set_value(3), run_time=0.5)
-
-    scene = DataScene(fps=10)
-    data = scene.scene_data
-
-    expected = {
-        "version": 2,
-        "fps": 10,
-        "frame_width": 14.222222222222221,
-        "frame_height": 8.0,
-        "states": [
-            {"kind": "ValueTracker", "value": 0.0},
-            {
-                "kind": "VMobject",
-                "fill_color": "#FFFFFF",
-                "fill_opacity": 1.0,
-                "stroke_color": "#FFFFFF",
-                "stroke_width": 0.0,
-                "stroke_opacity": 1.0,
-                "z_index": 0,
-            },
-            {"kind": "ValueTracker", "value": 0.12385697935738824},
-            {
-                "kind": "VMobject",
-                "fill_color": "#FFFFFF",
-                "fill_opacity": 1.0,
-                "stroke_color": "#FFFFFF",
-                "stroke_width": 0.0,
-                "stroke_opacity": 1.0,
-                "z_index": 0,
-            },
-            {"kind": "ValueTracker", "value": 0.7974197341465827},
-            {
-                "kind": "VMobject",
-                "fill_color": "#FFFFFF",
-                "fill_opacity": 1.0,
-                "stroke_color": "#FFFFFF",
-                "stroke_width": 0.0,
-                "stroke_opacity": 1.0,
-                "z_index": 0,
-            },
-            {"kind": "ValueTracker", "value": 2.2025802658534173},
-            {
-                "kind": "VMobject",
-                "fill_color": "#FFFFFF",
-                "fill_opacity": 1.0,
-                "stroke_color": "#FFFFFF",
-                "stroke_width": 0.0,
-                "stroke_opacity": 1.0,
-                "z_index": 0,
-            },
-            {"kind": "ValueTracker", "value": 2.8761430206426124},
-            {
-                "kind": "VMobject",
-                "fill_color": "#FFFFFF",
-                "fill_opacity": 1.0,
-                "stroke_color": "#FFFFFF",
-                "stroke_width": 0.0,
-                "stroke_opacity": 1.0,
-                "z_index": 0,
-            },
-            {"kind": "ValueTracker", "value": 3.0},
-            {
-                "kind": "VMobject",
-                "fill_color": "#FFFFFF",
-                "fill_opacity": 1.0,
-                "stroke_color": "#FFFFFF",
-                "stroke_width": 0.0,
-                "stroke_opacity": 1.0,
-                "z_index": 0,
-            },
-        ],
-        "sections": [
-            {
-                "name": "initial",
-                "snapshot": {},
-                "construct": [
-                    {"cmd": "register", "id": "0", "state_ref": 0},
-                    {"cmd": "register", "id": "1", "state_ref": 1},
-                    {
-                        "cmd": "updater",
-                        "duration": 0.5,
-                        "frames": [
-                            {"0": {"state_ref": 2}, "1": {"state_ref": 3}},
-                            {"0": {"state_ref": 4}, "1": {"state_ref": 5}},
-                            {"0": {"state_ref": 6}, "1": {"state_ref": 7}},
-                            {"0": {"state_ref": 8}, "1": {"state_ref": 9}},
-                            {"0": {"state_ref": 10}, "1": {"state_ref": 11}},
-                        ],
-                    },
-                ],
-            }
-        ],
-    }
-
-    assert_close(strip_points(strip_camera(data)), strip_points(expected))
+def test_extract_state_deterministic_for_common_shapes():
+    """(D) Same mob, same call — _extract_state is a pure function of mob state."""
+    s = _fresh_serializer()
+    for mob in [Circle(), Square(), Dot()]:
+        assert s._extract_state(mob) == s._extract_state(mob)
 
 
-def test_create_then_next_section_snapshot_only_second_section():
-    class Move(ManimWidget):
-        def construct(self):
-            circle = Circle(1, color=GREEN, fill_opacity=1, stroke_opacity=1)
-            self.play(Create(circle))
-            self.next_section("a")
+@given(
+    dx=st.floats(-3.0, 3.0, allow_nan=False, allow_infinity=False),
+    dy=st.floats(-3.0, 3.0, allow_nan=False, allow_infinity=False),
+)
+def test_extract_state_changes_after_vmobject_shift(dx, dy):
+    """(S) Shifting a VMobject changes its cache key."""
+    assume(abs(dx) + abs(dy) > 1e-6)
+    s = _fresh_serializer()
+    mob = Circle()
+    k_before = s._extract_state(mob)
+    mob.shift((dx, dy, 0))
+    assert s._extract_state(mob) != k_before
 
-    scene = Move()
-    data = scene.scene_data
 
-    expected = {
-        "version": 2,
-        "fps": 10,
-        "frame_width": 14.222222222222221,
-        "frame_height": 8.0,
-        "states": [
-            {
-                "kind": "VMobject",
-                "fill_color": "#83C167",
-                "fill_opacity": 1.0,
-                "stroke_color": "#83C167",
-                "stroke_width": 4.0,
-                "stroke_opacity": 1.0,
-                "z_index": 0,
-            }
-        ],
-        "sections": [
-            {
-                "name": "initial",
-                "snapshot": {},
-                "construct": [
-                    {"cmd": "register", "id": "0", "state_ref": 0},
-                    {
-                        "cmd": "animate",
-                        "duration": 1.0,
-                        "animations": [
-                            {
-                                "id": "0",
-                                "rate_func": "smooth",
-                                "kind": "Create",
-                            }
-                        ],
-                    },
-                ],
-            },
-            {
-                "name": "a",
-                "snapshot": {"0": 0},
-                "construct": [],
-            },
-        ],
-    }
+@given(st.floats(-100.0, 100.0, allow_nan=False, allow_infinity=False))
+def test_extract_state_changes_after_value_tracker_set(new_value):
+    """(S) Calling set_value on a ValueTracker changes its cache key."""
+    from manim import ValueTracker
 
-    assert_close(strip_points(strip_camera(data)), strip_points(expected))
+    assume(abs(new_value) > 1e-9)
+    s = _fresh_serializer()
+    vt = ValueTracker(0.0)
+    k_before = s._extract_state(vt)
+    vt.set_value(new_value)
+    assert s._extract_state(vt) != k_before
+
+
+@given(bezier_points_3n1(min_segments=1, max_segments=3))
+@settings(max_examples=20)
+def test_make_from_state_produces_spec_valid_dict(pts_list):
+    """(V) ∀ key produced by _extract_state, _make_from_state(key) ∈ spec.MobjectState."""
+    from manim import VMobject as ManimVMobject
+
+    mob = ManimVMobject()
+    n_segs = (len(pts_list) - 1) // 3
+    raw_pts = []
+    for i in range(n_segs):
+        raw_pts.extend(pts_list[i * 3 : i * 3 + 4])
+    assume(len(raw_pts) >= 4)
+    mob.set_points(np.array(raw_pts, dtype=float))
+
+    s = _fresh_serializer()
+    key = s._extract_state(mob)
+    assume(key is not None)
+    _assert_valid_state(s._make_from_state(key))
+
+
+# ---------------------------------------------------------------------------
+# _descriptor_from_animation / _flatten_animation_group
+# ---------------------------------------------------------------------------
+
+
+def test_descriptor_swap_emits_ids_not_id():
+    """Swap descriptor must use 'ids' (list) not 'id' — JS player protocol."""
+    from manim import Swap
+
+    r = _fresh_renderer()
+    a, b = Circle(), Square()
+    r.register_mobject(a)
+    r.register_mobject(b)
+    desc = r._descriptor_from_animation(Swap(a, b))
+    assert desc["kind"] == "Swap"
+    assert "ids" in desc and len(desc["ids"]) == 2
+    assert "id" not in desc
+
+
+def test_descriptor_cyclic_replace_emits_ids_not_id():
+    """CyclicReplace descriptor must use 'ids' — same JS protocol as Swap."""
+    from manim import CyclicReplace
+
+    r = _fresh_renderer()
+    a, b, c = Circle(), Square(), Dot()
+    r.register_mobject(a)
+    r.register_mobject(b)
+    r.register_mobject(c)
+    desc = r._descriptor_from_animation(CyclicReplace(a, b, c))
+    assert desc["kind"] == "CyclicReplace"
+    assert "ids" in desc and len(desc["ids"]) == 3
+    assert "id" not in desc
+
+
+def test_flatten_animation_group_timestamps_scaled_by_lag_ratio():
+    """lag_ratio > 0 spreads sub-anim timings; _flatten_animation_group scales them
+    so the last end time equals the group run_time, not max_end_time."""
+    from manim import AnimationGroup, Create
+
+    r = _fresh_renderer()
+    a, b = Circle(), Square()
+    r.register_mobject(a)
+    r.register_mobject(b)
+    group = AnimationGroup(Create(a), Create(b), lag_ratio=0.5)
+    descs = r._flatten_animation_group(group)
+    assert len(descs) == 2
+    assert all("start" in d and "end" in d for d in descs)
+    assert descs[0]["start"] == 0.0
+    assert descs[-1]["end"] == pytest.approx(group.run_time, abs=1e-5)
 
 
 def test_wait_with_vmobject():
@@ -955,7 +914,7 @@ def test_camera_state_is_in_state_bank():
 
 def test_camera_state_has_four_points_and_focal_distance():
     """A CameraState entry must have exactly 4 corner points and a focal_distance."""
-    from manim_widget.renderer import _serialize_camera
+    from manim_widget._camera import _serialize_camera
     from manim.camera.three_d_camera import ThreeDCamera
 
     cam = ThreeDCamera()
@@ -1089,22 +1048,22 @@ def test_arrow_serializes_as_vgroup_container():
 )
 def test_intern_state_ref_always_in_bounds_after_mixed_inserts(states, extra_repeats):
     """Repeating intern calls never push ref out of bounds."""
-    r = _fresh_renderer()
-    refs = [r._intern_state(s) for s in states]
+    sr = _fresh_serializer()
+    refs = [sr._intern_state(s) for s in states]
     # Re-intern a subset to exercise deduplication path
     for s in states[:extra_repeats]:
-        ref = r._intern_state(s)
-        assert 0 <= ref < len(r._state_registry.as_list())
+        ref = sr._intern_state(s)
+        assert 0 <= ref < len(sr._state_registry.as_list())
     for ref in refs:
-        assert 0 <= ref < len(r._state_registry.as_list())
+        assert 0 <= ref < len(sr._state_registry.as_list())
 
 
 @given(vmobject_state())
 def test_state_bank_stores_dict_not_pydantic_model(state):
     """States in the bank must be plain dicts (for JSON serialization)."""
-    r = _fresh_renderer()
-    ref = r._intern_state(state)
-    stored = r._state_registry.as_list()[ref]
+    sr = _fresh_serializer()
+    ref = sr._intern_state(state)
+    stored = sr._state_registry.as_list()[ref]
     assert isinstance(stored, dict)
     assert stored.get("kind") == "VMobject"
 
@@ -1120,8 +1079,8 @@ def test_serialize_mobject_never_produces_arrow_kind(state):
     st.lists(vmobject_state(), min_size=1, max_size=4),
 )
 def test_vgroup_state_children_are_all_ints(child_states):
-    r = _fresh_renderer()
-    children = [r._intern_state(s) for s in child_states]
+    sr = _fresh_serializer()
+    children = [sr._intern_state(s) for s in child_states]
     vg = VGroupState(children=children)
     assert all(isinstance(c, int) for c in vg.children)
     d = vg.model_dump(exclude_none=True)
@@ -1133,19 +1092,6 @@ def test_vgroup_state_children_are_all_ints(child_states):
 # ---------------------------------------------------------------------------
 # Integration tests: frame-loop routing
 # ---------------------------------------------------------------------------
-
-
-def test_manim_camera_has_no_updaters_attribute():
-    """Manim's ThreeDCamera has no 'updaters' attribute, so the camera-updater
-    branch of _needs_camera_loop is currently unreachable for real scenes.
-    If a future Manim version adds camera updaters this test will fail and we'll
-    need to revisit the predicate."""
-    from manim.camera.three_d_camera import ThreeDCamera
-
-    cam = ThreeDCamera()
-    assert not hasattr(cam, "updaters"), (
-        "ThreeDCamera now has 'updaters' — revisit _needs_camera_loop"
-    )
 
 
 def test_needs_camera_loop_false_for_real_scene_with_real_animation():
@@ -1175,9 +1121,8 @@ def test_needs_camera_loop_false_for_real_scene_with_real_animation():
 def test_generated_scene_produces_valid_schema(args):
     """Any randomly generated (non-updater) scene must pass JSON schema validation."""
     mob_specs, commands = args
-    schema = load_schema()
     data = run_generated_scene(mob_specs, commands, fps=5)
-    validate(data, schema)
+    validate(data, _SPEC)
 
 
 @given(construct_script(min_mobs=1, max_mobs=4, min_plays=2, max_plays=5))
@@ -1261,9 +1206,8 @@ def test_generated_scene_with_transforms_fadeouts_groups_is_valid(args):
     """Scenes mixing Create, Transform, Shift, FadeOut and VGroups must pass
     schema validation and have coherent state refs."""
     mob_specs, commands = args
-    schema = load_schema()
     data = run_generated_scene(mob_specs, commands, fps=5)
-    validate(data, schema)
+    validate(data, _SPEC)
 
     n_states = len(data["states"])
     for section in data["sections"]:

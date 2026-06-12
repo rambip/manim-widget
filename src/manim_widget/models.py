@@ -24,7 +24,8 @@ from pydantic import BaseModel, Field, model_validator
 
 class VMobjectState(BaseModel):
     kind: Literal["VMobject"] = "VMobject"
-    points: list[list[float]] = Field(default_factory=list)
+    contours: list[list[list[float]]] = Field(default_factory=list)
+    holes: list[list[list[float]]] = Field(default_factory=list)
     fill_color: str | None = None
     fill_opacity: float | None = None
     stroke_color: str | None = None
@@ -36,17 +37,6 @@ class VMobjectState(BaseModel):
 class VGroupState(BaseModel):
     kind: Literal["VGroup"] = "VGroup"
     children: list[int]
-    fill_color: str | None = None
-    fill_opacity: float | None = None
-    stroke_color: str | None = None
-    stroke_width: float | None = None
-    z_index: float | None = None
-
-
-class ArrowState(BaseModel):
-    kind: Literal["Arrow"] = "Arrow"
-    children: list[int]
-    points: list[list[float]] | None = None
 
 
 class MathTexSourceState(BaseModel):
@@ -85,7 +75,6 @@ class DerivedState(BaseModel):
 MobjectState = (
     VMobjectState
     | VGroupState
-    | ArrowState
     | MathTexSourceState
     | ImageMobjectState
     | ValueTrackerState
@@ -150,14 +139,12 @@ class UpdaterCommand(BaseModel):
     cmd: Literal["updater"] = "updater"
     duration: float
     frames: list[dict[str, UpdaterFrame]]
-    camera_frames: list[int] | None = None
 
 
 class AnimateCommand(BaseModel):
     cmd: Literal["animate"] = "animate"
     duration: float
     animations: list[AnimationDescriptor]
-    camera_frames: list[int] | None = None
 
     @model_validator(mode="after")
     def check_animation_bounds(self) -> AnimateCommand:

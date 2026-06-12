@@ -7,7 +7,8 @@ import anywidget
 import traitlets
 from manim import Mobject, ThreeDScene
 
-from .renderer import CaptureRenderer, SectionRecord, _serialize_camera
+from ._camera import _serialize_camera
+from .renderer import CaptureRenderer, SectionRecord
 
 
 _ESM = Path(__file__).parent / "static" / "index.js"
@@ -130,7 +131,7 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
             if d.get("kind") == "VMobject":
                 d.setdefault("contours", [])
             for ref in refs:
-                reg._values[ref] = d
+                reg.overwrite(ref, d)
         data = serialize_scene(
             fps=self._fps,
             sections=self._renderer.sections,
