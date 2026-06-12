@@ -228,34 +228,31 @@ def _rate_func_name(anim: object) -> str:
 
 def _needs_camera_loop(scene: Scene, animations: list) -> bool:
     """Return True when camera is being animated and needs per-frame capture."""
+    from manim.camera.moving_camera import MovingCamera
+    from manim.camera.three_d_camera import ThreeDCamera
+
     cam = getattr(scene, "camera", None)
     if cam is None:
         return False
-    if getattr(cam, "updaters", []):
-        return True
-    # Collect all objects belonging to the camera
+
     cam_objects: set = {cam}
-    # ThreeDCamera: value trackers and frame_center point
-    for attr in (
-        "phi_tracker",
-        "theta_tracker",
-        "focal_distance_tracker",
-        "gamma_tracker",
-        "zoom_tracker",
-        "_frame_center",
-    ):
-        obj = getattr(cam, attr, None)
-        if obj is not None:
-            cam_objects.add(obj)
-    # MovingCamera: the frame rectangle
-    frame = getattr(cam, "frame", None)
-    if frame is not None:
-        cam_objects.add(frame)
-        if getattr(frame, "updaters", []):
+
+    if isinstance(cam, ThreeDCamera):
+        for tracker in (
+            cam.phi_tracker,
+            cam.theta_tracker,
+            cam.focal_distance_tracker,
+            cam.gamma_tracker,
+            cam.zoom_tracker,
+        ):
+            cam_objects.add(tracker)
+
+    if isinstance(cam, MovingCamera):
+        cam_objects.add(cam.frame)
+        if cam.frame.updaters:
             return True
-    if any(getattr(a, "mobject", None) in cam_objects for a in animations):
-        return True
-    return False
+
+    return any(getattr(a, "mobject", None) in cam_objects for a in animations)
 
 
 def _serialize_camera(
