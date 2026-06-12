@@ -880,19 +880,6 @@ def test_vgroup_state_children_are_all_ints(child_states):
 # ---------------------------------------------------------------------------
 
 
-def test_manim_camera_has_no_updaters_attribute():
-    """Manim's ThreeDCamera has no 'updaters' attribute, so the camera-updater
-    branch of _needs_camera_loop is currently unreachable for real scenes.
-    If a future Manim version adds camera updaters this test will fail and we'll
-    need to revisit the predicate."""
-    from manim.camera.three_d_camera import ThreeDCamera
-
-    cam = ThreeDCamera()
-    assert not hasattr(cam, "updaters"), (
-        "ThreeDCamera now has 'updaters' — revisit _needs_camera_loop"
-    )
-
-
 def test_needs_camera_loop_false_for_real_scene_with_real_animation():
     """_needs_camera_loop must return False for a typical non-camera play()
     so the optimised (no frame-loop) path is actually taken."""

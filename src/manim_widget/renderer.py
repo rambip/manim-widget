@@ -26,6 +26,8 @@ from manim.animation.animation import Animation
 from manim.animation.composition import AnimationGroup
 from manim.mobject.mobject import Mobject
 from manim.mobject.types.image_mobject import AbstractImageMobject
+from manim.camera.moving_camera import MovingCamera
+from manim.camera.three_d_camera import ThreeDCamera
 from manim.mobject.types.vectorized_mobject import VMobject
 
 from .anim_compat import force_end_state
@@ -228,9 +230,6 @@ def _rate_func_name(anim: object) -> str:
 
 def _needs_camera_loop(scene: Scene, animations: list) -> bool:
     """Return True when camera is being animated and needs per-frame capture."""
-    from manim.camera.moving_camera import MovingCamera
-    from manim.camera.three_d_camera import ThreeDCamera
-
     cam = getattr(scene, "camera", None)
     if cam is None:
         return False
@@ -259,9 +258,6 @@ def _serialize_camera(
     cam, frame_width: float, frame_height: float
 ) -> tuple[list[list[float]], float]:
     """Return (4-corner points [UL,UR,DR,DL], focal_distance) for any camera."""
-    from manim.camera.moving_camera import MovingCamera
-    from manim.camera.three_d_camera import ThreeDCamera
-
     if isinstance(cam, MovingCamera):
         # get_vertices() returns [UR, UL, DL, DR]; reorder to [UL, UR, DR, DL]
         verts = cam.frame.get_vertices()
@@ -817,28 +813,7 @@ class CaptureRenderer:
                 z_index=getattr(mob, "z_index", None),
             )
 
-        # Collect VMobject styling shared by single-path and vgroup paths.
-        style: dict[str, object] = {}
-        if isinstance(mob, VMobject) and not isinstance(mob, VGroup):
-            fill_color = mob.get_fill_color()
-            if fill_color:
-                style["fill_color"] = self._color_to_hex(fill_color)
-            fill_opacity = mob.get_fill_opacity()
-            if fill_opacity is not None:
-                style["fill_opacity"] = fill_opacity
-            stroke_color = mob.get_stroke_color()
-            if stroke_color:
-                style["stroke_color"] = self._color_to_hex(stroke_color)
-            stroke_width = mob.get_stroke_width()
-            if stroke_width:
-                style["stroke_width"] = stroke_width
-            stroke_opacity = mob.get_stroke_opacity()
-            if stroke_opacity is not None:
-                style["stroke_opacity"] = stroke_opacity
-            z_index = getattr(mob, "z_index", None)
-            if z_index is not None:
-                style["z_index"] = z_index
-
+        style = self._vmob_style(mob) if isinstance(mob, VMobject) else {}
         js_children = self._js_children(mob)
 
         if isinstance(mob, VMobject):

@@ -273,11 +273,6 @@ export class Player {
       return new VGroup();
     }
 
-    if (state.kind === "Arrow") {
-      // Create dummy Arrow; shaft/tip content replaced in _instantiateFromRef
-      return new Arrow();
-    }
-
     const mob = new VMobject();
     this._applyContours(mob, state);
     return mob;
