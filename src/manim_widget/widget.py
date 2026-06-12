@@ -130,7 +130,7 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
             if d.get("kind") == "VMobject":
                 d.setdefault("contours", [])
             for ref in refs:
-                reg._values[ref] = d
+                reg.overwrite(ref, d)
         data = serialize_scene(
             fps=self._fps,
             sections=self._renderer.sections,

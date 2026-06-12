@@ -206,6 +206,13 @@ class StateRegistry(Generic[Obj, Content, State, Val]):
     # Output
     # ------------------------------------------------------------------
 
+    def overwrite(self, ref: int, value: Val) -> None:
+        """Replace stored value at ref in-place.
+
+        pre: 0 <= ref < len(self)
+        """
+        self._values[ref] = value
+
     def as_list(self) -> list[Val]:
         """All stored values in insertion order."""
         return list(self._values)

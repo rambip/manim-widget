@@ -94,6 +94,11 @@ def _classify_subpaths(
     return contours, holes
 
 
+def _rate_func_name(anim: object) -> str:
+    name = getattr(getattr(anim, "rate_func", None), "__name__", "smooth")
+    return "smooth" if "smooth" in name.lower() else name
+
+
 def _needs_camera_loop(scene: Scene, animations: list) -> bool:
     """Return True when camera is being animated and needs per-frame capture."""
     cam = getattr(scene, "camera", None)
@@ -287,11 +292,7 @@ class CaptureRenderer:
             return ("vt", float(mob.get_value()))
 
         if isinstance(mob, PatchedMathTex):
-            raw = (
-                mob.points.tolist()
-                if hasattr(mob.points, "tolist")
-                else list(mob.points)
-            )
+            raw = np.asarray(mob.points).tolist()
             color_hex = self._color_to_hex(mob.color) if mob.color is not None else None
             return ("mathtex", mob.tex_string, tuple(tuple(p) for p in raw), color_hex)
 
@@ -302,11 +303,7 @@ class CaptureRenderer:
                 return (
                     None  # content not yet registered; insert() registers content first
                 )
-            raw = (
-                mob.points.tolist()
-                if hasattr(mob.points, "tolist")
-                else list(mob.points)
-            )
+            raw = np.asarray(mob.points).tolist()
             return (
                 ("img", content_ref, tuple(tuple(p) for p in raw))
                 if len(raw) == 4
@@ -689,11 +686,7 @@ class CaptureRenderer:
             return ValueTrackerState(value=float(mob.get_value()))
 
         if isinstance(mob, PatchedMathTex):
-            raw = (
-                mob.points.tolist()
-                if hasattr(mob.points, "tolist")
-                else list(mob.points)
-            )
+            raw = np.asarray(mob.points).tolist()
             pts = [[float(p[0]), float(p[1]), float(p[2])] for p in raw]
             return MathTexState(
                 latex=mob.tex_string,
@@ -702,11 +695,7 @@ class CaptureRenderer:
             )
 
         if isinstance(mob, AbstractImageMobject):
-            raw = (
-                mob.points.tolist()
-                if hasattr(mob.points, "tolist")
-                else list(mob.points)
-            )
+            raw = np.asarray(mob.points).tolist()
             # Ensure pixel data is registered; retrieve cached source data-URI.
             if self._state_registry.get(mob) is None:
                 self._state_registry.insert(mob)
@@ -1095,12 +1084,7 @@ class CaptureRenderer:
 
         target_mobject = getattr(anim, "target_mobject", None)
 
-        if hasattr(anim, "rate_func"):
-            rate_func_name = getattr(anim.rate_func, "__name__", "smooth")
-            if "smooth" in rate_func_name.lower():
-                descriptor["rate_func"] = "smooth"
-            else:
-                descriptor["rate_func"] = rate_func_name
+        descriptor["rate_func"] = _rate_func_name(anim)
 
         methods = getattr(anim, "methods", None)
         if methods:
@@ -1156,12 +1140,7 @@ class CaptureRenderer:
                 swap_params["path_arc"] = float(path_arc)
             if swap_params:
                 descriptor["params"] = swap_params
-            if hasattr(anim, "rate_func"):
-                rate_func_name = getattr(anim.rate_func, "__name__", "smooth")
-                if "smooth" in rate_func_name.lower():
-                    descriptor["rate_func"] = "smooth"
-                else:
-                    descriptor["rate_func"] = rate_func_name
+            descriptor["rate_func"] = _rate_func_name(anim)
             return descriptor
 
         if isinstance(anim, CyclicReplace) and not isinstance(anim, Swap):
@@ -1183,12 +1162,7 @@ class CaptureRenderer:
                 cyclic_params["path_arc"] = float(path_arc)
             if cyclic_params:
                 descriptor["params"] = cyclic_params
-            if hasattr(anim, "rate_func"):
-                rate_func_name = getattr(anim.rate_func, "__name__", "smooth")
-                if "smooth" in rate_func_name.lower():
-                    descriptor["rate_func"] = "smooth"
-                else:
-                    descriptor["rate_func"] = rate_func_name
+            descriptor["rate_func"] = _rate_func_name(anim)
             return descriptor
 
         if isinstance(anim, Rotate):
