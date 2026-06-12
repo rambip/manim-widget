@@ -223,6 +223,13 @@ class _VMobKey(tuple):
         return self[7]
 
 
+def _is_mob_supported(mob: Mobject) -> bool:
+    """Return True for mob types the JS player can render."""
+    if isinstance(mob, VMobject | ValueTracker | AbstractImageMobject):
+        return True
+    return bool(hasattr(mob, "submobjects") and mob.submobjects)
+
+
 def _rate_func_name(anim: object) -> str:
     name = getattr(getattr(anim, "rate_func", None), "__name__", "smooth")
     return "smooth" if "smooth" in name.lower() else name
@@ -895,11 +902,6 @@ class CaptureRenderer:
         if current is None:
             return
 
-        def _is_supported(mob: Mobject) -> bool:
-            if isinstance(mob, VMobject | ValueTracker | AbstractImageMobject):
-                return True
-            return bool(hasattr(mob, "submobjects") and mob.submobjects)
-
         # Only emit a terminal Add batch for sections with no playback commands.
         # If section already has animate/updater entries, Add injection should
         # happen during play-path handling instead.
@@ -908,7 +910,7 @@ class CaptureRenderer:
 
         add_animations: list[dict[str, str]] = []
         for mob in scene.mobjects:
-            if not _is_supported(mob):
+            if not _is_mob_supported(mob):
                 continue
             if not self.is_active(mob):
                 continue
@@ -959,6 +961,43 @@ class CaptureRenderer:
         self.time += run_time
         self.num_plays += 1
 
+    def _process_leaf_anim(
+        self,
+        anim: Animation,
+        pre_commands: list[dict],
+        post_commands: list[dict],
+    ) -> None:
+        """Register mob and accumulate pre/post commands for one leaf animation."""
+        mob = anim.mobject
+        if isinstance(anim, Swap | CyclicReplace):
+            return
+        if isinstance(mob, Mobject) and not _is_mob_supported(mob):
+            return
+
+        if not self.is_active(mob):
+            self.register_mobject(mob)
+            if isinstance(anim, GrowArrow):
+                pre_commands.extend(self._grow_arrow_register_commands(mob, anim))
+            else:
+                pre_commands.extend(self._mob_register_commands(mob))
+
+        if anim.is_introducer():
+            self._introduced_by_animation[id(mob)] = True
+
+        if isinstance(anim, ReplacementTransform):
+            target = anim.target_mobject
+            if not self.is_active(target):
+                self.register_mobject(target)
+            post_commands.append(
+                {
+                    "cmd": "rebind",
+                    "source_id": self.short_id(anim.mobject),
+                    "target_id": self.short_id(target),
+                }
+            )
+        elif isinstance(anim, FadeOut):
+            post_commands.extend(self._mob_remove_commands(anim.mobject))
+
     def _play_animate_path(
         self, scene: Scene, animations: list[Animation], run_time: float
     ) -> None:
@@ -978,15 +1017,10 @@ class CaptureRenderer:
         animate_descriptors: list[dict] = []
         post_commands: list[dict] = []
 
-        def _is_supported(mob: Mobject) -> bool:
-            if isinstance(mob, VMobject | ValueTracker | AbstractImageMobject):
-                return True
-            return bool(hasattr(mob, "submobjects") and mob.submobjects)
-
         # Inject Add animations for currently present scene roots that were
         # not introduced by an animation yet.
         for mob in scene.mobjects:
-            if not _is_supported(mob):
+            if not _is_mob_supported(mob):
                 continue
             if not self.is_active(mob):
                 self.register_mobject(mob)
@@ -994,38 +1028,6 @@ class CaptureRenderer:
             if not self._introduced_by_animation.get(id(mob), False):
                 animate_descriptors.append({"kind": "Add", "id": self.short_id(mob)})
                 self._introduced_by_animation[id(mob)] = True
-
-        def _process_leaf_anim(anim: Animation, desc: dict) -> None:
-            """Register mobject and emit post-commands for a single leaf animation."""
-            mob = anim.mobject
-            if isinstance(anim, Swap | CyclicReplace):
-                return
-            if isinstance(mob, Mobject) and not _is_supported(mob):
-                return
-
-            if not self.is_active(mob):
-                self.register_mobject(mob)
-                if isinstance(anim, GrowArrow):
-                    pre_commands.extend(self._grow_arrow_register_commands(mob, anim))
-                else:
-                    pre_commands.extend(self._mob_register_commands(mob))
-
-            if anim.is_introducer():
-                self._introduced_by_animation[id(mob)] = True
-
-            if isinstance(anim, ReplacementTransform):
-                target = anim.target_mobject
-                if not self.is_active(target):
-                    self.register_mobject(target)
-                post_commands.append(
-                    {
-                        "cmd": "rebind",
-                        "source_id": self.short_id(anim.mobject),
-                        "target_id": self.short_id(target),
-                    }
-                )
-            elif isinstance(anim, FadeOut):
-                post_commands.extend(self._mob_remove_commands(anim.mobject))
 
         for anim in animations:
             if isinstance(anim, AnimationGroup):
@@ -1040,11 +1042,11 @@ class CaptureRenderer:
                     desc["start"] = round(float(row["start"]) * scale, 6)
                     desc["end"] = round(float(row["end"]) * scale, 6)
                     animate_descriptors.append(desc)
-                    _process_leaf_anim(sub, desc)
+                    self._process_leaf_anim(sub, pre_commands, post_commands)
             else:
                 desc = self._descriptor_from_animation(anim)
                 animate_descriptors.append(desc)
-                _process_leaf_anim(anim, desc)
+                self._process_leaf_anim(anim, pre_commands, post_commands)
 
         if pre_commands:
             current.commands.extend(pre_commands)
@@ -1206,47 +1208,24 @@ class CaptureRenderer:
                 descriptor["params"] = transform_params
             return descriptor
 
-        if isinstance(anim, Swap):
+        if isinstance(anim, Swap | CyclicReplace):
+            kind = "Swap" if isinstance(anim, Swap) else "CyclicReplace"
             group = getattr(anim, "group", None)
             if group is None or not hasattr(group, "submobjects"):
-                msg = "Swap animation missing group or submobjects"
+                msg = f"{kind} animation missing group or submobjects"
                 raise RuntimeError(msg)
             submobjects = group.submobjects
             if len(submobjects) < 2:
-                msg = "Swap animation requires at least 2 mobjects"
+                msg = f"{kind} animation requires at least 2 mobjects"
                 raise RuntimeError(msg)
-            descriptor = {
-                "kind": "Swap",
-                "ids": [self.short_id(m) for m in submobjects[:2]],
-            }
-            swap_params: dict[str, Any] = {}
+            ids = [
+                self.short_id(m)
+                for m in (submobjects[:2] if kind == "Swap" else submobjects)
+            ]
+            descriptor = {"kind": kind, "ids": ids}
             path_arc = getattr(anim, "path_arc", None)
             if path_arc is not None:
-                swap_params["path_arc"] = float(path_arc)
-            if swap_params:
-                descriptor["params"] = swap_params
-            descriptor["rate_func"] = _rate_func_name(anim)
-            return descriptor
-
-        if isinstance(anim, CyclicReplace) and not isinstance(anim, Swap):
-            group = getattr(anim, "group", None)
-            if group is None or not hasattr(group, "submobjects"):
-                msg = "CyclicReplace animation missing group or submobjects"
-                raise RuntimeError(msg)
-            submobjects = group.submobjects
-            if len(submobjects) < 2:
-                msg = "CyclicReplace animation requires at least 2 mobjects"
-                raise RuntimeError(msg)
-            descriptor = {
-                "kind": "CyclicReplace",
-                "ids": [self.short_id(m) for m in submobjects],
-            }
-            cyclic_params: dict[str, Any] = {}
-            path_arc = getattr(anim, "path_arc", None)
-            if path_arc is not None:
-                cyclic_params["path_arc"] = float(path_arc)
-            if cyclic_params:
-                descriptor["params"] = cyclic_params
+                descriptor["params"] = {"path_arc": float(path_arc)}
             descriptor["rate_func"] = _rate_func_name(anim)
             return descriptor
 
