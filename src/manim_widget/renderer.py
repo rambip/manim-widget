@@ -26,10 +26,11 @@ from manim.animation.animation import Animation
 from manim.animation.composition import AnimationGroup
 from manim.mobject.mobject import Mobject
 from manim.mobject.types.image_mobject import AbstractImageMobject
-from manim.camera.moving_camera import MovingCamera
-from manim.camera.three_d_camera import ThreeDCamera
 from manim.mobject.types.vectorized_mobject import VMobject
 
+from ._camera import _needs_camera_loop, _serialize_camera
+from ._state_keys import _ImgKey, _MathTexKey, _VMobKey, _VGroupKey, _VTKey
+from ._subpaths import _classify_subpaths, _SubpathChild, _subpath_to_3n1
 from .anim_compat import force_end_state
 from .registry import StateRegistry
 from .snapshot import IdCounter
@@ -45,184 +46,6 @@ from .states import (
 from .tex_patch import PatchedMathTex
 
 
-def _subpath_to_3n1(raw_points) -> list[list[float]]:
-    pts: list[list[float]] = []
-    for i in range(0, len(raw_points), 4):
-        chunk = raw_points[i : i + 4]
-        pts.extend(chunk.tolist() if i == 0 else chunk[1:].tolist())
-    return pts
-
-
-def _classify_subpaths(
-    subpaths,
-) -> tuple[list[list[list[float]]], list[list[list[float]]]]:
-    """Classify raw manim subpaths into CCW contours and CW holes.
-
-    Winding convention (SVG even-odd / non-zero fill):
-    - The first non-degenerate subpath determines outer_sign.
-    - Subpaths with the same sign as outer_sign are outer contours (CCW after flip).
-    - Subpaths with the opposite sign are holes (CW after flip).
-    - Zero-area (degenerate/collinear) subpaths cannot be holes; they are appended
-      to contours as-is. _contour_winding returns 'CCW' for them (area ≤ 0).
-
-    post: all(_contour_winding(c) == 'CCW' for c in __return__[0])
-    post: all(_contour_winding(h) == 'CW'  for h in __return__[1])
-    post: len(__return__[0]) + len(__return__[1]) <= len(subpaths)
-    """
-    contours: list[list[list[float]]] = []
-    holes: list[list[list[float]]] = []
-    outer_sign: float | None = None
-    for sp in subpaths:
-        if len(sp) == 0:
-            continue
-        pts = _subpath_to_3n1(sp)
-        if not pts:
-            continue
-        area = _signed_area_2d(pts)
-        if area == 0.0:
-            contours.append(pts)  # degenerate/collinear: no winding, treat as contour
-            continue
-        if outer_sign is None:
-            outer_sign = area
-        is_outer = (area >= 0) == (outer_sign >= 0)
-        if is_outer and area > 0:
-            pts = pts[::-1]
-        elif not is_outer and area < 0:
-            pts = pts[::-1]
-        if is_outer:
-            contours.append(pts)
-        else:
-            holes.append(pts)
-    return contours, holes
-
-
-class _VTKey(tuple):
-    """State key for ValueTracker: (value,)."""
-
-    __slots__ = ()
-
-    def __new__(cls, value: float) -> "_VTKey":
-        return super().__new__(cls, (value,))
-
-    @property
-    def value(self) -> float:
-        return self[0]
-
-
-class _MathTexKey(tuple):
-    """State key for PatchedMathTex: (latex, pts, color)."""
-
-    __slots__ = ()
-
-    def __new__(cls, latex: str, pts: tuple, color: str | None) -> "_MathTexKey":
-        return super().__new__(cls, (latex, pts, color))
-
-    @property
-    def latex(self) -> str:
-        return self[0]
-
-    @property
-    def pts(self) -> tuple:
-        return self[1]
-
-    @property
-    def color(self) -> str | None:
-        return self[2]
-
-
-class _ImgKey(tuple):
-    """State key for ImageMobject derived state: (content_ref, corners)."""
-
-    __slots__ = ()
-
-    def __new__(cls, content_ref: int, corners: tuple) -> "_ImgKey":
-        return super().__new__(cls, (content_ref, corners))
-
-    @property
-    def content_ref(self) -> int:
-        return self[0]
-
-    @property
-    def corners(self) -> tuple:
-        return self[1]
-
-
-class _VGroupKey(tuple):
-    """State key for VGroup: (child_refs,)."""
-
-    __slots__ = ()
-
-    def __new__(cls, child_refs: tuple) -> "_VGroupKey":
-        return super().__new__(cls, (child_refs,))
-
-    @property
-    def child_refs(self) -> tuple:
-        return self[0]
-
-
-class _VMobKey(tuple):
-    """State key for plain VMobject."""
-
-    __slots__ = ()
-
-    def __new__(
-        cls,
-        contours: tuple,
-        holes: tuple,
-        fill_color: str | None,
-        stroke_color: str | None,
-        fill_opacity: float | None,
-        stroke_width: float | None,
-        stroke_opacity: float | None,
-        z_index: float | None,
-    ) -> "_VMobKey":
-        return super().__new__(
-            cls,
-            (
-                contours,
-                holes,
-                fill_color,
-                stroke_color,
-                fill_opacity,
-                stroke_width,
-                stroke_opacity,
-                z_index,
-            ),
-        )
-
-    @property
-    def contours(self) -> tuple:
-        return self[0]
-
-    @property
-    def holes(self) -> tuple:
-        return self[1]
-
-    @property
-    def fill_color(self) -> str | None:
-        return self[2]
-
-    @property
-    def stroke_color(self) -> str | None:
-        return self[3]
-
-    @property
-    def fill_opacity(self) -> float | None:
-        return self[4]
-
-    @property
-    def stroke_width(self) -> float | None:
-        return self[5]
-
-    @property
-    def stroke_opacity(self) -> float | None:
-        return self[6]
-
-    @property
-    def z_index(self) -> float | None:
-        return self[7]
-
-
 def _is_mob_supported(mob: Mobject) -> bool:
     """Return True for mob types the JS player can render."""
     if isinstance(mob, VMobject | ValueTracker | AbstractImageMobject):
@@ -233,66 +56,6 @@ def _is_mob_supported(mob: Mobject) -> bool:
 def _rate_func_name(anim: object) -> str:
     name = getattr(getattr(anim, "rate_func", None), "__name__", "smooth")
     return "smooth" if "smooth" in name.lower() else name
-
-
-def _needs_camera_loop(scene: Scene, animations: list) -> bool:
-    """Return True when camera is being animated and needs per-frame capture."""
-    cam = getattr(scene, "camera", None)
-    if cam is None:
-        return False
-
-    cam_objects: set = {cam}
-
-    if isinstance(cam, ThreeDCamera):
-        for tracker in (
-            cam.phi_tracker,
-            cam.theta_tracker,
-            cam.focal_distance_tracker,
-            cam.gamma_tracker,
-            cam.zoom_tracker,
-        ):
-            cam_objects.add(tracker)
-
-    if isinstance(cam, MovingCamera):
-        cam_objects.add(cam.frame)
-        if cam.frame.updaters:
-            return True
-
-    return any(getattr(a, "mobject", None) in cam_objects for a in animations)
-
-
-def _serialize_camera(
-    cam, frame_width: float, frame_height: float
-) -> tuple[list[list[float]], float]:
-    """Return (4-corner points [UL,UR,DR,DL], focal_distance) for any camera."""
-    if isinstance(cam, MovingCamera):
-        # get_vertices() returns [UR, UL, DL, DR]; reorder to [UL, UR, DR, DL]
-        verts = cam.frame.get_vertices()
-        return [
-            verts[1].tolist(),
-            verts[0].tolist(),
-            verts[3].tolist(),
-            verts[2].tolist(),
-        ], 0.0
-
-    if isinstance(cam, ThreeDCamera):
-        rot = cam.generate_rotation_matrix()
-        right = rot[0, :]
-        up = rot[1, :]
-        center = np.array(cam.frame_center, dtype=float)
-        zoom = float(cam.get_zoom())
-        hw = (frame_width / zoom) / 2
-        hh = (frame_height / zoom) / 2
-        return [
-            (center - hw * right + hh * up).tolist(),
-            (center + hw * right + hh * up).tolist(),
-            (center + hw * right - hh * up).tolist(),
-            (center - hw * right - hh * up).tolist(),
-        ], float(cam.get_focal_distance())
-
-    hw = frame_width / 2
-    hh = frame_height / 2
-    return [[-hw, hh, 0], [hw, hh, 0], [hw, -hh, 0], [-hw, -hh, 0]], 0.0
 
 
 @dataclass
@@ -317,25 +80,6 @@ class PixelContent:
 
     def to_array(self) -> np.ndarray:
         return np.frombuffer(self.data, dtype=self.dtype).reshape(self.shape)
-
-
-@dataclass
-class _SubpathChild:
-    """Synthetic JS child node for one subpath of a VMobject that also has submobjects.
-
-    Arises when a VMobject carries both its own Bezier points (e.g. Arrow's shaft)
-    and actual submobjects (e.g. Arrow's tip).  Gets a stable synthetic mob-id and
-    a state_ref allocated on first use.
-    """
-
-    parent: object  # the owning VMobject (Mobject, not typed to avoid circular)
-    parent_id: str  # short_id of the owning mob, pre-computed
-    subpath_idx: int
-    subpath: object  # numpy array
-
-    @property
-    def mob_id(self) -> str:
-        return f"{self.parent_id}_sp{self.subpath_idx}"
 
 
 class CaptureRenderer:

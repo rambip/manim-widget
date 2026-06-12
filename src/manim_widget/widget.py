@@ -7,7 +7,8 @@ import anywidget
 import traitlets
 from manim import Mobject, ThreeDScene
 
-from .renderer import CaptureRenderer, SectionRecord, _serialize_camera
+from ._camera import _serialize_camera
+from .renderer import CaptureRenderer, SectionRecord
 
 
 _ESM = Path(__file__).parent / "static" / "index.js"

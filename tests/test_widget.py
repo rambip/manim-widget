@@ -25,11 +25,9 @@ from manim import (
 )
 
 from manim_widget.widget import ManimWidget
-from manim_widget.renderer import (
-    CaptureRenderer,
-    _classify_subpaths,
-    _needs_camera_loop,
-)
+from manim_widget.renderer import CaptureRenderer
+from manim_widget._subpaths import _classify_subpaths
+from manim_widget._camera import _needs_camera_loop
 from manim_widget.states import _contour_winding
 from tests.scene_strategies import (
     construct_script,
@@ -352,7 +350,7 @@ def test_serialize_single_subpath_vmobject_gives_one_contour_no_holes(pts_list):
 def test_classify_subpaths_text_O_gives_one_contour_one_hole():
     """Text 'O' has one outer contour and one hole regardless of SVG winding."""
     from manim import Text
-    from manim_widget.renderer import _classify_subpaths
+    from manim_widget._subpaths import _classify_subpaths
     from manim_widget.states import _contour_winding
 
     mob = Text("O").submobjects[0]
@@ -367,7 +365,7 @@ def test_classify_subpaths_text_O_gives_one_contour_one_hole():
 def test_classify_subpaths_text_i_gives_two_contours_no_holes():
     """Text 'i' has two disconnected outer contours (stem + dot), no holes."""
     from manim import Text
-    from manim_widget.renderer import _classify_subpaths
+    from manim_widget._subpaths import _classify_subpaths
     from manim_widget.states import _contour_winding
 
     mob = Text("i").submobjects[0]
@@ -381,7 +379,7 @@ def test_classify_subpaths_text_i_gives_two_contours_no_holes():
 def test_classify_subpaths_difference_gives_one_contour_one_hole():
     """Difference(big, small) has one outer contour and one hole."""
     from manim import Circle, Difference
-    from manim_widget.renderer import _classify_subpaths
+    from manim_widget._subpaths import _classify_subpaths
     from manim_widget.states import _contour_winding
 
     mob = Difference(Circle(radius=1), Circle(radius=0.4))
@@ -396,7 +394,7 @@ def test_classify_subpaths_difference_gives_one_contour_one_hole():
 def test_classify_subpaths_text_B_winding_invariant():
     """All contours are CCW and all holes are CW regardless of font."""
     from manim import Text
-    from manim_widget.renderer import _classify_subpaths
+    from manim_widget._subpaths import _classify_subpaths
     from manim_widget.states import _contour_winding
 
     mob = Text("B").submobjects[0]
@@ -857,7 +855,7 @@ def test_camera_state_is_in_state_bank():
 
 def test_camera_state_has_four_points_and_focal_distance():
     """A CameraState entry must have exactly 4 corner points and a focal_distance."""
-    from manim_widget.renderer import _serialize_camera
+    from manim_widget._camera import _serialize_camera
     from manim.camera.three_d_camera import ThreeDCamera
 
     cam = ThreeDCamera()
