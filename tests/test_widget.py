@@ -178,6 +178,52 @@ def strip_geometry(obj: dict) -> dict:
 strip_points = strip_geometry  # backwards compat alias
 
 
+def strip_camera(obj: dict) -> dict:
+    """Remove Camera states and their refs so tests can compare mob-only payloads."""
+    if not isinstance(obj, dict) or "states" not in obj:
+        return obj
+
+    states = obj["states"]
+    cam_set = {
+        i
+        for i, s in enumerate(states)
+        if isinstance(s, dict) and s.get("kind") == "Camera"
+    }
+    if not cam_set:
+        return obj
+
+    kept = [(old_i, s) for old_i, s in enumerate(states) if old_i not in cam_set]
+    remap = {old_i: new_i for new_i, (old_i, _) in enumerate(kept)}
+
+    def remap_node(v, _in_snapshot=False):
+        if _in_snapshot and isinstance(v, dict):
+            # snapshot format: {mob_id: state_ref_int} — remap values directly
+            return {
+                k: remap[val] for k, val in v.items() if k != "#camera" and val in remap
+            }
+        if isinstance(v, dict):
+            out = {}
+            for k, val in v.items():
+                if k == "#camera":
+                    continue
+                elif k == "snapshot":
+                    out[k] = remap_node(val, _in_snapshot=True)
+                elif k == "state_ref" and isinstance(val, int):
+                    if val in remap:
+                        out[k] = remap[val]
+                    # Camera state_ref — drop
+                else:
+                    out[k] = remap_node(val)
+            return out
+        if isinstance(v, list):
+            return [remap_node(item) for item in v]
+        return v
+
+    result = remap_node({k: v for k, v in obj.items() if k != "states"})
+    result["states"] = [s for _, s in kept]
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Property tests: VMobjectState / Pydantic validation
 # ---------------------------------------------------------------------------
@@ -478,7 +524,7 @@ def test_updater_command_uses_state_refs_and_dedup_is_deterministic():
         ],
     }
 
-    assert_close(strip_points(data), strip_points(expected))
+    assert_close(strip_points(strip_camera(data)), strip_points(expected))
 
 
 def test_create_then_next_section_snapshot_only_second_section():
@@ -534,7 +580,7 @@ def test_create_then_next_section_snapshot_only_second_section():
         ],
     }
 
-    assert_close(strip_points(data), strip_points(expected))
+    assert_close(strip_points(strip_camera(data)), strip_points(expected))
 
 
 def test_wait_with_vmobject():
@@ -703,15 +749,20 @@ def test_image_mobject_serializes_source_and_pixels():
     assert_valid_scene(data)
 
     section = data["sections"][0]
-    # register points to the addon state (index 1), not the content state (index 0)
+    states = data["states"]
+    # DAG: content entry (kind+source) and addon entry (from+points)
+    content_idx = next(
+        i for i, s in enumerate(states) if s.get("kind") == "ImageMobject"
+    )
+    addon_idx = next(i for i, s in enumerate(states) if "from" in s)
+
     assert section["construct"][0]["cmd"] == "register"
     assert section["construct"][0]["id"] == "0"
-    assert data["states"][section["construct"][0]["state_ref"]].get("from") == 0
+    # register points to the addon state, which points back to the content state
+    assert states[section["construct"][0]["state_ref"]].get("from") == content_idx
 
-    states = data["states"]
-    # DAG: content entry at 0 (kind+source), addon entry at 1 (from+points)
-    content_state = states[0]
-    addon_state = states[1]
+    content_state = states[content_idx]
+    addon_state = states[addon_idx]
     assert content_state["kind"] == "ImageMobject"
     assert content_state["source"].startswith("data:image/png;base64,")
     assert "points" in addon_state
@@ -736,7 +787,7 @@ def test_static_mathtex_serialization():
     data = scene.scene_data
     assert_valid_scene(data)
 
-    state = data["states"][0]
+    state = next(s for s in data["states"] if s.get("kind") == "MathTexSource")
 
     assert state["kind"] == "MathTexSource"
     assert state["latex"] == "x^2"
@@ -767,7 +818,7 @@ def test_static_mathtex_transform_updates_points():
 
     section = data["sections"][0]
 
-    initial_state = data["states"][0]
+    initial_state = next(s for s in data["states"] if s.get("kind") == "MathTexSource")
     assert initial_state["kind"] == "MathTexSource"
     initial_points = initial_state["points"]
 
@@ -898,8 +949,8 @@ def test_camera_state_is_in_state_bank():
     data = SimpleScene(fps=10).scene_data
     assert_valid_scene(data)
     cam_states = [s for s in data["states"] if s.get("kind") == "Camera"]
-    # Static scene — no camera movement, so no camera states in bank
-    assert cam_states == []
+    # Static scene always has exactly 1 Camera state (the initial snapshot position)
+    assert len(cam_states) == 1
 
 
 def test_camera_state_has_four_points_and_focal_distance():
@@ -1276,6 +1327,8 @@ def _collect_register_invariants(section: dict, states: list) -> None:
         elif cmd["cmd"] == "updater":
             for frame in cmd.get("frames", []):
                 for mob_id in frame:
+                    if mob_id.startswith("#"):
+                        continue  # pseudo-mobjects like #camera are not registered
                     assert mob_id in seen_register_ids, (
                         f"updater frame references mob '{mob_id}' not in prior registers"
                     )

@@ -4,6 +4,7 @@ __generated_with = "0.23.0"
 app = marimo.App(width="medium")
 
 with app.setup:
+    import marimo as mo
     import numpy as np
     from manim import (
         Axes,
@@ -74,18 +75,12 @@ class CircleScene(ManimWidget):
 @app.cell
 def _():
     cam = SharedCamera()
-    return (cam,)
-
-
-@app.cell
-def _(cam):
-    SquareScene(is_3d=True, shared_camera=cam)
-    return
-
-
-@app.cell
-def _(cam):
-    CircleScene(is_3d=True, shared_camera=cam)
+    mo.hstack(
+        [
+            SquareScene(is_3d=True, shared_camera=cam),
+            CircleScene(is_3d=True, shared_camera=cam),
+        ]
+    )
     return
 
 

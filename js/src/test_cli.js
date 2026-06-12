@@ -324,7 +324,7 @@ for (let i = 0; i < spec.sections.length; i++) {
 
     operations.push({ type: "section_end", index: i, name: section.name });
 
-    const registryIds = Array.from(registry._registry.keys()).sort();
+    const registryIds = Array.from(registry._registry.keys()).filter(id => !id.startsWith("#")).sort();
     const sceneIdSet = new Set();
     for (const mob of scene.mobjects) {
       for (const [id, m] of registry._registry.entries()) {
