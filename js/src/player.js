@@ -20,6 +20,19 @@ import {
 } from "manim-web";
 import * as THREE from "three";
 
+function _vec3norm(v) {
+  const len = Math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2);
+  return len > 0 ? [v[0] / len, v[1] / len, v[2] / len] : v;
+}
+
+function _vec3cross(a, b) {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+}
+
 function buildSimpleAnimation(mob, desc, registry) {
   const params = desc.params || {};
   switch (desc.kind) {
@@ -120,10 +133,49 @@ export class Player {
     this._scene.render();
   }
 
+  _apply2DCameraState(points) {
+    const [UL, UR, DR, DL] = points;
+    const camera = this._scene.camera;
+    if (!camera) return;
+    const center = [(UL[0] + DR[0]) / 2, (UL[1] + DR[1]) / 2, (UL[2] + DR[2]) / 2];
+    const frameWidth = Math.sqrt(
+      (UR[0] - UL[0]) ** 2 + (UR[1] - UL[1]) ** 2 + (UR[2] - UL[2]) ** 2,
+    );
+    const frameHeight = Math.sqrt(
+      (UL[0] - DL[0]) ** 2 + (UL[1] - DL[1]) ** 2 + (UL[2] - DL[2]) ** 2,
+    );
+    if (frameWidth > 0) camera.frameWidth = frameWidth;
+    if (frameHeight > 0) camera.frameHeight = frameHeight;
+    camera.moveTo([center[0], center[1], camera.position.z]);
+    this._scene.render();
+  }
+
+  _apply3DCameraState(points, fd) {
+    const [UL, UR, DR, DL] = points;
+    const center = [(UL[0] + DR[0]) / 2, (UL[1] + DR[1]) / 2, (UL[2] + DR[2]) / 2];
+    const right = _vec3norm([UR[0] - UL[0], UR[1] - UL[1], UR[2] - UL[2]]);
+    const up = _vec3norm([UL[0] - DL[0], UL[1] - DL[1], UL[2] - DL[2]]);
+    const camDir = _vec3cross(right, up);
+    const phi = Math.acos(Math.max(-1, Math.min(1, camDir[2])));
+    const theta = Math.atan2(camDir[1], camDir[0]);
+    if (typeof this._scene.setCameraOrientation === "function") {
+      this._scene.setCameraOrientation(phi, theta, fd);
+    }
+    if (typeof this._scene.setLookAt === "function") {
+      this._scene.setLookAt(center);
+    }
+    const rectWidth = Math.sqrt(
+      (UR[0] - UL[0]) ** 2 + (UR[1] - UL[1]) ** 2 + (UR[2] - UL[2]) ** 2,
+    );
+    if (rectWidth > 0 && this._scene.camera3D) {
+      const fovDeg = (2 * Math.atan(rectWidth / (2 * fd)) * 180) / Math.PI;
+      this._scene.camera3D.setFov(fovDeg);
+    }
+  }
+
   /** Apply a CameraState object (kind:"Camera", points, focal_distance) to the scene. */
   _applyCameraState(state) {
     if (!state) return;
-    // Live orbit-sync shortcut — no corner-point roundtrip needed.
     if (state.kind === "OrbitState") {
       if (typeof this._scene.setCameraOrientation === "function") {
         this._scene.setCameraOrientation(state.phi, state.theta, state.distance);
@@ -136,67 +188,11 @@ export class Player {
     if (state.kind !== "Camera") return;
     const { points, focal_distance } = state;
     if (!Array.isArray(points) || points.length < 4) return;
-
-    const [UL, UR, , DL] = points;
-    const center = [
-      (UL[0] + points[2][0]) / 2,
-      (UL[1] + points[2][1]) / 2,
-      (UL[2] + points[2][2]) / 2,
-    ];
-
     const fd = focal_distance || 0;
-
     if (fd === 0) {
-      const camera = this._scene.camera;
-      if (camera) {
-        const frameWidth = Math.sqrt(
-          (UR[0] - UL[0]) ** 2 + (UR[1] - UL[1]) ** 2 + (UR[2] - UL[2]) ** 2,
-        );
-        const frameHeight = Math.sqrt(
-          (UL[0] - DL[0]) ** 2 + (UL[1] - DL[1]) ** 2 + (UL[2] - DL[2]) ** 2,
-        );
-        if (frameWidth > 0) camera.frameWidth = frameWidth;
-        if (frameHeight > 0) camera.frameHeight = frameHeight;
-        camera.moveTo([center[0], center[1], camera.position.z]);
-        this._scene.render();
-      }
-      return;
-    }
-
-    // Derive right and up from corner points, then camera direction
-    function norm(v) {
-      const len = Math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2);
-      return len > 0 ? [v[0] / len, v[1] / len, v[2] / len] : v;
-    }
-    function cross(a, b) {
-      return [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-      ];
-    }
-    const right = norm([UR[0] - UL[0], UR[1] - UL[1], UR[2] - UL[2]]);
-    const up = norm([UL[0] - DL[0], UL[1] - DL[1], UL[2] - DL[2]]);
-    const camDir = cross(right, up);
-
-    // Python Manim spherical: phi from Z axis, theta in XY plane
-    const phi = Math.acos(Math.max(-1, Math.min(1, camDir[2])));
-    const theta = Math.atan2(camDir[1], camDir[0]);
-
-    if (typeof this._scene.setCameraOrientation === "function") {
-      this._scene.setCameraOrientation(phi, theta, fd);
-    }
-    if (typeof this._scene.setLookAt === "function") {
-      this._scene.setLookAt(center);
-    }
-
-    // Set FOV from view rectangle width and focal distance
-    const rectWidth = Math.sqrt(
-      (UR[0] - UL[0]) ** 2 + (UR[1] - UL[1]) ** 2 + (UR[2] - UL[2]) ** 2,
-    );
-    if (rectWidth > 0 && fd > 0 && this._scene.camera3D) {
-      const fovDeg = (2 * Math.atan(rectWidth / (2 * fd)) * 180) / Math.PI;
-      this._scene.camera3D.setFov(fovDeg);
+      this._apply2DCameraState(points);
+    } else {
+      this._apply3DCameraState(points, fd);
     }
   }
 

@@ -299,7 +299,7 @@ async function render({ model, el }) {
     updateSectionStyles(-1);
   });
 
-  model.on("change:scene_data", async () => {
+  const onSceneDataChange = async () => {
     const data = model.get("scene_data");
     if (!data) return;
 
@@ -318,14 +318,16 @@ async function render({ model, el }) {
     } else {
       await loadScene(data);
     }
-  });
+  };
+  model.on("change:scene_data", onSceneDataChange);
 
-  model.on("change:is_3d", async () => {
+  const onIs3dChange = async () => {
     ui.d3Checkbox.checked = model.get("is_3d");
     if (sceneData) {
       await loadScene(sceneData);
     }
-  });
+  };
+  model.on("change:is_3d", onIs3dChange);
 
   ui.d3Checkbox.addEventListener("change", async () => {
     model.set("is_3d", ui.d3Checkbox.checked);
@@ -339,6 +341,12 @@ async function render({ model, el }) {
   if (initialData) {
     await loadScene(initialData);
   }
+
+  return () => {
+    sharedCamWire?.cleanup();
+    model.off("change:scene_data", onSceneDataChange);
+    model.off("change:is_3d", onIs3dChange);
+  };
 }
 
 export default { render };
