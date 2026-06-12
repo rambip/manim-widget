@@ -26,6 +26,7 @@ from manim import (
 
 from manim_widget.widget import ManimWidget
 from manim_widget.renderer import CaptureRenderer
+from manim_widget._serializer import MobSerializer
 from manim_widget._subpaths import _classify_subpaths
 from manim_widget._camera import _needs_camera_loop
 from manim_widget.states import _contour_winding
@@ -65,6 +66,13 @@ def _fresh_renderer() -> CaptureRenderer:
     r = CaptureRenderer(fps=10)
     r.open_section("test")
     return r
+
+
+def _fresh_serializer() -> MobSerializer:
+    """Return a serializer instance, ready for direct unit testing."""
+    from manim_widget.snapshot import IdCounter
+
+    return MobSerializer(IdCounter())
 
 
 # ---------------------------------------------------------------------------
@@ -297,9 +305,9 @@ def test_model_emits_only_spec_known_fields(cls, def_name):
 
 @given(vmobject_state())
 def test_intern_state_returns_valid_ref(state):
-    r = _fresh_renderer()
-    ref = r._intern_state(state)
-    assert 0 <= ref < len(r._state_registry.as_list())
+    s = _fresh_serializer()
+    ref = s._intern_state(state)
+    assert 0 <= ref < len(s._state_registry.as_list())
 
 
 @given(vmobject_state(), vmobject_state())
@@ -307,11 +315,11 @@ def test_intern_state_distinct_states_get_distinct_refs(s1, s2):
     d1 = s1.model_dump(exclude_none=True)
     d2 = s2.model_dump(exclude_none=True)
     assume(d1 != d2)
-    r = _fresh_renderer()
-    ref1 = r._intern_state(s1)
-    ref2 = r._intern_state(s2)
+    sr = _fresh_serializer()
+    ref1 = sr._intern_state(s1)
+    ref2 = sr._intern_state(s2)
     assert ref1 != ref2
-    assert len(r._state_registry.as_list()) == 2
+    assert len(sr._state_registry.as_list()) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -431,9 +439,9 @@ def test_serialize_value_tracker(value):
 
 def test_extract_state_deterministic_for_common_shapes():
     """(D) Same mob, same call — _extract_state is a pure function of mob state."""
-    r = _fresh_renderer()
+    s = _fresh_serializer()
     for mob in [Circle(), Square(), Dot()]:
-        assert r._extract_state(mob) == r._extract_state(mob)
+        assert s._extract_state(mob) == s._extract_state(mob)
 
 
 @given(
@@ -443,11 +451,11 @@ def test_extract_state_deterministic_for_common_shapes():
 def test_extract_state_changes_after_vmobject_shift(dx, dy):
     """(S) Shifting a VMobject changes its cache key."""
     assume(abs(dx) + abs(dy) > 1e-6)
-    r = _fresh_renderer()
+    s = _fresh_serializer()
     mob = Circle()
-    k_before = r._extract_state(mob)
+    k_before = s._extract_state(mob)
     mob.shift((dx, dy, 0))
-    assert r._extract_state(mob) != k_before
+    assert s._extract_state(mob) != k_before
 
 
 @given(st.floats(-100.0, 100.0, allow_nan=False, allow_infinity=False))
@@ -456,11 +464,11 @@ def test_extract_state_changes_after_value_tracker_set(new_value):
     from manim import ValueTracker
 
     assume(abs(new_value) > 1e-9)
-    r = _fresh_renderer()
+    s = _fresh_serializer()
     vt = ValueTracker(0.0)
-    k_before = r._extract_state(vt)
+    k_before = s._extract_state(vt)
     vt.set_value(new_value)
-    assert r._extract_state(vt) != k_before
+    assert s._extract_state(vt) != k_before
 
 
 @given(bezier_points_3n1(min_segments=1, max_segments=3))
@@ -477,10 +485,10 @@ def test_make_from_state_produces_spec_valid_dict(pts_list):
     assume(len(raw_pts) >= 4)
     mob.set_points(np.array(raw_pts, dtype=float))
 
-    r = _fresh_renderer()
-    key = r._extract_state(mob)
+    s = _fresh_serializer()
+    key = s._extract_state(mob)
     assume(key is not None)
-    _assert_valid_state(r._make_from_state(key))
+    _assert_valid_state(s._make_from_state(key))
 
 
 def test_wait_with_vmobject():
@@ -989,22 +997,22 @@ def test_arrow_serializes_as_vgroup_container():
 )
 def test_intern_state_ref_always_in_bounds_after_mixed_inserts(states, extra_repeats):
     """Repeating intern calls never push ref out of bounds."""
-    r = _fresh_renderer()
-    refs = [r._intern_state(s) for s in states]
+    sr = _fresh_serializer()
+    refs = [sr._intern_state(s) for s in states]
     # Re-intern a subset to exercise deduplication path
     for s in states[:extra_repeats]:
-        ref = r._intern_state(s)
-        assert 0 <= ref < len(r._state_registry.as_list())
+        ref = sr._intern_state(s)
+        assert 0 <= ref < len(sr._state_registry.as_list())
     for ref in refs:
-        assert 0 <= ref < len(r._state_registry.as_list())
+        assert 0 <= ref < len(sr._state_registry.as_list())
 
 
 @given(vmobject_state())
 def test_state_bank_stores_dict_not_pydantic_model(state):
     """States in the bank must be plain dicts (for JSON serialization)."""
-    r = _fresh_renderer()
-    ref = r._intern_state(state)
-    stored = r._state_registry.as_list()[ref]
+    sr = _fresh_serializer()
+    ref = sr._intern_state(state)
+    stored = sr._state_registry.as_list()[ref]
     assert isinstance(stored, dict)
     assert stored.get("kind") == "VMobject"
 
@@ -1020,8 +1028,8 @@ def test_serialize_mobject_never_produces_arrow_kind(state):
     st.lists(vmobject_state(), min_size=1, max_size=4),
 )
 def test_vgroup_state_children_are_all_ints(child_states):
-    r = _fresh_renderer()
-    children = [r._intern_state(s) for s in child_states]
+    sr = _fresh_serializer()
+    children = [sr._intern_state(s) for s in child_states]
     vg = VGroupState(children=children)
     assert all(isinstance(c, int) for c in vg.children)
     d = vg.model_dump(exclude_none=True)
