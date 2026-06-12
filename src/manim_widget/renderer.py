@@ -94,6 +94,133 @@ def _classify_subpaths(
     return contours, holes
 
 
+class _VTKey(tuple):
+    """State key for ValueTracker: (value,)."""
+
+    __slots__ = ()
+
+    def __new__(cls, value: float) -> "_VTKey":
+        return super().__new__(cls, (value,))
+
+    @property
+    def value(self) -> float:
+        return self[0]
+
+
+class _MathTexKey(tuple):
+    """State key for PatchedMathTex: (latex, pts, color)."""
+
+    __slots__ = ()
+
+    def __new__(cls, latex: str, pts: tuple, color: str | None) -> "_MathTexKey":
+        return super().__new__(cls, (latex, pts, color))
+
+    @property
+    def latex(self) -> str:
+        return self[0]
+
+    @property
+    def pts(self) -> tuple:
+        return self[1]
+
+    @property
+    def color(self) -> str | None:
+        return self[2]
+
+
+class _ImgKey(tuple):
+    """State key for ImageMobject derived state: (content_ref, corners)."""
+
+    __slots__ = ()
+
+    def __new__(cls, content_ref: int, corners: tuple) -> "_ImgKey":
+        return super().__new__(cls, (content_ref, corners))
+
+    @property
+    def content_ref(self) -> int:
+        return self[0]
+
+    @property
+    def corners(self) -> tuple:
+        return self[1]
+
+
+class _VGroupKey(tuple):
+    """State key for VGroup: (child_refs,)."""
+
+    __slots__ = ()
+
+    def __new__(cls, child_refs: tuple) -> "_VGroupKey":
+        return super().__new__(cls, (child_refs,))
+
+    @property
+    def child_refs(self) -> tuple:
+        return self[0]
+
+
+class _VMobKey(tuple):
+    """State key for plain VMobject."""
+
+    __slots__ = ()
+
+    def __new__(
+        cls,
+        contours: tuple,
+        holes: tuple,
+        fill_color: str | None,
+        stroke_color: str | None,
+        fill_opacity: float | None,
+        stroke_width: float | None,
+        stroke_opacity: float | None,
+        z_index: float | None,
+    ) -> "_VMobKey":
+        return super().__new__(
+            cls,
+            (
+                contours,
+                holes,
+                fill_color,
+                stroke_color,
+                fill_opacity,
+                stroke_width,
+                stroke_opacity,
+                z_index,
+            ),
+        )
+
+    @property
+    def contours(self) -> tuple:
+        return self[0]
+
+    @property
+    def holes(self) -> tuple:
+        return self[1]
+
+    @property
+    def fill_color(self) -> str | None:
+        return self[2]
+
+    @property
+    def stroke_color(self) -> str | None:
+        return self[3]
+
+    @property
+    def fill_opacity(self) -> float | None:
+        return self[4]
+
+    @property
+    def stroke_width(self) -> float | None:
+        return self[5]
+
+    @property
+    def stroke_opacity(self) -> float | None:
+        return self[6]
+
+    @property
+    def z_index(self) -> float | None:
+        return self[7]
+
+
 def _rate_func_name(anim: object) -> str:
     name = getattr(getattr(anim, "rate_func", None), "__name__", "smooth")
     return "smooth" if "smooth" in name.lower() else name
@@ -289,12 +416,12 @@ class CaptureRenderer:
 
     def _extract_state(self, mob: Mobject) -> tuple | None:
         if isinstance(mob, ValueTracker):
-            return ("vt", float(mob.get_value()))
+            return _VTKey(float(mob.get_value()))
 
         if isinstance(mob, PatchedMathTex):
             raw = np.asarray(mob.points).tolist()
             color_hex = self._color_to_hex(mob.color) if mob.color is not None else None
-            return ("mathtex", mob.tex_string, tuple(tuple(p) for p in raw), color_hex)
+            return _MathTexKey(mob.tex_string, tuple(tuple(p) for p in raw), color_hex)
 
         if isinstance(mob, AbstractImageMobject):
             content = self._extract_content(mob)
@@ -305,7 +432,7 @@ class CaptureRenderer:
                 )
             raw = np.asarray(mob.points).tolist()
             return (
-                ("img", content_ref, tuple(tuple(p) for p in raw))
+                _ImgKey(content_ref, tuple(tuple(p) for p in raw))
                 if len(raw) == 4
                 else None
             )
@@ -321,15 +448,14 @@ class CaptureRenderer:
                 if ref is None:
                     return None  # children not yet registered
                 child_refs.append(ref)
-            return ("vgroup", tuple(child_refs))
+            return _VGroupKey(tuple(child_refs))
 
         if isinstance(mob, VMobject) and not mob.submobjects:
             subpaths = mob.get_subpaths()
             contours, holes = _classify_subpaths(subpaths)
             fill_color = mob.get_fill_color()
             stroke_color = mob.get_stroke_color()
-            return (
-                "vmob",
+            return _VMobKey(
                 tuple(tuple(tuple(p) for p in c) for c in contours),
                 tuple(tuple(tuple(p) for p in h) for h in holes),
                 self._color_to_hex(fill_color) if fill_color else None,
@@ -349,49 +475,36 @@ class CaptureRenderer:
         }
 
     def _make_from_state(self, state: tuple) -> dict:
-        kind = state[0]
-        if kind == "vt":
-            return ValueTrackerState(value=state[1]).model_dump(exclude_none=True)
-        if kind == "mathtex":
-            _, latex, pts, color = state
+        if isinstance(state, _VTKey):
+            return ValueTrackerState(value=state.value).model_dump(exclude_none=True)
+        if isinstance(state, _MathTexKey):
             return MathTexState(
-                latex=latex,
-                points=[[float(p[0]), float(p[1]), float(p[2])] for p in pts],
-                color=color,
+                latex=state.latex,
+                points=[[float(p[0]), float(p[1]), float(p[2])] for p in state.pts],
+                color=state.color,
             ).model_dump(exclude_none=True)
-        if kind == "img":
-            _, content_ref, corners = state
+        if isinstance(state, _ImgKey):
             return {
                 "kind": "Derived",
-                "from": content_ref,
-                "points": [list(p) for p in corners],
+                "from": state.content_ref,
+                "points": [list(p) for p in state.corners],
             }
-        if kind == "vgroup":
-            _, child_refs = state
-            return VGroupState(children=list(child_refs)).model_dump(exclude_none=True)
-        if kind == "vmob":
-            (
-                _,
-                contours,
-                holes,
-                fill_color,
-                stroke_color,
-                fill_opacity,
-                stroke_width,
-                stroke_opacity,
-                z_index,
-            ) = state
+        if isinstance(state, _VGroupKey):
+            return VGroupState(children=list(state.child_refs)).model_dump(
+                exclude_none=True
+            )
+        if isinstance(state, _VMobKey):
             return VMobjectState(
-                contours=[[list(p) for p in c] for c in contours],
-                holes=[[list(p) for p in h] for h in holes],
-                fill_color=fill_color,
-                stroke_color=stroke_color,
-                fill_opacity=fill_opacity,
-                stroke_width=stroke_width,
-                stroke_opacity=stroke_opacity,
-                z_index=z_index,
+                contours=[[list(p) for p in c] for c in state.contours],
+                holes=[[list(p) for p in h] for h in state.holes],
+                fill_color=state.fill_color,
+                stroke_color=state.stroke_color,
+                fill_opacity=state.fill_opacity,
+                stroke_width=state.stroke_width,
+                stroke_opacity=state.stroke_opacity,
+                z_index=state.z_index,
             ).model_dump(exclude_none=True)
-        msg = f"Unknown state kind: {kind!r}"
+        msg = f"Unknown state type: {type(state)!r}"
         raise ValueError(msg)
 
     # ------------------------------------------------------------------
