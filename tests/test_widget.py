@@ -1506,6 +1506,48 @@ def test_glyph_hole_serialized(char):
     )
 
 
+@given(
+    phi=st.floats(0.1, 1.9, allow_nan=False, allow_infinity=False),
+    theta=st.floats(-2.5, 2.5, allow_nan=False, allow_infinity=False),
+)
+@settings(max_examples=20, deadline=None)
+def test_initial_camera_snapshot_matches_construct_camera(phi, theta):
+    """The #camera in the first section's snapshot must reflect the camera configured
+    at the start of construct() via set_phi/set_theta, not the default camera serialized
+    at section-open time (before construct() runs)."""
+    from manim_widget._camera import _serialize_camera
+
+    class CameraScene(ManimWidget):
+        _phi = phi
+        _theta = theta
+
+        def construct(self):
+            self.camera.set_phi(self._phi)
+            self.camera.set_theta(self._theta)
+            self.play(Create(Circle()))
+
+    widget = CameraScene(is_3d=True)
+    data = widget.scene_data
+
+    section = data["sections"][0]
+    cam_ref = section["snapshot"]["#camera"]
+    snapshot_cam_state = data["states"][cam_ref]
+
+    cam = widget.camera
+    fw = float(cam.frame_width)
+    fh = float(cam.frame_height)
+    expected_pts, expected_focal = _serialize_camera(cam, fw, fh)
+
+    assert snapshot_cam_state["kind"] == "Camera"
+    assert np.allclose(snapshot_cam_state["points"], expected_pts, atol=1e-5), (
+        f"snapshot camera does not match construct() camera "
+        f"(phi={phi:.3f}, theta={theta:.3f})\n"
+        f"  snapshot: {snapshot_cam_state['points']}\n"
+        f"  expected: {expected_pts}"
+    )
+    assert abs(snapshot_cam_state["focal_distance"] - expected_focal) < 1e-5
+
+
 @given(st.sampled_from(_HOLE_CHARS))
 def test_glyph_hole_winding(char):
     """Serialized VMobjectState: all contours CCW, all holes CW."""
