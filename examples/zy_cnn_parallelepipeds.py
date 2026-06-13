@@ -25,7 +25,7 @@ with app.setup:
     )
     from manim_widget import ManimWidget
 
-    _DEFAULT_IMAGE_URL = "https://storage.googleapis.com/kaggle-datasets-images/6175990/10028340/a0b959a027a7dd839dccfd847af56177/dataset-card.jpg"
+    DEFAULT_IMAGE_URL = "https://storage.googleapis.com/kaggle-datasets-images/6175990/10028340/a0b959a027a7dd839dccfd847af56177/dataset-card.jpg"
 
     def load_image_array(url: str) -> np.ndarray:
         with urlopen(url) as response:
@@ -92,12 +92,13 @@ with app.setup:
 
 @app.class_definition
 class ZYImageCNN(ManimWidget):
-    image_url: str = _DEFAULT_IMAGE_URL
+    image_url: str = DEFAULT_IMAGE_URL
 
     def construct(self):
-        self.camera.phi = 1.5
-        self.camera.theta = -0.8
-        self.camera.distance = 10
+        self.camera.set_phi(1.5)
+        self.camera.set_theta(-0.8)
+        self.camera.set_focal_distance(10)
+        self.camera.set_zoom(2)
 
         img = ImageMobject(load_image_array(self.image_url))
         img.height = 3.0

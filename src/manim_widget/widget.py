@@ -78,6 +78,7 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
 
         self.construct()
 
+        self._patch_initial_camera_snapshot()
         self._renderer.flush_staged_adds()
         self._renderer.emit_final_add_animations(self)
 
@@ -89,6 +90,30 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
             frame_height=float(self.camera.frame_height),
         )
         self.scene_data = data
+
+    def _patch_initial_camera_snapshot(self) -> None:
+        """Re-serialize the camera into the first section's snapshot after construct() has run.
+
+        _flush_setup_to_section() is called before construct(), so any camera
+        mutations made at the start of construct() (set_phi, set_theta, etc.)
+        are not captured in the initial snapshot.  This method fixes that by
+        overwriting the #camera entry with the camera's state as it is now.
+        """
+        sections = self._renderer.sections
+        if not sections:
+            return
+        initial_setup = sections[0].setup
+        cam_entry = next((e for e in initial_setup if e.get("id") == "#camera"), None)
+        if cam_entry is None:
+            return
+        cam = self.camera
+        fw = float(getattr(cam, "frame_width", 14.222))
+        fh = float(getattr(cam, "frame_height", 8.0))
+        cam_pts, cam_focal = _serialize_camera(cam, fw, fh)
+        self._renderer._state_registry.overwrite(
+            cam_entry["state_ref"],
+            {"kind": "Camera", "points": cam_pts, "focal_distance": cam_focal},
+        )
 
     def _mob_is_animated(self, mob: Mobject) -> bool:
         """Return True if mob was the source or target of any animation during construction."""
