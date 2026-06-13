@@ -76,7 +76,7 @@ with app.setup:
             fill_opacity=0.45,
             **style,
         )
-        top.rotate(PI / 2, axis=UP)
+        top.rotate(PI / 2, axis=RIGHT)
         top.shift(UP * (y_size / 2))
         bottom = Rectangle(
             width=x_thickness,
@@ -85,7 +85,7 @@ with app.setup:
             fill_opacity=0.18,
             **style,
         )
-        bottom.rotate(PI / 2, axis=UP)
+        bottom.rotate(PI / 2, axis=RIGHT)
         bottom.shift(UP * (-y_size / 2))
         return VGroup(back, bottom, left_face, right_face, top, front)
 
