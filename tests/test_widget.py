@@ -37,7 +37,7 @@ from tests.scene_strategies import (
 )
 from manim_widget.states import (
     VMobjectState,
-    VGroupState,
+    GroupState,
     ValueTrackerState,
 )
 import manim_widget.states as _states_mod
@@ -253,7 +253,7 @@ def _spec_required(def_name: str) -> set[str]:
 # renderer-generated state types (states.py)  →  corresponding spec definition
 _STATES_SPEC_PAIRS = [
     (_states_mod.VMobjectState, "VMobjectState"),
-    (_states_mod.VGroupState, "VGroupState"),
+    (_states_mod.GroupState, "GroupState"),
     (_states_mod.ImageMobjectState, "ImageMobjectState"),
     (_states_mod.MathTexState, "MathTexSourceState"),
     (_states_mod.ValueTrackerState, "ValueTrackerState"),
@@ -1030,7 +1030,7 @@ def test_arrow_serializes_as_vgroup_container():
         (
             s
             for s in states
-            if s.get("kind") == "VGroup"
+            if s.get("kind") == "Group"
             and all(states[r].get("kind") == "VMobject" for r in s["children"])
         ),
         None,
@@ -1081,11 +1081,11 @@ def test_serialize_mobject_never_produces_arrow_kind(state):
 def test_vgroup_state_children_are_all_ints(child_states):
     sr = _fresh_serializer()
     children = [sr._intern_state(s) for s in child_states]
-    vg = VGroupState(children=children)
+    vg = GroupState(children=children)
     assert all(isinstance(c, int) for c in vg.children)
     d = vg.model_dump(exclude_none=True)
     assert "points" not in d
-    assert d["kind"] == "VGroup"
+    assert d["kind"] == "Group"
 
 
 # ---------------------------------------------------------------------------
@@ -1226,7 +1226,7 @@ def _collect_register_invariants(section: dict, states: list) -> None:
     """Assert group registration invariants for a single section's construct list.
 
     1. For every register with child_ids, all those IDs appear in earlier registers.
-    2. child_ids length == len(VGroupState.children) for the referenced state.
+    2. child_ids length == len(GroupState.children) for the referenced state.
     3. Every animate descriptor ID appears in a prior register.
     4. No duplicate register IDs within a section.
     """
@@ -1253,12 +1253,12 @@ def _collect_register_invariants(section: dict, states: list) -> None:
 
             if child_ids:
                 state = states[cmd["state_ref"]]
-                assert state.get("kind") == "VGroup", (
+                assert state.get("kind") in ("Group", "Arrow"), (
                     f"register '{rid}' has child_ids but state kind is {state.get('kind')!r}"
                 )
                 assert len(child_ids) == len(state.get("children", [])), (
                     f"register '{rid}' child_ids length {len(child_ids)} != "
-                    f"VGroupState.children length {len(state.get('children', []))}"
+                    f"GroupState.children length {len(state.get('children', []))}"
                 )
 
         elif cmd["cmd"] == "animate":

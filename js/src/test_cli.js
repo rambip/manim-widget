@@ -91,7 +91,7 @@ function serializeRuntimeState(registry) {
         ? mob.submobjects.map(serializeMobject).filter((ref) => ref !== null)
         : [];
       state = {
-        kind: "VGroup",
+        kind: "Group",
         children,
         opacity,
       };

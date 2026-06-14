@@ -110,7 +110,7 @@ export class Player {
     const state = this._stateFromRef(section, stateRef);
     const mob = createMobjectFromState(state);
     applyState(mob, state);
-    if (state.kind === "VGroup") {
+    if (state.kind === "Group") {
       if (Array.isArray(state.points) && state.points.length > 0) {
         const bodyMob = new VMobject();
         applyState(bodyMob, state);

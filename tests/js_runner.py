@@ -193,13 +193,23 @@ class JSRunner:
 
         return {**data, "sections": sections}
 
-    def check_data(self, scene_data: str | dict[str, Any]) -> JSResult:
-        """Validate pre-serialized scene data against spec.json, then run through the JS headless runner."""
+    def check_data(
+        self, scene_data: str | dict[str, Any], *, js: bool = True
+    ) -> JSResult:
+        """Validate pre-serialized scene data against spec.json, then run through the JS headless runner.
+
+        With ``js=False`` the scene is still parsed and schema-validated (so
+        serialization / spec errors are caught) but the JS playback is skipped —
+        useful for scenes the headless bundle cannot render (e.g. requiring a
+        local LaTeX install). The returned result is ``ok`` with no JS details.
+        """
         from jsonschema import validate
 
         data = json.loads(scene_data) if isinstance(scene_data, str) else scene_data
         if self._schema is not None:
             validate(data, self._schema)
+        if not js:
+            return JSResult(ok=True, section_count=len(data.get("sections", [])))
         scene_json = json.dumps(self._strip_timing(data))
 
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
@@ -231,10 +241,14 @@ class JSRunner:
             ) from exc
         return JSResult._from_json(data)
 
-    def check(self, scene_cls: type, fps: int = 10) -> JSResult:
-        """Instantiate scene_cls and validate it through the JS headless runner."""
+    def check(self, scene_cls: type, fps: int = 10, *, js: bool = True) -> JSResult:
+        """Instantiate scene_cls and validate it through the JS headless runner.
+
+        Pass ``js=False`` to skip JS playback (serialization + schema validation
+        still run); see :meth:`check_data`.
+        """
         scene = scene_cls(fps=fps)
-        return self.check_data(scene.scene_data)
+        return self.check_data(scene.scene_data, js=js)
 
 
 def _pretty_print(result: JSResult) -> None:

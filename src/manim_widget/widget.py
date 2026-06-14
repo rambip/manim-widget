@@ -190,8 +190,8 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
         states bank and position updates in later sections only add a cheap
         points-only entry — never re-encode the image.
 
-        Only root mobjects are included; VGroup children are referenced via their
-        parent's VGroupState children array.
+        Only root mobjects are included; group children are referenced via their
+        parent's GroupState children array.
         """
         renderer = self._renderer
         current = renderer._current

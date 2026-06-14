@@ -106,12 +106,12 @@ class VMobjectState(BaseModel):
         return v
 
 
-class VGroupState(BaseModel):
+class GroupState(BaseModel):
     """Container of child state-refs; carries no geometry of its own."""
 
     model_config = {"extra": "forbid"}
 
-    kind: Literal["VGroup"] = "VGroup"
+    kind: Literal["Group"] = "Group"
     children: list[int]
 
 
@@ -140,6 +140,25 @@ class ValueTrackerState(BaseModel):
     value: float
 
 
+class PMobjectState(BaseModel):
+    """A point cloud rendered as particles (PMobject leaf, e.g. Point, PointCloudDot).
+
+    Carries the full list of points; a single Point is just this with one entry.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    kind: Literal["PMobject"] = "PMobject"
+    points: list[list[float]]  # one [x, y, z] per particle
+    colors: list[str] | None = None  # per-point, parallel to points
+    opacities: list[float] | None = None  # per-point, parallel to points
+
+
 MobjectState = (
-    VMobjectState | VGroupState | ImageMobjectState | MathTexState | ValueTrackerState
+    VMobjectState
+    | GroupState
+    | ImageMobjectState
+    | MathTexState
+    | ValueTrackerState
+    | PMobjectState
 )

@@ -10,9 +10,10 @@ from PIL import Image
 from manim import GrowArrow, Text, VGroup, ValueTracker
 from manim.mobject.mobject import Mobject
 from manim.mobject.types.image_mobject import AbstractImageMobject
+from manim.mobject.types.point_cloud_mobject import PMobject
 from manim.mobject.types.vectorized_mobject import VMobject
 
-from ._state_keys import _ImgKey, _MathTexKey, _VMobKey, _VGroupKey, _VTKey
+from ._state_keys import _ImgKey, _MathTexKey, _PMobjectKey, _VMobKey, _GroupKey, _VTKey
 from ._subpaths import _SubpathChild, _classify_subpaths, _subpath_to_3n1
 from .registry import StateRegistry
 from .snapshot import IdCounter
@@ -20,8 +21,9 @@ from .states import (
     ImageMobjectState,
     MathTexState,
     MobjectState,
+    PMobjectState,
     VMobjectState,
-    VGroupState,
+    GroupState,
     ValueTrackerState,
     _signed_area_2d,
 )
@@ -94,6 +96,9 @@ class MobSerializer:
                 else None
             )
 
+        if isinstance(mob, PMobject) and not mob.submobjects:
+            return self._point_key(mob)
+
         if hasattr(mob, "submobjects") and mob.submobjects:
             # If the mob also has its own subpaths (e.g. Arrow shaft), fall through
             # to _serialize_vgroup so both shaft and tip children are captured.
@@ -105,7 +110,7 @@ class MobSerializer:
                 if ref is None:
                     return None  # children not yet registered
                 child_refs.append(ref)
-            return _VGroupKey(tuple(child_refs))
+            return _GroupKey(tuple(child_refs))
 
         if isinstance(mob, VMobject) and not mob.submobjects:
             subpaths = mob.get_subpaths()
@@ -124,6 +129,27 @@ class MobSerializer:
             )
 
         return None
+
+    def _point_key(self, mob: PMobject) -> _PMobjectKey:
+        """Build a state key for a point-cloud PMobject (Point, PointCloudDot, ...).
+
+        Reads the full ``points``/``rgbas`` arrays directly off the leaf mobject;
+        a single Point is just a one-element cloud.
+        """
+        pts = np.asarray(mob.points)
+        rgbas = np.asarray(mob.rgbas)
+        points = tuple(tuple(float(c) for c in p) for p in pts)
+        colors: tuple | None = None
+        opacities: tuple | None = None
+        if len(rgbas):
+            colors = tuple(
+                "#{:02x}{:02x}{:02x}".format(
+                    round(float(r) * 255), round(float(g) * 255), round(float(b) * 255)
+                )
+                for r, g, b, _ in rgbas
+            )
+            opacities = tuple(float(a) for *_, a in rgbas)
+        return _PMobjectKey(points, colors, opacities)
 
     def _make_from_content(self, content: PixelContent) -> dict:
         return {
@@ -146,8 +172,16 @@ class MobSerializer:
                 "from": state.content_ref,
                 "points": [list(p) for p in state.corners],
             }
-        if isinstance(state, _VGroupKey):
-            return VGroupState(children=list(state.child_refs)).model_dump(
+        if isinstance(state, _PMobjectKey):
+            return PMobjectState(
+                points=[list(p) for p in state.points],
+                colors=list(state.colors) if state.colors is not None else None,
+                opacities=(
+                    list(state.opacities) if state.opacities is not None else None
+                ),
+            ).model_dump(exclude_none=True)
+        if isinstance(state, _GroupKey):
+            return GroupState(children=list(state.child_refs)).model_dump(
                 exclude_none=True
             )
         if isinstance(state, _VMobKey):
@@ -195,7 +229,7 @@ class MobSerializer:
         For VMobjects that carry both own subpaths AND submobjects (e.g. Arrow):
             _SubpathChild entries first (one per non-empty subpath), then actual submobjects.
 
-        All consumers — register commands, remove commands, VGroupState serialisation —
+        All consumers — register commands, remove commands, GroupState serialisation —
         must derive their child list exclusively from this method.
         """
         submobs = getattr(mob, "submobjects", None) or []
@@ -275,7 +309,7 @@ class MobSerializer:
                             child_refs.append(self._subpath_child_state_ref(jsc))
                         else:
                             child_refs.append(self.state_ref_for(jsc))
-                    vgroup_state = VGroupState(children=child_refs)
+                    vgroup_state = GroupState(children=child_refs)
                     ref = self._state_registry.insert_raw(
                         vgroup_state.model_dump(exclude_none=True)
                     )
@@ -291,7 +325,7 @@ class MobSerializer:
 
         # VMobject with submobjects but no own subpaths (e.g. MarkupText, SVGMobject)
         # whose children may have been registered via insert_raw and are invisible to
-        # _state_registry.get().  Build VGroupState from identity-keyed state_refs.
+        # _state_registry.get().  Build GroupState from identity-keyed state_refs.
         if hasattr(mob, "submobjects") and mob.submobjects:
             child_refs = []
             for child in mob.submobjects:
@@ -302,7 +336,7 @@ class MobSerializer:
                 if refs:
                     child_refs.append(refs[-1])
             if child_refs:
-                vgroup_state = VGroupState(children=child_refs)
+                vgroup_state = GroupState(children=child_refs)
                 ref = self._state_registry.insert_raw(
                     vgroup_state.model_dump(exclude_none=True)
                 )
@@ -348,7 +382,7 @@ class MobSerializer:
         """Serialize a single mobject to a typed state object.
 
         post: implies(not isinstance(mob, ValueTracker), hasattr(__return__, "kind"))
-        post: implies(isinstance(__return__, VGroupState),
+        post: implies(isinstance(__return__, GroupState),
                       forall(__return__.children, lambda r: isinstance(r, int)))
         """
         if isinstance(mob, ValueTracker):
@@ -375,6 +409,14 @@ class MobSerializer:
                 z_index=getattr(mob, "z_index", None),
             )
 
+        if isinstance(mob, PMobject) and not mob.submobjects:
+            k = self._point_key(mob)
+            return PMobjectState(
+                points=[list(p) for p in k.points],
+                colors=list(k.colors) if k.colors is not None else None,
+                opacities=list(k.opacities) if k.opacities is not None else None,
+            )
+
         style = self._vmob_style(mob) if isinstance(mob, VMobject) else {}
         js_children = self._js_children(mob)
 
@@ -387,14 +429,14 @@ class MobSerializer:
                         child_refs.append(self._subpath_child_state_ref(jsc))
                     else:
                         child_refs.append(self.state_ref_for(jsc))
-                return VGroupState(children=child_refs)
+                return GroupState(children=child_refs)
             if subpaths:
                 contours, holes = _classify_subpaths(subpaths)
                 style["contours"] = contours
                 style["holes"] = holes
 
         if js_children:
-            return VGroupState(
+            return GroupState(
                 children=[self.state_ref_for(child) for child in mob.submobjects]
             )
 
@@ -469,7 +511,7 @@ class MobSerializer:
         self, mob: Mobject, anim: GrowArrow
     ) -> list[dict]:
         """Register commands for GrowArrow: children get collapsed starting states,
-        parent gets a virtual collapsed VGroupState. The paired Transform descriptor
+        parent gets a virtual collapsed GroupState. The paired Transform descriptor
         then animates from this collapsed state to the final state."""
         starting = anim.create_starting_mobject()
         actual_children = self._js_children(mob)
@@ -502,7 +544,7 @@ class MobSerializer:
             collapsed_child_refs.append(ref)
 
         collapsed_vgroup_ref = self._state_registry.insert_raw(
-            VGroupState(children=collapsed_child_refs).model_dump(exclude_none=True)
+            GroupState(children=collapsed_child_refs).model_dump(exclude_none=True)
         )
         return [
             *child_cmds,

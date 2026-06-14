@@ -5,6 +5,8 @@ import os
 
 import numpy as np
 import pytest
+from hypothesis import assume, given, settings
+from hypothesis import strategies as st
 from jsonschema import validate
 
 from manim import (
@@ -24,6 +26,7 @@ from manim import (
     Exclusion,
     Intersection,
     ImageMobject,
+    Line,
     MarkupText,
     Square,
     Text,
@@ -458,8 +461,8 @@ class TestCLIIntegration:
         group_ref = register_cmd["state_ref"]
 
         group_state = states[group_ref]
-        assert group_state["kind"] == "VGroup", (
-            f"Expected VGroup, got {group_state['kind']}"
+        assert group_state["kind"] == "Group", (
+            f"Expected Group, got {group_state['kind']}"
         )
         assert "children" in group_state, "Group should have children"
         assert len(group_state["children"]) == 2, (
@@ -718,6 +721,74 @@ def test_derived_state_out_of_order_warns(runner):
     assert len(derived_warnings) == 1
     assert derived_warnings[0]["index"] == 0
     assert derived_warnings[0]["from"] == 1
+
+
+_hex_color = st.integers(min_value=0, max_value=0xFFFFFF).map(lambda n: f"#{n:06X}")
+_coord = st.floats(min_value=-5.0, max_value=5.0, allow_nan=False, allow_infinity=False)
+_point = st.tuples(_coord, _coord, _coord)
+
+
+@settings(max_examples=30, deadline=None)
+@given(
+    start=_point,
+    end=_point,
+    stroke_width=st.floats(
+        min_value=0.5, max_value=12.0, allow_nan=False, allow_infinity=False
+    ),
+    stroke_color=_hex_color,
+    stroke_opacity=st.floats(min_value=0.0, max_value=1.0),
+)
+def test_static_line_registration_roundtrips_to_js(
+    runner, start, end, stroke_width, stroke_color, stroke_opacity
+):
+    """Property: every styled attribute of a statically-added ``Line`` survives
+    registration into the JS end state — endpoints, stroke width, stroke color
+    and stroke opacity.
+
+    This pins the JS registration path; it regression-guards the bug where a
+    non-animated mobject's registered ``stroke_opacity`` was clobbered to ``1.0``
+    by the injected ``Add`` animation (manim-web ``Add.begin`` used to force
+    ``opacity = 1``).
+
+    Note: a fully transparent stroke (``opacity == 0``) has no observable color —
+    manim's own ``get_stroke_color()`` returns ``None`` in that case, so the color
+    is not round-tripped and is not asserted here.
+    """
+    assume(np.linalg.norm(np.array(start) - np.array(end)) > 0.1)
+
+    class LineScene(ManimWidget):
+        def construct(self):
+            line = Line(list(start), list(end), stroke_width=stroke_width).set_stroke(
+                color=stroke_color, opacity=stroke_opacity
+            )
+            self.add(line)
+
+    r = runner.check_data(LineScene().scene_data)
+    assert r.ok, f"CLI failed: {r.errors}"
+
+    end_state = r.section_end_states[0]["end_state"]
+    snapshot = end_state["snapshot"]
+    states = end_state["states"]
+    assert len(snapshot) == 1, f"expected one mobject, got {len(snapshot)}"
+    s = states[next(iter(snapshot.values()))]
+
+    pts = s["points"]
+    assert pts[0] == pytest.approx(list(start), abs=1e-4), (
+        f"start endpoint {pts[0]} != {list(start)}"
+    )
+    assert pts[-1] == pytest.approx(list(end), abs=1e-4), (
+        f"end endpoint {pts[-1]} != {list(end)}"
+    )
+    assert s["stroke_width"] == pytest.approx(stroke_width, abs=1e-6), (
+        f"stroke_width {s['stroke_width']} != {stroke_width}"
+    )
+    assert s["stroke_opacity"] == pytest.approx(stroke_opacity, abs=1e-6), (
+        f"stroke_opacity {s['stroke_opacity']} != {stroke_opacity}"
+    )
+    if stroke_opacity > 0:
+        assert s["stroke_color"].upper() == stroke_color.upper(), (
+            f"stroke_color {s['stroke_color']} != {stroke_color}"
+        )
 
 
 def test_image_mobject_produces_no_derived_warning(runner):

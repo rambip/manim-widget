@@ -34,8 +34,8 @@ class VMobjectState(BaseModel):
     z_index: float | None = None
 
 
-class VGroupState(BaseModel):
-    kind: Literal["VGroup"] = "VGroup"
+class GroupState(BaseModel):
+    kind: Literal["Group"] = "Group"
     children: list[int]
 
 
@@ -58,6 +58,13 @@ class ValueTrackerState(BaseModel):
     value: float
 
 
+class PMobjectState(BaseModel):
+    kind: Literal["PMobject"] = "PMobject"
+    points: list[list[float]]
+    colors: list[str] | None = None
+    opacities: list[float] | None = None
+
+
 class CameraState(BaseModel):
     kind: Literal["Camera"] = "Camera"
     points: list[list[float]]
@@ -74,10 +81,11 @@ class DerivedState(BaseModel):
 
 MobjectState = (
     VMobjectState
-    | VGroupState
+    | GroupState
     | MathTexSourceState
     | ImageMobjectState
     | ValueTrackerState
+    | PMobjectState
     | CameraState
     | DerivedState
 )

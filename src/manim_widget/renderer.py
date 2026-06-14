@@ -30,8 +30,9 @@ def _is_mob_supported(mob: Mobject) -> bool:
     """Return True for mob types the JS player can render."""
     from manim import ValueTracker
     from manim.mobject.types.image_mobject import AbstractImageMobject
+    from manim.mobject.types.point_cloud_mobject import PMobject
 
-    if isinstance(mob, VMobject | ValueTracker | AbstractImageMobject):
+    if isinstance(mob, VMobject | ValueTracker | AbstractImageMobject | PMobject):
         return True
     return bool(hasattr(mob, "submobjects") and mob.submobjects)
 
