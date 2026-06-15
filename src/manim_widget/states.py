@@ -27,13 +27,28 @@ def _signed_area_2d(pts: Contour) -> float:
     )
 
 
+def _is_open_contour(pts: Contour) -> bool:
+    """Return True when the path does not close back on its start point.
+
+    Open paths (e.g. function graphs) have no meaningful winding direction;
+    the signed-area test should not be applied to them.
+    """
+    p0, p1 = pts[0], pts[-1]
+    return (p0[0] - p1[0]) ** 2 + (p0[1] - p1[1]) ** 2 > 1e-9
+
+
 def _contour_winding(pts: Contour) -> str:
     """Return 'CW' or 'CCW' for a 3n+1 contour.
+
+    Open paths (start ≠ end) have no winding direction and always return 'CCW'
+    so they pass through the fill-rule normalisation unchanged.
 
     pre: len(pts) > 0
     pre: (len(pts) - 1) % 3 == 0
     post: __return__ in ('CW', 'CCW')
     """
+    if _is_open_contour(pts):
+        return "CCW"
     return "CW" if _signed_area_2d(pts) > 0 else "CCW"
 
 
