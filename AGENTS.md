@@ -31,7 +31,7 @@
 
 ### Python (`src/manim_widget/`)
 
-- **`widget.py`** — Defines `ManimWidget` and the `scene_data` trait payload. Owns section lifecycle, emits section snapshots and command streams. Uses renderer registry for section-entry snapshots.
+- **`widget.py`** — Defines `ManimWidget` and the `data` trait payload (`SceneData`). Owns section lifecycle, emits section snapshots and command streams. Uses renderer registry for section-entry snapshots.
 - **`renderer.py`** — Custom capture renderer integrated with Manim's `Scene.play` lifecycle. Emits commands and animation descriptors. Maintains per-section deduplicated state banks and allocates `state_ref` values. Handles `rebind` for replacement-style transforms.
 - **`snapshot.py`** — Short-id generation and mobject serialization primitives.
 
@@ -61,9 +61,12 @@ Built from `js/src/*` via Bun with the typia transform applied. This is what pac
 ```json
 {
   "version": 2,
+  "states": [ { "kind": "VMobject", ... }, ... ],
   "sections": [ ... ]
 }
 ```
+
+- `states`: global deduplicated bank shared across all sections. All commands, frames, and snapshots reference entries by integer index.
 
 ### Section
 
@@ -71,13 +74,11 @@ Built from `js/src/*` via Bun with the typia transform applied. This is what pac
 {
   "name": "intro",
   "snapshot": { "mob_id": 0 },
-  "states": [ { "kind": "VMobject", ... } ],
   "construct": [ ... ]
 }
 ```
 
-- `snapshot`: `mob_id → state_ref` for all root mobjects at section entry. Null only when `unsupported: true`. VGroup children are **not** listed separately — they are referenced via `VGroupState.children`.
-- `states`: deduplicated per-section bank. All commands, frames, and snapshots reference it by integer index.
+- `snapshot`: `mob_id → state_ref` into the global `states` bank, for all root mobjects at section entry. Group children are **not** listed separately — they are referenced via `GroupState.children`.
 - `construct`: ordered command list.
 
 ### Commands
@@ -103,11 +104,12 @@ Families: `SimpleAnimation`, `TransformAnimation` (`Transform`, `MoveToTarget`),
 
 | kind | notes |
 |---|---|
-| `VMobject` | bezier points as 3n+1 array; multi-subpath serialized as `VGroup` of children |
-| `VGroup` | `children: [state_ref, ...]` — uniform representation everywhere |
+| `VMobject` | bezier points as 3n+1 array; multi-subpath serialized as `Group` of children |
+| `Group` | `children: [state_ref, ...]` — uniform representation for VGroup and Arrow |
 | `MathTexSource` | latex string + 4 corner points for transform support |
 | `ValueTracker` | scalar `value` only; not rendered |
 | `Camera` | `{points: [UL,UR,DR,DL], focal_distance}` — camera frame corners; `focal_distance==0` means 2D |
+| `Derived` | `{from: state_ref, points?}` — positional overlay referencing a content state (used for ImageMobject placement) |
 
 ---
 
@@ -119,7 +121,7 @@ Families: `SimpleAnimation`, `TransformAnimation` (`Transform`, `MoveToTarget`),
 - Point arrays that are not `3n+1` will raise a JS-side playback error by design.
 - `_applyState` must apply points based on capability (`setPoints3D`) rather than `state.kind === "VMobject"`. Arrow/VGroup restore creates a body VMobject from VGroup state points; kind-gating drops body points and renders only tips.
 - Headless JS tests (`happy-dom`) can hang if image loading promises never resolve. Keep image-finalization logic non-blocking (timeouts/fallbacks) in `player.js`.
-- `JSRunner` pre-builds `test_cli.js` into `js/node_modules/.cache/manim-widget-test/` once per session (typia baked in). Set `MANIM_WIDGET_JS_DEBUG=1` to skip the bundle and run against TypeScript source for readable stack traces.
+- `JSRunner` pre-builds `test_cli.js` into `js/node_modules/.cache/manim-widget-test/` once per session.
 - Renderer command emission should prefer behavior/animation semantics over concrete class checks. Class-targeting can miss valid intro-animation mobjects (e.g., non-VMobject types).
 - Player ordering for textured/async mobjects matters: apply serialized geometry/state mutations before `scene.add(...)`. Mutating after add may only change logical state (`bbox`, `scaleVector`) without immediate visible sync in `manim-web` async render paths (e.g., `MathTexImage`).
 - `patch_tex()` **must be called before `from manim import ...`.** It patches `MathTex` (→ `PatchedMathTex`) so tex is serialized for the JS side; the patch only takes effect on imports that happen after it runs. Correct order:
@@ -184,13 +186,20 @@ uv run pytest -q examples/*.py
 
 ### JS build and CLI test
 
-**All bun commands must be run from `js/`** — `bunfig.toml`, `tsconfig.json`, and node_modules live there.
+**All bun commands must be run from `js/`** — `tsconfig.json` and node_modules live there.
 
-`manim-web` uses typia for runtime type assertions, which requires a compile-time transform. The bare `bun build` CLI skips it; use `build.ts` instead:
+Both build scripts use `conditions: ["source"]`, which resolves `manim-web` directly from `manim-web/src/` (the `"source"` export condition in its `package.json`). No separate manim-web build step is needed.
 
+**Production bundle** — rebuilds `src/manim_widget/static/index.js`:
 ```sh
-cd js && bun run build.ts            # rebuilds src/manim_widget/static/index.js
+cd js && bun run build.ts
 ```
+
+**Test bundle** — rebuilds `js/node_modules/.cache/manim-widget-test/test_cli.js`:
+```sh
+cd js && bun run build-test.ts
+```
+`JSRunner.__init__` calls this automatically, so running the Python test suite rebuilds it as needed. Set `MANIM_WIDGET_JS_DEBUG=1` to skip bundling and run against TypeScript source directly for readable stack traces.
 
 To validate a scene from the command line:
 
