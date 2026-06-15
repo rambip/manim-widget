@@ -300,7 +300,7 @@ async function render({ model, el }) {
   });
 
   const onSceneDataChange = async () => {
-    const data = model.get("scene_data");
+    const data = model.get("data");
     if (!data) return;
 
     const diff = diffSceneData(sceneData, data);
@@ -319,7 +319,7 @@ async function render({ model, el }) {
       await loadScene(data);
     }
   };
-  model.on("change:scene_data", onSceneDataChange);
+  model.on("change:data", onSceneDataChange);
 
   const onIs3dChange = async () => {
     ui.d3Checkbox.checked = model.get("is_3d");
@@ -337,14 +337,14 @@ async function render({ model, el }) {
   // Initialize checkbox from model
   ui.d3Checkbox.checked = model.get("is_3d") || false;
 
-  const initialData = model.get("scene_data");
+  const initialData = model.get("data");
   if (initialData) {
     await loadScene(initialData);
   }
 
   return () => {
     sharedCamWire?.cleanup();
-    model.off("change:scene_data", onSceneDataChange);
+    model.off("change:data", onSceneDataChange);
     model.off("change:is_3d", onIs3dChange);
   };
 }

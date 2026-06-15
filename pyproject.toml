@@ -18,6 +18,27 @@ dependencies = [
 requires = ["uv_build>=0.10.10,<0.11.0"]
 build-backend = "uv_build"
 
+[tool.rope]
+ignored_resources = [
+    "*.pyc",
+    "*~",
+    ".ropeproject",
+    ".hg",
+    ".svn",
+    "_svn",
+    ".git",
+    ".tox",
+    ".venv",
+    "venv",
+    ".mypy_cache",
+    ".pytest_cache",
+    "manim-web",
+    "node_modules",
+    "__marimo__",
+    "media",
+    "examples",
+]
+
 [dependency-groups]
 dev = [
     "hypothesis>=6.155.2",
@@ -27,5 +48,6 @@ dev = [
     "pre-commit>=4.6.0",
     "pytest>=9.0.2",
     "pytest-playwright>=0.7.2",
+    "rope>=1.14.0",
     "ruff>=0.15.8",
 ]

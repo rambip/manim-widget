@@ -122,6 +122,21 @@ Families: `SimpleAnimation`, `TransformAnimation` (`Transform`, `MoveToTarget`),
 - `JSRunner` pre-builds `test_cli.js` into `js/node_modules/.cache/manim-widget-test/` once per session (typia baked in). Set `MANIM_WIDGET_JS_DEBUG=1` to skip the bundle and run against TypeScript source for readable stack traces.
 - Renderer command emission should prefer behavior/animation semantics over concrete class checks. Class-targeting can miss valid intro-animation mobjects (e.g., non-VMobject types).
 - Player ordering for textured/async mobjects matters: apply serialized geometry/state mutations before `scene.add(...)`. Mutating after add may only change logical state (`bbox`, `scaleVector`) without immediate visible sync in `manim-web` async render paths (e.g., `MathTexImage`).
+- `patch_tex()` **must be called before `from manim import ...`.** It patches `MathTex` (→ `PatchedMathTex`) so tex is serialized for the JS side; the patch only takes effect on imports that happen after it runs. Correct order:
+
+  ```python
+  from manim_widget import ManimWidget, patch_tex
+  patch_tex()                       # before any manim import
+  from manim import MathTex, ...
+  ```
+  (In a marimo notebook this means calling `patch_tex()` inside `with app.setup:` ahead of the `from manim import (...)` line.)
+
+### Debugging a suspected JS-side bug
+
+When playback looks wrong but the Python `scene_data` is correct (verify that first — dump `states`/`commands`), the bug is in `player.js`/`mob.js` or in `manim-web` itself. Workflow:
+
+1. **Read the player code first.** Trace the relevant path in `player.js`/`mob.js` (e.g. how a command maps to a `manim-web` animation, how state is applied). Many bugs are visible here.
+2. **If the player path looks correct, isolate it from manim-web.** Write a minimal reproducible example (MRE) that uses **only `manim-web`** (no widget, no Python) in `manim-web/debug/`, mirroring the same syntax/shape as the `examples/`. This tells apart "our adapter is wrong" from "manim-web behaves unexpectedly". Then **ask the user to run/check it** rather than guessing — headless JS can't show the visual symptom.
 
 ---
 

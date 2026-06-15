@@ -413,7 +413,6 @@ def run_generated_scene(
     *,
     fps: int = 10,
     camera_move: bool = False,
-) -> dict:
-    """Convenience: build and run a generated scene, return scene_data."""
+):
     cls = make_scene_class(mob_specs, commands, fps=fps, camera_move=camera_move)
-    return cls(fps=fps).scene_data
+    return cls(fps=fps).data

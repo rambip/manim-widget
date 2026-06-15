@@ -52,12 +52,39 @@ class _ImgKey(tuple):
         return self[1]
 
 
-class _VGroupKey(tuple):
-    """State key for VGroup: (child_refs,)."""
+class _PMobjectKey(tuple):
+    """State key for a point-cloud PMobject: (points, colors, opacities).
+
+    All three are hashable tuples parallel by index; a single Point is just a
+    one-element cloud.
+    """
 
     __slots__ = ()
 
-    def __new__(cls, child_refs: tuple) -> "_VGroupKey":
+    def __new__(
+        cls, points: tuple, colors: tuple | None, opacities: tuple | None
+    ) -> "_PMobjectKey":
+        return super().__new__(cls, (points, colors, opacities))
+
+    @property
+    def points(self) -> tuple:
+        return self[0]
+
+    @property
+    def colors(self) -> tuple | None:
+        return self[1]
+
+    @property
+    def opacities(self) -> tuple | None:
+        return self[2]
+
+
+class _GroupKey(tuple):
+    """State key for a group: (child_refs,)."""
+
+    __slots__ = ()
+
+    def __new__(cls, child_refs: tuple) -> "_GroupKey":
         return super().__new__(cls, (child_refs,))
 
     @property

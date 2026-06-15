@@ -86,20 +86,20 @@
     },
     "Snapshot": {
       "type": "object",
-      "description": "Scene state at the start of this section. Maps object_id -> index in the global states bank. The special '#camera' key maps to a CameraState ref. VGroup children are NOT listed separately — referenced via VGroupState.children.",
+      "description": "Scene state at the start of this section. Maps object_id -> index in the global states bank. The special '#camera' key maps to a CameraState ref. Group children are NOT listed separately — referenced via GroupState.children.",
       "additionalProperties": {
         "type": "integer",
         "minimum": 0
       }
     },
     "MobjectState": {
-      "description": "State variant holding geometrical or textual data. Nature of data is determined by the 'kind' field: 'VMobject', 'VGroup', 'MathTexSource', 'ImageMobject', 'Camera', or 'Derived'. A 'Derived' entry inherits all fields from a parent state and overrides specific fields; its 'from' index must be less than its own index.",
+      "description": "State variant holding geometrical or textual data. Nature of data is determined by the 'kind' field: 'VMobject', 'Group', 'MathTexSource', 'ImageMobject', 'PMobject', 'Camera', or 'Derived'. A 'Derived' entry inherits all fields from a parent state and overrides specific fields; its 'from' index must be less than its own index.",
       "oneOf": [
         {
           "$ref": "#/definitions/VMobjectState"
         },
         {
-          "$ref": "#/definitions/VGroupState"
+          "$ref": "#/definitions/GroupState"
         },
         {
           "$ref": "#/definitions/MathTexSourceState"
@@ -109,6 +109,9 @@
         },
         {
           "$ref": "#/definitions/ValueTrackerState"
+        },
+        {
+          "$ref": "#/definitions/PMobjectState"
         },
         {
           "$ref": "#/definitions/CameraState"
@@ -222,7 +225,7 @@
         }
       }
     },
-    "VGroupState": {
+    "GroupState": {
       "type": "object",
       "required": [
         "kind",
@@ -233,7 +236,7 @@
         "kind": {
           "type": "string",
           "enum": [
-            "VGroup",
+            "Group",
             "Arrow"
           ],
           "description": "Group of child mobjects. Arrow kind: points is the shaft VMobject, children[0] is the tip VMobject."
@@ -244,7 +247,7 @@
             "type": "integer",
             "minimum": 0
           },
-          "description": "Ordered list of child state_refs. Resolved through the global states bank to create child mobjects. VGroup children are NOT in the snapshot - only the VGroup root is."
+          "description": "Ordered list of child state_refs. Resolved through the global states bank to create child mobjects. Group children are NOT in the snapshot - only the Group root is."
         },
         "z_index": {
           "type": "number"
@@ -351,6 +354,44 @@
         "value": {
           "type": "number",
           "description": "Current tracked value. Not rendered; used by updater-driven animations."
+        }
+      }
+    },
+    "PMobjectState": {
+      "type": "object",
+      "description": "A point cloud rendered as particles (PMobject leaf, e.g. Point, PointCloudDot). Carries the full list of points; rendered as a single particle buffer. A single Point is just this with one entry.",
+      "required": [
+        "kind",
+        "points"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "PMobject"
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Vec3"
+          },
+          "description": "Point positions [x, y, z] in scene coordinates, one per particle."
+        },
+        "colors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Color"
+          },
+          "description": "Per-point colors, parallel to 'points'."
+        },
+        "opacities": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "description": "Per-point opacities, parallel to 'points'."
         }
       }
     },

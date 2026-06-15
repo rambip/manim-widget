@@ -8,11 +8,28 @@ import traitlets
 from manim import Mobject, ThreeDScene
 
 from ._camera import _serialize_camera
+from .models import (
+    AnimateCommand,
+    RegisterCommand,
+    RemoveCommand,
+    SceneData,
+    SectionData,
+    check_scene_data,
+)
 from .renderer import CaptureRenderer, SectionRecord
+from .states import CameraState
 
 
 _ESM = Path(__file__).parent / "static" / "index.js"
 _JS_BUNDLE = _ESM.read_text()
+
+
+def _scene_data_to_json(scene_data: SceneData, widget: anywidget.AnyWidget) -> dict:
+    return scene_data.model_dump(by_alias=True, exclude_none=True)
+
+
+def _scene_data_from_json(data: dict, widget: anywidget.AnyWidget) -> SceneData:
+    return SceneData.model_validate(data)
 
 
 def serialize_scene(
@@ -21,31 +38,55 @@ def serialize_scene(
     states: list[object],
     frame_width: float = 14.222222222222221,
     frame_height: float = 8.0,
-) -> dict[str, object]:
-    return {
-        "version": 2,
-        "fps": fps,
-        "frame_width": frame_width,
-        "frame_height": frame_height,
-        "states": states,
-        "sections": [
-            {
-                "name": s.name,
-                "snapshot": {
-                    entry["id"]: entry["state_ref"]
-                    for entry in s.setup
-                    if entry.get("cmd") == "register"
-                },
-                "construct": s.commands,
-            }
-            for s in sections
-        ],
-    }
+) -> SceneData:
+    section_data = [
+        SectionData(
+            name=s.name,
+            snapshot={entry.id: entry.state_ref for entry in s.setup},
+            construct=s.commands,
+        )
+        for s in sections
+    ]
+
+    kwargs = dict(
+        version=2,
+        fps=fps,
+        frame_width=frame_width,
+        frame_height=frame_height,
+        states=states,
+        sections=section_data,
+    )
+
+    try:
+        scene = SceneData(**kwargs)
+    except Exception as exc:
+        from .models import _emit_warning
+
+        _emit_warning(exc)
+        scene = SceneData.model_construct(**kwargs)
+
+    check_scene_data(scene)
+    return scene
 
 
 class ManimWidget(anywidget.AnyWidget, ThreeDScene):
     _esm = _JS_BUNDLE
-    scene_data = traitlets.Any({}).tag(sync=True)
+    data = traitlets.Instance(SceneData).tag(
+        sync=True,
+        to_json=_scene_data_to_json,
+        from_json=_scene_data_from_json,
+    )
+
+    def _data_default(self) -> SceneData:
+        return SceneData.model_construct(
+            version=2,
+            fps=10,
+            frame_width=14.222222222222221,
+            frame_height=8.0,
+            states=[],
+            sections=[],
+        )
+
     playback_error = traitlets.Unicode("").tag(sync=True)
     is_3d = traitlets.Bool(False).tag(sync=True)
     shared_camera_id = traitlets.Unicode("").tag(sync=True)
@@ -82,14 +123,13 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
         self._renderer.flush_staged_adds()
         self._renderer.emit_final_add_animations(self)
 
-        data = serialize_scene(
+        self.data = serialize_scene(
             fps=self._fps,
             sections=self._renderer.sections,
             states=self._renderer._state_registry.as_list(),
             frame_width=float(self.camera.frame_width),
             frame_height=float(self.camera.frame_height),
         )
-        self.scene_data = data
 
     def _patch_initial_camera_snapshot(self) -> None:
         """Re-serialize the camera into the first section's snapshot after construct() has run.
@@ -103,7 +143,7 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
         if not sections:
             return
         initial_setup = sections[0].setup
-        cam_entry = next((e for e in initial_setup if e.get("id") == "#camera"), None)
+        cam_entry = next((e for e in initial_setup if e.id == "#camera"), None)
         if cam_entry is None:
             return
         cam = self.camera
@@ -111,8 +151,8 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
         fh = float(getattr(cam, "frame_height", 8.0))
         cam_pts, cam_focal = _serialize_camera(cam, fw, fh)
         self._renderer._state_registry.overwrite(
-            cam_entry["state_ref"],
-            {"kind": "Camera", "points": cam_pts, "focal_distance": cam_focal},
+            cam_entry.state_ref,
+            CameraState(points=cam_pts, focal_distance=cam_focal),
         )
 
     def _mob_is_animated(self, mob: Mobject) -> bool:
@@ -123,15 +163,15 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
         mob_id = self._renderer.short_id(mob)
         for section in self._renderer.sections:
             for cmd in section.commands:
-                if cmd.get("cmd") != "animate":
+                if not isinstance(cmd, AnimateCommand):
                     continue
-                for anim in cmd.get("animations", []):
-                    if anim.get("id") == mob_id and "state_ref" in anim:
+                for anim in cmd.animations:
+                    if anim.id == mob_id and anim.state_ref is not None:
                         return True
         return False
 
     def sync(self, *mobs: Mobject) -> None:
-        """Re-serialize mutated mobjects and push updated scene_data.
+        """Re-serialize mutated mobjects and push updated data.
 
         Assumes no add/remove/play calls happened since construction.
         Emits a warning and skips any mob that was animated during construction,
@@ -152,19 +192,15 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
                 )
                 continue
             state = self._renderer.serialize_mobject(mob, for_snapshot=False)
-            d = state.model_dump(exclude_none=True, exclude_defaults=False)
-            if d.get("kind") == "VMobject":
-                d.setdefault("contours", [])
             for ref in refs:
-                reg.overwrite(ref, d)
-        data = serialize_scene(
+                reg.overwrite(ref, state)
+        self.data = serialize_scene(
             fps=self._fps,
             sections=self._renderer.sections,
             states=list(reg.as_list()),
             frame_width=float(self.camera.frame_width),
             frame_height=float(self.camera.frame_height),
         )
-        self.scene_data = data
 
     def next_section(
         self,
@@ -190,8 +226,8 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
         states bank and position updates in later sections only add a cheap
         points-only entry — never re-encode the image.
 
-        Only root mobjects are included; VGroup children are referenced via their
-        parent's VGroupState children array.
+        Only root mobjects are included; group children are referenced via their
+        parent's GroupState children array.
         """
         renderer = self._renderer
         current = renderer._current
@@ -213,18 +249,16 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
                 continue
             mob_sid = renderer.short_id(mob)
             state_ref = renderer.state_ref_for(mob)
-            current.setup.append(
-                {"cmd": "register", "id": mob_sid, "state_ref": state_ref}
-            )
+            current.setup.append(RegisterCommand(id=mob_sid, state_ref=state_ref))
 
         cam = self.camera
         fw = float(getattr(cam, "frame_width", 14.222))
         fh = float(getattr(cam, "frame_height", 8.0))
         cam_pts, cam_focal = _serialize_camera(cam, fw, fh)
         cam_ref = renderer._state_registry.insert_raw(
-            {"kind": "Camera", "points": cam_pts, "focal_distance": cam_focal}
+            CameraState(points=cam_pts, focal_distance=cam_focal)
         )
-        current.setup.append({"cmd": "register", "id": "#camera", "state_ref": cam_ref})
+        current.setup.append(RegisterCommand(id="#camera", state_ref=cam_ref))
 
     def add(self, *mobjects: Mobject) -> None:  # type: ignore[override]
         current = self._renderer._current
@@ -246,9 +280,6 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
                 if self._renderer.is_active(mob):
                     self._renderer.unregister_mobject(mob)
                     current.commands.append(
-                        {
-                            "cmd": "remove",
-                            "id": self._renderer.short_id(mob),
-                        }
+                        RemoveCommand(id=self._renderer.short_id(mob))
                     )
         ThreeDScene.remove(self, *mobjects)

@@ -12,75 +12,50 @@ to file a bug report.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal, Union
 
 from pydantic import BaseModel, Field, model_validator
 
-
-# ---------------------------------------------------------------------------
-# Mobject states
-# ---------------------------------------------------------------------------
-
-
-class VMobjectState(BaseModel):
-    kind: Literal["VMobject"] = "VMobject"
-    contours: list[list[list[float]]] = Field(default_factory=list)
-    holes: list[list[list[float]]] = Field(default_factory=list)
-    fill_color: str | None = None
-    fill_opacity: float | None = None
-    stroke_color: str | None = None
-    stroke_width: float | None = None
-    stroke_opacity: float | None = None
-    z_index: float | None = None
-
-
-class VGroupState(BaseModel):
-    kind: Literal["VGroup"] = "VGroup"
-    children: list[int]
-
-
-class MathTexSourceState(BaseModel):
-    kind: Literal["MathTexSource"] = "MathTexSource"
-    latex: str
-    points: list[list[float]]
-    color: str | None = None
-
-
-class ImageMobjectState(BaseModel):
-    kind: Literal["ImageMobject"] = "ImageMobject"
-    source: str
-    points: list[list[float]] | None = None
-    z_index: float | None = None
-
-
-class ValueTrackerState(BaseModel):
-    kind: Literal["ValueTracker"] = "ValueTracker"
-    value: float
-
-
-class CameraState(BaseModel):
-    kind: Literal["Camera"] = "Camera"
-    points: list[list[float]]
-    focal_distance: float = 0.0
-
-
-class DerivedState(BaseModel):
-    model_config = {"extra": "allow"}
-
-    kind: Literal["Derived"] = "Derived"
-    from_: int = Field(alias="from")
-    points: list[list[float]] | None = None
-
-
-MobjectState = (
-    VMobjectState
-    | VGroupState
-    | MathTexSourceState
-    | ImageMobjectState
-    | ValueTrackerState
-    | CameraState
-    | DerivedState
+from .states import (
+    CameraState,
+    DerivedState,
+    GroupState,
+    ImageMobjectState,
+    MathTexState,
+    MobjectState,
+    PMobjectState,
+    ValueTrackerState,
+    VMobjectState,
 )
+
+# Re-export state types so external code importing from .models still works.
+__all__ = [
+    "CameraState",
+    "DerivedState",
+    "GroupState",
+    "ImageMobjectState",
+    "MathTexState",
+    "MathTexSourceState",
+    "MobjectState",
+    "PMobjectState",
+    "ValueTrackerState",
+    "VMobjectState",
+    "AnimationDescriptor",
+    "RegisterCommand",
+    "RemoveCommand",
+    "RebindCommand",
+    "UpdaterFrame",
+    "UpdaterCommand",
+    "AnimateCommand",
+    "MoveCameraCommand",
+    "Command",
+    "SectionData",
+    "SceneData",
+    "check_scene_data",
+]
+
+# Alias for the old name used in spec alignment tests.
+MathTexSourceState = MathTexState
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +92,7 @@ class RegisterCommand(BaseModel):
     cmd: Literal["register"] = "register"
     id: str
     state_ref: int
+    child_ids: list[str] | None = None
 
 
 class RemoveCommand(BaseModel):
@@ -161,14 +137,17 @@ class MoveCameraCommand(BaseModel):
     state_ref: int
 
 
-Command = (
-    RegisterCommand
-    | RemoveCommand
-    | RebindCommand
-    | AnimateCommand
-    | UpdaterCommand
-    | MoveCameraCommand
-)
+Command = Annotated[
+    Union[
+        RegisterCommand,
+        RemoveCommand,
+        RebindCommand,
+        AnimateCommand,
+        UpdaterCommand,
+        MoveCameraCommand,
+    ],
+    Field(discriminator="cmd"),
+]
 
 
 # ---------------------------------------------------------------------------
@@ -181,14 +160,28 @@ class SectionData(BaseModel):
 
     name: str
     snapshot: dict[str, int] = Field(default_factory=dict)
-    commands: list[dict[str, Any]] = Field(alias="construct", default_factory=list)
+    commands: list[Command] = Field(alias="construct", default_factory=list)
+
+    def animate_commands(self) -> list[AnimateCommand]:
+        return [c for c in self.commands if isinstance(c, AnimateCommand)]
+
+    def register_commands(self) -> list[RegisterCommand]:
+        return [c for c in self.commands if isinstance(c, RegisterCommand)]
+
+    def updater_commands(self) -> list[UpdaterCommand]:
+        return [c for c in self.commands if isinstance(c, UpdaterCommand)]
 
 
 class SceneData(BaseModel):
     version: int
     fps: int
-    states: list[dict[str, Any]] = Field(default_factory=list)
+    frame_width: float = 14.222222222222221
+    frame_height: float = 8.0
+    states: list[MobjectState] = Field(default_factory=list)
     sections: list[SectionData]
+
+    def camera_states(self) -> list[CameraState]:
+        return [s for s in self.states if isinstance(s, CameraState)]
 
     @model_validator(mode="after")
     def check_state_refs_in_bounds(self) -> SceneData:
@@ -205,17 +198,17 @@ class SceneData(BaseModel):
                 _check_ref(ref, f"snapshot[{mob_id!r}]")
 
             for cmd in section.commands:
-                cmd_name = cmd.get("cmd", "?")
-                if "state_ref" in cmd:
-                    _check_ref(cmd["state_ref"], f"{cmd_name} command")
-                for anim in cmd.get("animations", []):
-                    if "state_ref" in anim:
-                        _check_ref(anim["state_ref"], f"animation in {cmd_name}")
-                for frame in cmd.get("frames", []):
-                    for mob_id, mob_frame in frame.items():
-                        if "state_ref" in mob_frame:
+                if isinstance(cmd, (RegisterCommand, MoveCameraCommand)):
+                    _check_ref(cmd.state_ref, f"{cmd.cmd} command")
+                elif isinstance(cmd, AnimateCommand):
+                    for anim in cmd.animations:
+                        if anim.state_ref is not None:
+                            _check_ref(anim.state_ref, f"animation in {cmd.cmd}")
+                elif isinstance(cmd, UpdaterCommand):
+                    for frame in cmd.frames:
+                        for mob_id, mob_frame in frame.items():
                             _check_ref(
-                                mob_frame["state_ref"], f"updater frame[{mob_id!r}]"
+                                mob_frame.state_ref, f"updater frame[{mob_id!r}]"
                             )
 
         return self
@@ -238,31 +231,34 @@ def _emit_warning(error: Exception) -> None:
     print(msg, file=sys.stderr)
 
 
-def validate_scene_data(data: dict[str, Any]) -> SceneData | None:
-    """Validate scene data against the JSON schema and Pydantic model.
+def check_scene_data(scene: SceneData) -> None:
+    """Warn (but do not block) if scene violates the spec or cross-field invariants.
 
-    Prints a bug-report prompt to stderr if either validation fails.
-    Returns the parsed Pydantic model on success, None on failure.
+    Two independent checks:
+    - Spec: JSON schema (catches malformed state/command payloads).
+    - Invariants: pydantic model_validators (state_ref bounds, anim timestamps).
+
+    Both warn via stderr with a bug-report URL; the scene is always usable.
     """
     import json
     from pathlib import Path
 
     from jsonschema import ValidationError, validate
 
-    # JSON schema validation
+    raw = scene.model_dump(by_alias=True, exclude_none=True)
+
+    # Spec check
     try:
         spec_path = Path(__file__).parent.parent.parent / "spec.json"
         schema = json.loads(spec_path.read_text())
-        validate(data, schema)
+        validate(raw, schema)
     except ValidationError as exc:
         _emit_warning(exc)
-        return None
     except Exception:
-        pass  # schema file unavailable (installed package) — skip, Pydantic still runs
+        pass  # spec file unavailable in installed package — skip
 
-    # Pydantic structural validation (cross-field invariants)
+    # Invariants check
     try:
-        return SceneData.model_validate(data)
+        SceneData.model_validate(raw)
     except Exception as exc:
         _emit_warning(exc)
-        return None

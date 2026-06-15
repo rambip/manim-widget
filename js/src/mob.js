@@ -3,6 +3,7 @@ import {
   VGroup,
   MathTexImage,
   ImageMobject,
+  PMobject,
 } from "manim-web";
 import * as THREE from "three";
 
@@ -254,7 +255,20 @@ export function createMobjectFromState(state) {
     return mob;
   }
 
-  if (state.kind === "VGroup") {
+  if (state.kind === "PMobject") {
+    const positions = Array.isArray(state.points) ? state.points : [];
+    const colors = Array.isArray(state.colors) ? state.colors : [];
+    const opacities = Array.isArray(state.opacities) ? state.opacities : [];
+    const points = positions.map((position, i) => {
+      const point = { position };
+      if (typeof colors[i] === "string") point.color = colors[i];
+      if (typeof opacities[i] === "number") point.opacity = opacities[i];
+      return point;
+    });
+    return new PMobject({ points });
+  }
+
+  if (state.kind === "Group") {
     return new VGroup();
   }
 

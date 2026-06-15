@@ -27,3 +27,6 @@ TODO.md
 
 # Standalone HTML demos
 examples/*.html
+
+# Vite dependency-optimization cache
+.vite/

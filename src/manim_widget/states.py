@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 Contour = list[list[float]]
@@ -106,12 +106,12 @@ class VMobjectState(BaseModel):
         return v
 
 
-class VGroupState(BaseModel):
+class GroupState(BaseModel):
     """Container of child state-refs; carries no geometry of its own."""
 
     model_config = {"extra": "forbid"}
 
-    kind: Literal["VGroup"] = "VGroup"
+    kind: Literal["Group"] = "Group"
     children: list[int]
 
 
@@ -140,6 +140,46 @@ class ValueTrackerState(BaseModel):
     value: float
 
 
-MobjectState = (
-    VMobjectState | VGroupState | ImageMobjectState | MathTexState | ValueTrackerState
-)
+class PMobjectState(BaseModel):
+    """A point cloud rendered as particles (PMobject leaf, e.g. Point, PointCloudDot).
+
+    Carries the full list of points; a single Point is just this with one entry.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    kind: Literal["PMobject"] = "PMobject"
+    points: list[list[float]]  # one [x, y, z] per particle
+    colors: list[str] | None = None  # per-point, parallel to points
+    opacities: list[float] | None = None  # per-point, parallel to points
+
+
+class CameraState(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    kind: Literal["Camera"] = "Camera"
+    points: list[list[float]]
+    focal_distance: float = 0.0
+
+
+class DerivedState(BaseModel):
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    kind: Literal["Derived"] = "Derived"
+    from_: int = Field(alias="from")
+    points: list[list[float]] | None = None
+
+
+MobjectState = Annotated[
+    Union[
+        VMobjectState,
+        GroupState,
+        ImageMobjectState,
+        MathTexState,
+        ValueTrackerState,
+        PMobjectState,
+        CameraState,
+        DerivedState,
+    ],
+    Field(discriminator="kind"),
+]

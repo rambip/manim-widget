@@ -122,7 +122,7 @@ def test(runner):
     states = r.section_end_states[0]["end_state"]["states"]
     snapshot = r.section_end_states[0]["end_state"]["snapshot"]
     root = states[next(iter(snapshot.values()))]
-    assert root["kind"] == "VGroup" and len(root["children"]) == 2
+    assert root["kind"] == "Group" and len(root["children"]) == 2
     shaft_state = states[root["children"][0]]
     tip_state = states[root["children"][1]]
     tip_color = (tip_state.get("color") or tip_state.get("stroke_color") or "").lower()
