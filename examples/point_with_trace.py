@@ -28,14 +28,13 @@ class PointWithTrace(ManimWidget):
 @app.function(hide_code=True)
 def test(runner):
     scene = PointWithTrace(fps=5)
-    r = runner.check_data(scene.scene_data)
+    r = runner.check_data(scene.data)
     r.assert_ok()
-    section = scene.scene_data["sections"][0]
+    section = scene.data.sections[0]
     frame_ids = {
         mob_id
-        for cmd in section["construct"]
-        if cmd["cmd"] == "updater"
-        for frame in cmd["frames"]
+        for cmd in section.updater_commands()
+        for frame in cmd.frames
         for mob_id in frame
         if not mob_id.startswith("#")
     }
