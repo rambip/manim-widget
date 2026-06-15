@@ -240,6 +240,42 @@ def test_value_tracker_state_round_trips_via_model_dump(state):
 
 
 # ---------------------------------------------------------------------------
+# Property tests: open-path winding and direction preservation
+# ---------------------------------------------------------------------------
+
+
+def _3n1_to_raw(pts):
+    """Convert a 3n+1 contour back to Manim's 4-point Bezier chunk format."""
+    import numpy as np
+
+    chunks = []
+    for i in range(0, len(pts) - 1, 3):
+        chunks.extend([pts[i], pts[i + 1], pts[i + 2], pts[i + 3]])
+    return np.array(chunks, dtype=float)
+
+
+@given(bezier_points_3n1(min_segments=1))
+def test_open_contour_winding_is_always_ccw(pts):
+    """∀ open contour: _contour_winding returns 'CCW' regardless of signed area."""
+    from manim_widget.states import _contour_winding, _is_open_contour
+
+    assume(_is_open_contour(pts))
+    assert _contour_winding(pts) == "CCW"
+
+
+@given(bezier_points_3n1(min_segments=1))
+def test_open_contour_direction_preserved_by_classify(pts):
+    """_classify_subpaths must not reverse an open contour."""
+    from manim_widget.states import _is_open_contour
+
+    assume(_is_open_contour(pts))
+    contours, holes = _classify_subpaths([_3n1_to_raw(pts)])
+    assert holes == []
+    assert len(contours) == 1
+    assert contours[0][0] == pts[0]
+
+
+# ---------------------------------------------------------------------------
 # Spec ↔ model structural alignment
 #
 # Two invariants for every (model type, spec definition) pair:

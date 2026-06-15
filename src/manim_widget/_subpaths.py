@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .states import _signed_area_2d
+from .states import _is_open_contour, _signed_area_2d
 
 
 def _subpath_to_3n1(raw_points) -> list[list[float]]:
@@ -37,6 +37,9 @@ def _classify_subpaths(
             continue
         pts = _subpath_to_3n1(sp)
         if not pts:
+            continue
+        if _is_open_contour(pts):
+            contours.append(pts)  # open paths have no winding; preserve direction
             continue
         area = _signed_area_2d(pts)
         if area == 0.0:
