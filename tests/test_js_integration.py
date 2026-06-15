@@ -35,6 +35,7 @@ from manim import (
     VMobject,
     FadeIn,
 )
+from manim_widget.models import AnimateCommand
 from manim_widget.widget import ManimWidget
 
 
@@ -71,7 +72,7 @@ class TestCLIIntegration:
                 self.play(Create(c))
 
         scene = SimpleScene()
-        return scene.scene_data
+        return scene.data.model_dump(by_alias=True, exclude_none=True)
 
     @pytest.fixture
     def fadein_image_data(self) -> str:
@@ -86,7 +87,7 @@ class TestCLIIntegration:
                 self.play(FadeIn(img))
 
         scene = FadeInImageScene()
-        return scene.scene_data
+        return scene.data.model_dump(by_alias=True, exclude_none=True)
 
     @pytest.fixture
     def animate_shift_left_data(self) -> str:
@@ -97,7 +98,7 @@ class TestCLIIntegration:
                 self.play(c.animate.shift(LEFT))
 
         scene = AnimateShiftLeftScene()
-        return scene.scene_data
+        return scene.data.model_dump(by_alias=True, exclude_none=True)
 
     @pytest.fixture
     def multi_section_data(self) -> str:
@@ -110,7 +111,7 @@ class TestCLIIntegration:
                 self.play(FadeIn(s))
 
         scene = MultiSectionScene()
-        return scene.scene_data
+        return scene.data.model_dump(by_alias=True, exclude_none=True)
 
     @pytest.fixture
     def vgroup_create_data(self) -> str:
@@ -127,7 +128,7 @@ class TestCLIIntegration:
                 self.play(Create(logo))
 
         scene = VGroupScene()
-        return scene.scene_data
+        return scene.data.model_dump(by_alias=True, exclude_none=True)
 
     @pytest.fixture
     def vgroup_reordered_data(self) -> str:
@@ -139,7 +140,7 @@ class TestCLIIntegration:
                 self.play(Create(logo))
 
         scene = VGroupReordered()
-        return scene.scene_data
+        return scene.data.model_dump(by_alias=True, exclude_none=True)
 
     @pytest.fixture
     def boolean_operations_data(self) -> str:
@@ -155,7 +156,7 @@ class TestCLIIntegration:
                 self.play(e.animate.scale(0.5).move_to(UP * 2))
 
         scene = BooleanOperations()
-        return scene.scene_data
+        return scene.data.model_dump(by_alias=True, exclude_none=True)
 
     @pytest.fixture
     def multi_subpath_data(self) -> str:
@@ -172,7 +173,7 @@ class TestCLIIntegration:
                 self.play(Create(vmob))
 
         scene = MultiSubpathScene()
-        return scene.scene_data
+        return scene.data.model_dump(by_alias=True, exclude_none=True)
 
     @pytest.fixture
     def vgroup_scale_section_data(self) -> str:
@@ -186,7 +187,7 @@ class TestCLIIntegration:
                 self.play(logo.animate.scale(2))
 
         scene = VGroupScaleSection()
-        return scene.scene_data
+        return scene.data.model_dump(by_alias=True, exclude_none=True)
 
     @pytest.fixture
     def vgroup_shift_data(self) -> str:
@@ -197,7 +198,7 @@ class TestCLIIntegration:
                 self.play(group.animate.shift((1, 0, 0)))
 
         scene = VGroupShiftScene()
-        return scene.scene_data
+        return scene.data.model_dump(by_alias=True, exclude_none=True)
 
     @pytest.fixture
     def bool_operations_data(self) -> str:
@@ -247,7 +248,7 @@ class TestCLIIntegration:
                 self.play(FadeIn(difference_text))
 
         scene = BooleanOperations()
-        return scene.scene_data
+        return scene.data.model_dump(by_alias=True, exclude_none=True)
 
     def test_simple_scene(self, runner, simple_scene_data):
         r = runner.check_data(simple_scene_data)
@@ -409,7 +410,7 @@ class TestCLIIntegration:
                 self.add(c)
 
         scene = StrokeColorScene()
-        return scene.scene_data
+        return scene.data.model_dump(by_alias=True, exclude_none=True)
 
     def test_cli_outputs_end_state_with_stroke(self, runner, stroke_color_scene_data):
         r = runner.check_data(stroke_color_scene_data)
@@ -438,7 +439,7 @@ class TestCLIIntegration:
                 self.play(FadeIn(group))
 
         scene = GroupTwoObjectsScene()
-        return scene.scene_data
+        return scene.data.model_dump(by_alias=True, exclude_none=True)
 
     def test_group_two_objects(self, runner, group_two_objects_data):
         r = runner.check_data(group_two_objects_data)
@@ -485,7 +486,7 @@ class TestCLIIntegration:
                 self.play(Swap(s1, s2))
 
         scene = SwapScene()
-        return scene.scene_data
+        return scene.data.model_dump(by_alias=True, exclude_none=True)
 
     def test_swap_animation(self, runner, swap_animation_data):
         r = runner.check_data(swap_animation_data)
@@ -636,12 +637,14 @@ def test_js_create_without_explicit_add_has_no_injected_add(runner):
             self.play(Create(c))
 
     scene = CreateOnlyScene()
-    data = scene.scene_data
-    section = data["sections"][0]
-    animate_cmd = next(cmd for cmd in section["construct"] if cmd["cmd"] == "animate")
+    data = scene.data
+    section = data.sections[0]
+    animate_cmd = next(
+        cmd for cmd in section.commands if isinstance(cmd, AnimateCommand)
+    )
 
-    assert not any(a["kind"] == "Add" for a in animate_cmd["animations"])
-    assert any(a["kind"] == "Create" for a in animate_cmd["animations"])
+    assert not any(a.kind == "Add" for a in animate_cmd.animations)
+    assert any(a.kind == "Create" for a in animate_cmd.animations)
 
     r = runner.check_data(data)
     assert r.ok, f"CLI failed: {r.errors}"
@@ -662,7 +665,7 @@ def test_animation_group_plays_without_error(runner):
             )
 
     scene = AnimGroupScene()
-    r = runner.check_data(scene.scene_data)
+    r = runner.check_data(scene.data.model_dump(by_alias=True, exclude_none=True))
     assert r.ok, f"CLI failed:\n{r.errors}\n{r.section_ids}"
 
     assert r.error_count == 0
@@ -763,7 +766,7 @@ def test_static_line_registration_roundtrips_to_js(
             )
             self.add(line)
 
-    r = runner.check_data(LineScene().scene_data)
+    r = runner.check_data(LineScene().data.model_dump(by_alias=True, exclude_none=True))
     assert r.ok, f"CLI failed: {r.errors}"
 
     end_state = r.section_end_states[0]["end_state"]
@@ -802,7 +805,9 @@ def test_image_mobject_produces_no_derived_warning(runner):
             img = ImageMobject(pixels)
             self.add(img)
 
-    r = runner.check_data(ImageScene().scene_data)
+    r = runner.check_data(
+        ImageScene().data.model_dump(by_alias=True, exclude_none=True)
+    )
     assert r.ok, f"CLI failed: {r.errors}"
     derived_warnings = [
         w for w in r.warnings if w.get("kind") == "derived_out_of_order"

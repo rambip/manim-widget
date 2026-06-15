@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 Contour = list[list[float]]
@@ -154,11 +154,32 @@ class PMobjectState(BaseModel):
     opacities: list[float] | None = None  # per-point, parallel to points
 
 
-MobjectState = (
-    VMobjectState
-    | GroupState
-    | ImageMobjectState
-    | MathTexState
-    | ValueTrackerState
-    | PMobjectState
-)
+class CameraState(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    kind: Literal["Camera"] = "Camera"
+    points: list[list[float]]
+    focal_distance: float = 0.0
+
+
+class DerivedState(BaseModel):
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    kind: Literal["Derived"] = "Derived"
+    from_: int = Field(alias="from")
+    points: list[list[float]] | None = None
+
+
+MobjectState = Annotated[
+    Union[
+        VMobjectState,
+        GroupState,
+        ImageMobjectState,
+        MathTexState,
+        ValueTrackerState,
+        PMobjectState,
+        CameraState,
+        DerivedState,
+    ],
+    Field(discriminator="kind"),
+]

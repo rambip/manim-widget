@@ -12,7 +12,20 @@ from hypothesis import strategies as st
 from jsonschema import validate
 from PIL import Image
 
-from manim_widget.models import SceneData
+from manim_widget.models import (
+    AnimateCommand,
+    GroupState,
+    RegisterCommand,
+    SceneData,
+    UpdaterCommand,
+    VMobjectState,
+)
+from manim_widget.states import (
+    CameraState,
+    DerivedState,
+    ImageMobjectState,
+    MathTexState,
+)
 from manim import (
     GREEN,
     Circle,
@@ -36,8 +49,6 @@ from tests.scene_strategies import (
     UpdaterCmd,
 )
 from manim_widget.states import (
-    VMobjectState,
-    GroupState,
     ValueTrackerState,
 )
 import manim_widget.states as _states_mod
@@ -47,17 +58,21 @@ import manim_widget.models as _models_mod
 _SPEC = json.loads((Path(__file__).parent.parent / "spec.json").read_text())
 
 
-def assert_valid_scene(data: dict) -> None:
-    validate(data, _SPEC)
-    SceneData.model_validate(data)
+def assert_valid_scene(data: SceneData) -> None:
+    validate(data.model_dump(by_alias=True, exclude_none=True), _SPEC)
 
 
-def _assert_valid_state(d: dict) -> None:
-    """Assert d is a valid MobjectState entry per spec.json.
+def _assert_valid_state(state) -> None:
+    """Assert state is a valid MobjectState entry per spec.json.
 
-    Wraps d in a minimal scene payload so that $ref resolution works against
+    Wraps state in a minimal scene payload so that $ref resolution works against
     the full spec and the MobjectState oneOf discriminates correctly.
+    Accepts either a typed MobjectState or a plain dict (for backwards compatibility).
     """
+    if isinstance(state, dict):
+        d = state
+    else:
+        d = state.model_dump(by_alias=True, exclude_none=True)
     validate({"version": 2, "sections": [], "states": [d]}, _SPEC)
 
 
@@ -505,9 +520,9 @@ def test_descriptor_swap_emits_ids_not_id():
     r.register_mobject(a)
     r.register_mobject(b)
     desc = r._descriptor_from_animation(Swap(a, b))
-    assert desc["kind"] == "Swap"
-    assert "ids" in desc and len(desc["ids"]) == 2
-    assert "id" not in desc
+    assert desc.kind == "Swap"
+    assert desc.ids is not None and len(desc.ids) == 2
+    assert desc.id is None
 
 
 def test_descriptor_cyclic_replace_emits_ids_not_id():
@@ -520,9 +535,9 @@ def test_descriptor_cyclic_replace_emits_ids_not_id():
     r.register_mobject(b)
     r.register_mobject(c)
     desc = r._descriptor_from_animation(CyclicReplace(a, b, c))
-    assert desc["kind"] == "CyclicReplace"
-    assert "ids" in desc and len(desc["ids"]) == 3
-    assert "id" not in desc
+    assert desc.kind == "CyclicReplace"
+    assert desc.ids is not None and len(desc.ids) == 3
+    assert desc.id is None
 
 
 def test_flatten_animation_group_timestamps_scaled_by_lag_ratio():
@@ -537,9 +552,9 @@ def test_flatten_animation_group_timestamps_scaled_by_lag_ratio():
     group = AnimationGroup(Create(a), Create(b), lag_ratio=0.5)
     descs = r._flatten_animation_group(group)
     assert len(descs) == 2
-    assert all("start" in d and "end" in d for d in descs)
-    assert descs[0]["start"] == 0.0
-    assert descs[-1]["end"] == pytest.approx(group.run_time, abs=1e-5)
+    assert all(d.start is not None and d.end is not None for d in descs)
+    assert descs[0].start == 0.0
+    assert descs[-1].end == pytest.approx(group.run_time, abs=1e-5)
 
 
 def test_wait_with_vmobject():
@@ -551,12 +566,12 @@ def test_wait_with_vmobject():
             self.wait()
 
     widget = SceneWithWait()
-    data = widget.scene_data
+    data = widget.data
     assert_valid_scene(data)
 
-    assert data["version"] == 2
-    assert len(data["sections"]) == 1
-    assert len(data["sections"][0]["construct"]) == 3
+    assert data.version == 2
+    assert len(data.sections) == 1
+    assert len(data.sections[0].commands) == 3
 
 
 def test_method_animation_uses_move_to_target():
@@ -567,22 +582,22 @@ def test_method_animation_uses_move_to_target():
             self.play(c.animate.shift((1, 0, 0)))
 
     scene = ShiftScene()
-    data = scene.scene_data
-    section = data["sections"][0]
+    data = scene.data
+    section = data.sections[0]
 
-    assert data["version"] == 2
-    assert len(data["states"]) >= 2
+    assert data.version == 2
+    assert len(data.states) >= 2
 
-    anim_cmd = section["construct"][1]
-    assert anim_cmd["cmd"] == "animate"
+    anim_cmd = section.commands[1]
+    assert isinstance(anim_cmd, AnimateCommand)
 
-    anim = next(a for a in anim_cmd["animations"] if a["kind"] != "Add")
-    assert anim["id"] == "0"
-    assert "state_ref" in anim
-    assert anim["kind"] == "MoveToTarget"
+    anim = next(a for a in anim_cmd.animations if a.kind != "Add")
+    assert anim.id == "0"
+    assert anim.state_ref is not None
+    assert anim.kind == "MoveToTarget"
 
-    target_state = data["states"][anim["state_ref"]]
-    assert target_state["kind"] == "VMobject"
+    target_state = data.states[anim.state_ref]
+    assert isinstance(target_state, VMobjectState)
 
 
 def test_multiple_sections_with_move_to_target():
@@ -601,16 +616,16 @@ def test_multiple_sections_with_move_to_target():
             self.play(t.animate.shift((0, 1, 0)))
 
     scene = MultiSectionMoveToTarget()
-    data = scene.scene_data
+    data = scene.data
 
-    assert data["version"] == 2
-    assert len(data["sections"]) == 3
-    for section in data["sections"]:
-        anim = next(
-            a for a in section["construct"][-1]["animations"] if a["kind"] != "Add"
-        )
-        assert "state_ref" in anim
-        assert anim["kind"] == "MoveToTarget"
+    assert data.version == 2
+    assert len(data.sections) == 3
+    for section in data.sections:
+        last_cmd = section.commands[-1]
+        assert isinstance(last_cmd, AnimateCommand)
+        anim = next(a for a in last_cmd.animations if a.kind != "Add")
+        assert anim.state_ref is not None
+        assert anim.kind == "MoveToTarget"
 
 
 def test_add_injected_for_explicit_add_before_non_introducer_animation():
@@ -621,14 +636,12 @@ def test_add_injected_for_explicit_add_before_non_introducer_animation():
             self.play(c.animate.shift((1, 0, 0)))
 
     scene = ShiftScene()
-    section = scene.scene_data["sections"][0]
-    anim_cmd = section["construct"][1]
+    section = scene.data.sections[0]
+    anim_cmd = section.commands[1]
 
-    assert anim_cmd["cmd"] == "animate"
-    assert any(a["kind"] == "Add" and a["id"] == "0" for a in anim_cmd["animations"])
-    assert any(
-        a["kind"] == "MoveToTarget" and a["id"] == "0" for a in anim_cmd["animations"]
-    )
+    assert isinstance(anim_cmd, AnimateCommand)
+    assert any(a.kind == "Add" and a.id == "0" for a in anim_cmd.animations)
+    assert any(a.kind == "MoveToTarget" and a.id == "0" for a in anim_cmd.animations)
 
 
 def test_add_not_reinjected_after_first_animation_batch():
@@ -640,12 +653,12 @@ def test_add_not_reinjected_after_first_animation_batch():
             self.play(c.animate.shift((1, 0, 0)))
 
     scene = TwoPlaysScene()
-    section = scene.scene_data["sections"][0]
-    animate_cmds = [cmd for cmd in section["construct"] if cmd["cmd"] == "animate"]
+    section = scene.data.sections[0]
+    animate_cmds = [cmd for cmd in section.commands if isinstance(cmd, AnimateCommand)]
 
     assert len(animate_cmds) == 2
-    assert any(a["kind"] == "Add" for a in animate_cmds[0]["animations"])
-    assert not any(a["kind"] == "Add" for a in animate_cmds[1]["animations"])
+    assert any(a.kind == "Add" for a in animate_cmds[0].animations)
+    assert not any(a.kind == "Add" for a in animate_cmds[1].animations)
 
 
 def test_create_without_explicit_add_does_not_emit_add_animation():
@@ -655,11 +668,11 @@ def test_create_without_explicit_add_does_not_emit_add_animation():
             self.play(Create(c))
 
     scene = CreateScene()
-    section = scene.scene_data["sections"][0]
-    anim_cmd = next(cmd for cmd in section["construct"] if cmd["cmd"] == "animate")
+    section = scene.data.sections[0]
+    anim_cmd = next(cmd for cmd in section.commands if isinstance(cmd, AnimateCommand))
 
-    assert not any(a["kind"] == "Add" for a in anim_cmd["animations"])
-    assert any(a["kind"] == "Create" and a["id"] == "0" for a in anim_cmd["animations"])
+    assert not any(a.kind == "Add" for a in anim_cmd.animations)
+    assert any(a.kind == "Create" and a.id == "0" for a in anim_cmd.animations)
 
 
 def test_mathtex_add_only_emits_add_animation():
@@ -678,12 +691,12 @@ def test_mathtex_add_only_emits_add_animation():
                 self.add(tex)
 
         scene = MathTexAddOnlyScene(fps=10)
-        section = scene.scene_data["sections"][0]
-        anim_cmd = next(cmd for cmd in section["construct"] if cmd["cmd"] == "animate")
-
-        assert any(
-            a["kind"] == "Add" and a["id"] == "0" for a in anim_cmd["animations"]
+        section = scene.data.sections[0]
+        anim_cmd = next(
+            cmd for cmd in section.commands if isinstance(cmd, AnimateCommand)
         )
+
+        assert any(a.kind == "Add" and a.id == "0" for a in anim_cmd.animations)
     finally:
         unpatch_tex()
 
@@ -704,31 +717,31 @@ def test_image_mobject_serializes_source_and_pixels():
             self.add(img)
 
     scene = ImageScene(fps=10)
-    data = scene.scene_data
+    data = scene.data
     assert_valid_scene(data)
 
-    section = data["sections"][0]
-    states = data["states"]
+    section = data.sections[0]
+    states = data.states
     # DAG: content entry (kind+source) and addon entry (from+points)
     content_idx = next(
-        i for i, s in enumerate(states) if s.get("kind") == "ImageMobject"
+        i for i, s in enumerate(states) if isinstance(s, ImageMobjectState)
     )
-    addon_idx = next(i for i, s in enumerate(states) if "from" in s)
+    addon_idx = next(i for i, s in enumerate(states) if isinstance(s, DerivedState))
 
-    assert section["construct"][0]["cmd"] == "register"
-    assert section["construct"][0]["id"] == "0"
+    assert isinstance(section.commands[0], RegisterCommand)
+    assert section.commands[0].id == "0"
     # register points to the addon state, which points back to the content state
-    assert states[section["construct"][0]["state_ref"]].get("from") == content_idx
+    assert states[section.commands[0].state_ref].from_ == content_idx
 
     content_state = states[content_idx]
     addon_state = states[addon_idx]
-    assert content_state["kind"] == "ImageMobject"
-    assert content_state["source"].startswith("data:image/png;base64,")
-    assert "points" in addon_state
-    assert len(addon_state["points"]) == 4
-    assert all(len(pt) == 3 for pt in addon_state["points"])
+    assert isinstance(content_state, ImageMobjectState)
+    assert content_state.source.startswith("data:image/png;base64,")
+    assert addon_state.points is not None
+    assert len(addon_state.points) == 4
+    assert all(len(pt) == 3 for pt in addon_state.points)
 
-    encoded = content_state["source"].split(",", 1)[1]
+    encoded = content_state.source.split(",", 1)[1]
     decoded = np.array(Image.open(io.BytesIO(base64.b64decode(encoded))))
     assert decoded.shape == pixels.shape
     assert np.array_equal(decoded, pixels)
@@ -743,23 +756,22 @@ def test_static_mathtex_serialization():
             self.add(tex)
 
     scene = TexScene(fps=10)
-    data = scene.scene_data
+    data = scene.data
     assert_valid_scene(data)
 
-    state = next(s for s in data["states"] if s.get("kind") == "MathTexSource")
+    state = next(s for s in data.states if isinstance(s, MathTexState))
 
-    assert state["kind"] == "MathTexSource"
-    assert state["latex"] == "x^2"
-    assert state["color"] == "#83C167"
-    assert "points" in state
-    assert len(state["points"]) == 4
-    for pt in state["points"]:
+    assert state.kind == "MathTexSource"
+    assert state.latex == "x^2"
+    assert state.color == "#83C167"
+    assert len(state.points) == 4
+    for pt in state.points:
         assert len(pt) == 3
 
-    assert state["points"][0] == pytest.approx([-1.5, 1.5, 0.0])
-    assert state["points"][1] == pytest.approx([1.5, 1.5, 0.0])
-    assert state["points"][2] == pytest.approx([1.5, -1.5, 0.0])
-    assert state["points"][3] == pytest.approx([-1.5, -1.5, 0.0])
+    assert state.points[0] == pytest.approx([-1.5, 1.5, 0.0])
+    assert state.points[1] == pytest.approx([1.5, 1.5, 0.0])
+    assert state.points[2] == pytest.approx([1.5, -1.5, 0.0])
+    assert state.points[3] == pytest.approx([-1.5, -1.5, 0.0])
 
 
 def test_static_mathtex_transform_updates_points():
@@ -772,21 +784,23 @@ def test_static_mathtex_transform_updates_points():
             self.play(tex.animate.scale(2).shift(RIGHT))
 
     scene = TexTransformScene(fps=10)
-    data = scene.scene_data
+    data = scene.data
     assert_valid_scene(data)
 
-    section = data["sections"][0]
+    section = data.sections[0]
 
-    initial_state = next(s for s in data["states"] if s.get("kind") == "MathTexSource")
-    assert initial_state["kind"] == "MathTexSource"
-    initial_points = initial_state["points"]
+    initial_state = next(s for s in data.states if isinstance(s, MathTexState))
+    assert initial_state.kind == "MathTexSource"
+    initial_points = initial_state.points
 
-    anim = next(a for a in section["construct"][1]["animations"] if a["kind"] != "Add")
-    assert anim["kind"] == "MoveToTarget"
+    anim_cmd = section.commands[1]
+    assert isinstance(anim_cmd, AnimateCommand)
+    anim = next(a for a in anim_cmd.animations if a.kind != "Add")
+    assert anim.kind == "MoveToTarget"
 
-    final_state = data["states"][anim["state_ref"]]
-    assert final_state["kind"] == "MathTexSource"
-    final_points = final_state["points"]
+    final_state = data.states[anim.state_ref]
+    assert isinstance(final_state, MathTexState)
+    final_points = final_state.points
 
     assert initial_points != final_points
 
@@ -841,17 +855,17 @@ def test_patch_tex_mathtex_add_serializes_as_mathtexsource():
                 self.add(tex.scale(1))
 
         scene = MathTexScene(fps=10)
-        data = scene.scene_data
+        data = scene.data
         assert_valid_scene(data)
 
-        section = data["sections"][0]
-        register_cmd = section["construct"][0]
-        state = data["states"][register_cmd["state_ref"]]
+        section = data.sections[0]
+        register_cmd = section.commands[0]
+        assert isinstance(register_cmd, RegisterCommand)
+        state = data.states[register_cmd.state_ref]
 
-        assert state["kind"] == "MathTexSource"
-        assert state["latex"] == r"{0}"
-        assert "points" in state
-        assert len(state["points"]) == 4
+        assert isinstance(state, MathTexState)
+        assert state.latex == r"{0}"
+        assert len(state.points) == 4
     finally:
         unpatch_tex()
 
@@ -867,13 +881,15 @@ def test_swap_animation_emits_group_animation():
             self.play(Swap(s1, s2))
 
     scene = SwapScene()
-    data = scene.scene_data
-    section = data["sections"][0]
+    data = scene.data
+    section = data.sections[0]
 
-    animate_cmd = next(cmd for cmd in section["construct"] if cmd["cmd"] == "animate")
-    anim = next(a for a in animate_cmd["animations"] if a["kind"] != "Add")
-    assert anim["kind"] == "Swap"
-    assert anim["ids"] == ["0", "1"]
+    animate_cmd = next(
+        cmd for cmd in section.commands if isinstance(cmd, AnimateCommand)
+    )
+    anim = next(a for a in animate_cmd.animations if a.kind != "Add")
+    assert anim.kind == "Swap"
+    assert anim.ids == ["0", "1"]
 
 
 def test_cyclic_replace_animation_emits_group_animation():
@@ -888,13 +904,15 @@ def test_cyclic_replace_animation_emits_group_animation():
             self.play(CyclicReplace(s1, s2, s3))
 
     scene = CyclicReplaceScene()
-    data = scene.scene_data
-    section = data["sections"][0]
+    data = scene.data
+    section = data.sections[0]
 
-    animate_cmd = next(cmd for cmd in section["construct"] if cmd["cmd"] == "animate")
-    anim = next(a for a in animate_cmd["animations"] if a["kind"] != "Add")
-    assert anim["kind"] == "CyclicReplace"
-    assert len(anim["ids"]) == 3
+    animate_cmd = next(
+        cmd for cmd in section.commands if isinstance(cmd, AnimateCommand)
+    )
+    anim = next(a for a in animate_cmd.animations if a.kind != "Add")
+    assert anim.kind == "CyclicReplace"
+    assert len(anim.ids) == 3
 
 
 def test_camera_state_is_in_state_bank():
@@ -905,9 +923,9 @@ def test_camera_state_is_in_state_bank():
             s = Square()
             self.play(Create(s))
 
-    data = SimpleScene(fps=10).scene_data
+    data = SimpleScene(fps=10).data
     assert_valid_scene(data)
-    cam_states = [s for s in data["states"] if s.get("kind") == "Camera"]
+    cam_states = [s for s in data.states if isinstance(s, CameraState)]
     # Static scene always has exactly 1 Camera state (the initial snapshot position)
     assert len(cam_states) == 1
 
@@ -934,15 +952,18 @@ def test_same_square_scaled_and_readded_serializes_only_scaled_state():
             self.add(s)
 
     scene = ScaledSquareScene(fps=10)
-    data = scene.scene_data
-    section = data["sections"][0]
+    data = scene.data
+    section = data.sections[0]
 
-    register_cmds = [cmd for cmd in section["construct"] if cmd["cmd"] == "register"]
+    register_cmds = [
+        cmd for cmd in section.commands if isinstance(cmd, RegisterCommand)
+    ]
     assert len(register_cmds) == 1
 
-    state_ref = register_cmds[0]["state_ref"]
-    state = data["states"][state_ref]
-    first_anchor = state["contours"][0][0]
+    state_ref = register_cmds[0].state_ref
+    state = data.states[state_ref]
+    assert isinstance(state, VMobjectState)
+    first_anchor = state.contours[0][0]
     assert abs(first_anchor[0] - 1.0) < 1e-9
     assert abs(first_anchor[1] - 1.0) < 1e-9
     assert abs(first_anchor[2] - 0.0) < 1e-9
@@ -958,14 +979,16 @@ def test_register_play_mutate_register_back_emits_two_registers_with_two_states(
             self.add(s)
 
     scene = AddPlayMutateAddBack(fps=10)
-    section = scene.scene_data["sections"][0]
+    section = scene.data.sections[0]
 
-    register_cmds = [cmd for cmd in section["construct"] if cmd["cmd"] == "register"]
+    register_cmds = [
+        cmd for cmd in section.commands if isinstance(cmd, RegisterCommand)
+    ]
     assert len(register_cmds) == 2
 
-    states = scene.scene_data["states"]
-    p0 = states[register_cmds[0]["state_ref"]]["contours"][0][0]
-    p1 = states[register_cmds[1]["state_ref"]]["contours"][0][0]
+    states = scene.data.states
+    p0 = states[register_cmds[0].state_ref].contours[0][0]
+    p1 = states[register_cmds[1].state_ref].contours[0][0]
 
     assert abs(p0[0] - 0.5) < 1e-9
     assert abs(p1[0] - 1.0) < 1e-9
@@ -981,19 +1004,19 @@ def test_register_new_section_register_back_emits_two_registers_with_two_states(
             self.add(s)
 
     scene = AddSectionAddBack(fps=10)
-    data = scene.scene_data
+    data = scene.data
 
-    s0 = data["sections"][0]
-    s1 = data["sections"][1]
+    s0 = data.sections[0]
+    s1 = data.sections[1]
 
-    reg0 = [cmd for cmd in s0["construct"] if cmd["cmd"] == "register"]
-    reg1 = [cmd for cmd in s1["construct"] if cmd["cmd"] == "register"]
+    reg0 = [cmd for cmd in s0.commands if isinstance(cmd, RegisterCommand)]
+    reg1 = [cmd for cmd in s1.commands if isinstance(cmd, RegisterCommand)]
     assert len(reg0) == 1
     assert len(reg1) == 1
 
-    global_states = data["states"]
-    p0 = global_states[reg0[0]["state_ref"]]["contours"][0][0]
-    p1 = global_states[reg1[0]["state_ref"]]["contours"][0][0]
+    global_states = data.states
+    p0 = global_states[reg0[0].state_ref].contours[0][0]
+    p1 = global_states[reg1[0].state_ref].contours[0][0]
 
     assert abs(p0[0] - 0.5) < 1e-9
     assert abs(p1[0] - 1.0) < 1e-9
@@ -1007,11 +1030,11 @@ def test_sections_have_no_camera_key():
             self.camera.theta = 0.5
             self.next_section("after_camera_setup")
 
-    data = CameraSetupScene(fps=10).scene_data
+    data = CameraSetupScene(fps=10).data
     assert_valid_scene(data)
 
-    for section in data["sections"]:
-        assert "camera" not in section
+    for section in data.sections:
+        assert not hasattr(section, "camera")
 
 
 def test_arrow_serializes_as_vgroup_container():
@@ -1024,22 +1047,21 @@ def test_arrow_serializes_as_vgroup_container():
             self.play(Create(a))
 
     scene = ArrowScene(fps=10)
-    states = scene.scene_data["states"]
+    states = scene.data.states
 
     arrow_state = next(
         (
             s
             for s in states
-            if s.get("kind") == "Group"
-            and all(states[r].get("kind") == "VMobject" for r in s["children"])
+            if isinstance(s, GroupState)
+            and all(isinstance(states[r], VMobjectState) for r in s.children)
         ),
         None,
     )
 
     assert arrow_state is not None
-    assert "points" not in arrow_state
-    assert "contours" not in arrow_state
-    assert len(arrow_state["children"]) == 2
+    assert isinstance(arrow_state, GroupState)
+    assert len(arrow_state.children) == 2
 
 
 @given(
@@ -1059,13 +1081,13 @@ def test_intern_state_ref_always_in_bounds_after_mixed_inserts(states, extra_rep
 
 
 @given(vmobject_state())
-def test_state_bank_stores_dict_not_pydantic_model(state):
-    """States in the bank must be plain dicts (for JSON serialization)."""
+def test_state_bank_stores_typed_objects(state):
+    """States in the bank must be typed MobjectState objects (not raw dicts)."""
     sr = _fresh_serializer()
     ref = sr._intern_state(state)
     stored = sr._state_registry.as_list()[ref]
-    assert isinstance(stored, dict)
-    assert stored.get("kind") == "VMobject"
+    assert isinstance(stored, VMobjectState)
+    assert stored.kind == "VMobject"
 
 
 @given(vmobject_state())
@@ -1122,7 +1144,7 @@ def test_generated_scene_produces_valid_schema(args):
     """Any randomly generated (non-updater) scene must pass JSON schema validation."""
     mob_specs, commands = args
     data = run_generated_scene(mob_specs, commands, fps=5)
-    validate(data, _SPEC)
+    validate(data.model_dump(by_alias=True, exclude_none=True), _SPEC)
 
 
 @given(construct_script(min_mobs=1, max_mobs=4, min_plays=2, max_plays=5))
@@ -1132,10 +1154,10 @@ def test_generated_scene_no_camera_frames_in_animate_commands(args):
     (frame loop skipped when camera is static)."""
     mob_specs, commands = args
     data = run_generated_scene(mob_specs, commands, fps=5)
-    for section in data["sections"]:
-        for cmd in section["construct"]:
-            if cmd["cmd"] == "animate":
-                assert "camera_frames" not in cmd
+    for section in data.sections:
+        for cmd in section.commands:
+            if isinstance(cmd, AnimateCommand):
+                assert not hasattr(cmd, "camera_frames")
 
 
 @given(
@@ -1157,14 +1179,14 @@ def test_generated_scene_updater_commands_have_correct_frame_count(args):
     ]
     updater_wire_cmds = [
         c
-        for section in data["sections"]
-        for c in section["construct"]
-        if c["cmd"] == "updater"
+        for section in data.sections
+        for c in section.commands
+        if isinstance(c, UpdaterCommand)
     ]
 
     assert len(updater_wire_cmds) == len(updater_run_times)
     for wire_cmd, rt in zip(updater_wire_cmds, updater_run_times):
-        assert len(wire_cmd["frames"]) == _math.ceil(fps * rt)
+        assert len(wire_cmd.frames) == _math.ceil(fps * rt)
 
 
 @given(construct_script(min_mobs=1, max_mobs=3, min_plays=2, max_plays=5))
@@ -1175,19 +1197,23 @@ def test_generated_scene_all_state_refs_in_bounds(args):
     mob_specs, commands = args
     data = run_generated_scene(mob_specs, commands, fps=5)
 
-    n_states = len(data["states"])
-    for section in data["sections"]:
-        for ref in section.get("snapshot", {}).values():
+    from manim_widget.models import MoveCameraCommand
+
+    n_states = len(data.states)
+    for section in data.sections:
+        for ref in section.snapshot.values():
             assert 0 <= ref < n_states
-        for cmd in section["construct"]:
-            if "state_ref" in cmd:
-                assert 0 <= cmd["state_ref"] < n_states
-            for anim in cmd.get("animations", []):
-                if "state_ref" in anim:
-                    assert 0 <= anim["state_ref"] < n_states
-            for frame in cmd.get("frames", []):
-                for mob_frame in frame.values():
-                    assert 0 <= mob_frame["state_ref"] < n_states
+        for cmd in section.commands:
+            if isinstance(cmd, (RegisterCommand, MoveCameraCommand)):
+                assert 0 <= cmd.state_ref < n_states
+            elif isinstance(cmd, AnimateCommand):
+                for anim in cmd.animations:
+                    if anim.state_ref is not None:
+                        assert 0 <= anim.state_ref < n_states
+            elif isinstance(cmd, UpdaterCommand):
+                for frame in cmd.frames:
+                    for mob_frame in frame.values():
+                        assert 0 <= mob_frame.state_ref < n_states
 
 
 @given(
@@ -1207,14 +1233,15 @@ def test_generated_scene_with_transforms_fadeouts_groups_is_valid(args):
     schema validation and have coherent state refs."""
     mob_specs, commands = args
     data = run_generated_scene(mob_specs, commands, fps=5)
-    validate(data, _SPEC)
+    validate(data.model_dump(by_alias=True, exclude_none=True), _SPEC)
 
-    n_states = len(data["states"])
-    for section in data["sections"]:
-        for cmd in section["construct"]:
-            for anim in cmd.get("animations", []):
-                if "state_ref" in anim:
-                    assert 0 <= anim["state_ref"] < n_states
+    n_states = len(data.states)
+    for section in data.sections:
+        for cmd in section.commands:
+            if isinstance(cmd, AnimateCommand):
+                for anim in cmd.animations:
+                    if anim.state_ref is not None:
+                        assert 0 <= anim.state_ref < n_states
 
 
 # ---------------------------------------------------------------------------
@@ -1222,7 +1249,7 @@ def test_generated_scene_with_transforms_fadeouts_groups_is_valid(args):
 # ---------------------------------------------------------------------------
 
 
-def _collect_register_invariants(section: dict, states: list) -> None:
+def _collect_register_invariants(section, states: list) -> None:
     """Assert group registration invariants for a single section's construct list.
 
     1. For every register with child_ids, all those IDs appear in earlier registers.
@@ -1234,42 +1261,44 @@ def _collect_register_invariants(section: dict, states: list) -> None:
     removed_ids: set[str] = set()
     duplicate_ids: list[str] = []
 
-    for cmd in section["construct"]:
-        if cmd["cmd"] == "remove":
-            removed_ids.add(cmd["id"])
-            seen_register_ids.discard(cmd["id"])
-        if cmd["cmd"] == "register":
-            rid = cmd["id"]
+    from manim_widget.models import RemoveCommand
+
+    for cmd in section.commands:
+        if isinstance(cmd, RemoveCommand):
+            removed_ids.add(cmd.id)
+            seen_register_ids.discard(cmd.id)
+        if isinstance(cmd, RegisterCommand):
+            rid = cmd.id
             if rid in seen_register_ids:
                 duplicate_ids.append(rid)
             else:
                 seen_register_ids.add(rid)
 
-            child_ids = cmd.get("child_ids", [])
+            child_ids = cmd.child_ids or []
             for cid in child_ids:
                 assert cid in seen_register_ids, (
                     f"child_id '{cid}' in register '{rid}' was not registered before its parent"
                 )
 
             if child_ids:
-                state = states[cmd["state_ref"]]
-                assert state.get("kind") in ("Group", "Arrow"), (
-                    f"register '{rid}' has child_ids but state kind is {state.get('kind')!r}"
+                state = states[cmd.state_ref]
+                assert isinstance(state, GroupState), (
+                    f"register '{rid}' has child_ids but state kind is {state.kind!r}"
                 )
-                assert len(child_ids) == len(state.get("children", [])), (
+                assert len(child_ids) == len(state.children), (
                     f"register '{rid}' child_ids length {len(child_ids)} != "
-                    f"GroupState.children length {len(state.get('children', []))}"
+                    f"GroupState.children length {len(state.children)}"
                 )
 
-        elif cmd["cmd"] == "animate":
-            for anim in cmd.get("animations", []):
-                if "id" in anim and anim.get("kind") != "Add":
-                    assert anim["id"] in seen_register_ids, (
-                        f"animate descriptor id '{anim['id']}' not in prior registers"
+        elif isinstance(cmd, AnimateCommand):
+            for anim in cmd.animations:
+                if anim.id is not None and anim.kind != "Add":
+                    assert anim.id in seen_register_ids, (
+                        f"animate descriptor id '{anim.id}' not in prior registers"
                     )
 
-        elif cmd["cmd"] == "updater":
-            for frame in cmd.get("frames", []):
+        elif isinstance(cmd, UpdaterCommand):
+            for frame in cmd.frames:
                 for mob_id in frame:
                     if mob_id.startswith("#"):
                         continue  # pseudo-mobjects like #camera are not registered
@@ -1296,8 +1325,8 @@ def test_generated_scene_group_registration_invariants(args):
     """For every generated scene with groups, arrows and updaters, all registration invariants hold."""
     mob_specs, commands = args
     data = run_generated_scene(mob_specs, commands, fps=5)
-    for section in data["sections"]:
-        _collect_register_invariants(section, data["states"])
+    for section in data.sections:
+        _collect_register_invariants(section, data.states)
 
 
 @given(
@@ -1316,8 +1345,8 @@ def test_generated_scene_child_ids_precede_parent_always(args):
     """child_ids ordering invariant holds even with transforms and fadeouts."""
     mob_specs, commands = args
     data = run_generated_scene(mob_specs, commands, fps=5)
-    for section in data["sections"]:
-        _collect_register_invariants(section, data["states"])
+    for section in data.sections:
+        _collect_register_invariants(section, data.states)
 
 
 # ---------------------------------------------------------------------------
@@ -1350,20 +1379,20 @@ def test_animating_vgroup_child_does_not_affect_siblings(args):
             self.play(Create(group))
             self.play(mobs[animated_idx].animate.shift((dx, dy, 0)))
 
-    data = S().scene_data
-    section = data["sections"][0]
-    commands = section["construct"]
+    data = S().data
+    section = data.sections[0]
+    commands = section.commands
 
-    animate_cmds = [c for c in commands if c["cmd"] == "animate"]
+    animate_cmds = [c for c in commands if isinstance(c, AnimateCommand)]
     shift_animate = animate_cmds[-1]  # the shift play() is the last animate
 
     # IDs that have a new state_ref in the shift animation (i.e. actually changed)
     anim_ids_with_state = {
-        a["id"] for a in shift_animate.get("animations", []) if "state_ref" in a
+        a.id for a in shift_animate.animations if a.state_ref is not None
     }
 
     # All registered mob IDs
-    all_registered = {c["id"] for c in commands if c["cmd"] == "register"}
+    all_registered = {c.id for c in commands if isinstance(c, RegisterCommand)}
 
     # No sibling should appear with a state change
     siblings_changed = (all_registered - anim_ids_with_state) & anim_ids_with_state
@@ -1499,9 +1528,9 @@ def test_glyph_hole_serialized(char):
         def construct(self):
             self.add(Text(char, font_size=200))
 
-    data = S(fps=10).scene_data
-    vmob_states = [s for s in data["states"] if s.get("kind") == "VMobject"]
-    assert any(s.get("holes") for s in vmob_states), (
+    data = S(fps=10).data
+    vmob_states = [s for s in data.states if isinstance(s, VMobjectState)]
+    assert any(s.holes for s in vmob_states), (
         f"No holes found in serialized states for '{char}'"
     )
 
@@ -1527,25 +1556,25 @@ def test_initial_camera_snapshot_matches_construct_camera(phi, theta):
             self.play(Create(Circle()))
 
     widget = CameraScene(is_3d=True)
-    data = widget.scene_data
+    data = widget.data
 
-    section = data["sections"][0]
-    cam_ref = section["snapshot"]["#camera"]
-    snapshot_cam_state = data["states"][cam_ref]
+    section = data.sections[0]
+    cam_ref = section.snapshot["#camera"]
+    snapshot_cam_state = data.states[cam_ref]
 
     cam = widget.camera
     fw = float(cam.frame_width)
     fh = float(cam.frame_height)
     expected_pts, expected_focal = _serialize_camera(cam, fw, fh)
 
-    assert snapshot_cam_state["kind"] == "Camera"
-    assert np.allclose(snapshot_cam_state["points"], expected_pts, atol=1e-5), (
+    assert isinstance(snapshot_cam_state, CameraState)
+    assert np.allclose(snapshot_cam_state.points, expected_pts, atol=1e-5), (
         f"snapshot camera does not match construct() camera "
         f"(phi={phi:.3f}, theta={theta:.3f})\n"
-        f"  snapshot: {snapshot_cam_state['points']}\n"
+        f"  snapshot: {snapshot_cam_state.points}\n"
         f"  expected: {expected_pts}"
     )
-    assert abs(snapshot_cam_state["focal_distance"] - expected_focal) < 1e-5
+    assert abs(snapshot_cam_state.focal_distance - expected_focal) < 1e-5
 
 
 @given(st.sampled_from(_HOLE_CHARS))
@@ -1560,11 +1589,11 @@ def test_glyph_hole_winding(char):
         def construct(self):
             self.add(Text(char, font_size=200))
 
-    data = S(fps=10).scene_data
-    for state in data["states"]:
-        if state.get("kind") != "VMobject":
+    data = S(fps=10).data
+    for state in data.states:
+        if not isinstance(state, VMobjectState):
             continue
-        for c in state.get("contours", []):
+        for c in state.contours:
             assert _contour_winding(c) == "CCW"
-        for h in state.get("holes", []):
+        for h in state.holes:
             assert _contour_winding(h) == "CW"

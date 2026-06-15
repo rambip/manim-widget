@@ -203,9 +203,15 @@ class JSRunner:
         useful for scenes the headless bundle cannot render (e.g. requiring a
         local LaTeX install). The returned result is ``ok`` with no JS details.
         """
+        from pydantic import BaseModel
         from jsonschema import validate
 
-        data = json.loads(scene_data) if isinstance(scene_data, str) else scene_data
+        if isinstance(scene_data, BaseModel):
+            data = scene_data.model_dump(by_alias=True, exclude_none=True)
+        elif isinstance(scene_data, str):
+            data = json.loads(scene_data)
+        else:
+            data = scene_data
         if self._schema is not None:
             validate(data, self._schema)
         if not js:
@@ -248,7 +254,9 @@ class JSRunner:
         still run); see :meth:`check_data`.
         """
         scene = scene_cls(fps=fps)
-        return self.check_data(scene.scene_data, js=js)
+        return self.check_data(
+            scene.data.model_dump(by_alias=True, exclude_none=True), js=js
+        )
 
 
 def _pretty_print(result: JSResult) -> None:

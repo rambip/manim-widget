@@ -22,8 +22,16 @@ from manim.mobject.types.vectorized_mobject import VMobject
 from ._camera import _needs_camera_loop, _serialize_camera
 from ._serializer import MobSerializer
 from .anim_compat import force_end_state
+from .models import (
+    AnimateCommand,
+    AnimationDescriptor,
+    RegisterCommand,
+    RebindCommand,
+    UpdaterCommand,
+    UpdaterFrame,
+)
 from .snapshot import IdCounter
-from .states import MobjectState
+from .states import CameraState, MobjectState
 
 
 def _is_mob_supported(mob: Mobject) -> bool:
@@ -45,9 +53,9 @@ def _rate_func_name(anim: object) -> str:
 @dataclass
 class SectionRecord:
     name: str
-    commands: list[dict] = field(default_factory=list)
-    # setup: list of {cmd:"register", id:..., state_ref:...} emitted for snapshot mobs
-    setup: list[dict] = field(default_factory=list)
+    commands: list[Any] = field(default_factory=list)
+    # setup: list of RegisterCommand emitted for snapshot mobs
+    setup: list[RegisterCommand] = field(default_factory=list)
 
 
 class CaptureRenderer:
@@ -173,10 +181,13 @@ class CaptureRenderer:
         if current is None:
             return
 
-        if any(cmd.get("cmd") in {"animate", "updater"} for cmd in current.commands):
+        if any(
+            isinstance(cmd, (AnimateCommand, UpdaterCommand))
+            for cmd in current.commands
+        ):
             return
 
-        add_animations: list[dict[str, str]] = []
+        add_animations: list[AnimationDescriptor] = []
         for mob in scene.mobjects:
             if not _is_mob_supported(mob):
                 continue
@@ -184,16 +195,14 @@ class CaptureRenderer:
                 continue
             if self._introduced_by_animation.get(id(mob), False):
                 continue
-            add_animations.append({"kind": "Add", "id": self.short_id(mob)})
+            add_animations.append(
+                AnimationDescriptor(kind="Add", id=self.short_id(mob))
+            )
             self._introduced_by_animation[id(mob)] = True
 
         if add_animations:
             current.commands.append(
-                {
-                    "cmd": "animate",
-                    "duration": 0,
-                    "animations": add_animations,
-                }
+                AnimateCommand(duration=0, animations=add_animations)
             )
 
     def stage_add(self, mob: Mobject) -> None:
@@ -263,11 +272,10 @@ class CaptureRenderer:
             if not self.is_active(target):
                 self.register_mobject(target)
             post_commands.append(
-                {
-                    "cmd": "rebind",
-                    "source_id": self.short_id(anim.mobject),
-                    "target_id": self.short_id(target),
-                }
+                RebindCommand(
+                    source_id=self.short_id(anim.mobject),
+                    target_id=self.short_id(target),
+                )
             )
         elif isinstance(anim, FadeOut):
             post_commands.extend(self._serializer._mob_remove_commands(anim.mobject))
@@ -277,19 +285,19 @@ class CaptureRenderer:
     ) -> None:
         """Emit register + animate + post commands for a non-updater play() call.
 
-        post: self._current.commands[-1]["cmd"] == "animate"
+        post: isinstance(self._current.commands[-1], AnimateCommand)
         post: implies(isinstance(anim, GrowArrow) for anim in animations,
-                      forall([d for d in self._current.commands[-1]["animations"]
-                               if "state_ref" in d],
-                             lambda d: isinstance(d["state_ref"], int)))
+                      forall([d for d in self._current.commands[-1].animations
+                               if d.state_ref is not None],
+                             lambda d: isinstance(d.state_ref, int)))
         """
         current = self._current
         if current is None:
             return
 
-        pre_commands: list[dict] = []
-        animate_descriptors: list[dict] = []
-        post_commands: list[dict] = []
+        pre_commands: list[Any] = []
+        animate_descriptors: list[AnimationDescriptor] = []
+        post_commands: list[Any] = []
 
         for mob in scene.mobjects:
             if not _is_mob_supported(mob):
@@ -298,7 +306,9 @@ class CaptureRenderer:
                 self.register_mobject(mob)
                 pre_commands.extend(self._serializer._mob_register_commands(mob))
             if not self._introduced_by_animation.get(id(mob), False):
-                animate_descriptors.append({"kind": "Add", "id": self.short_id(mob)})
+                animate_descriptors.append(
+                    AnimationDescriptor(kind="Add", id=self.short_id(mob))
+                )
                 self._introduced_by_animation[id(mob)] = True
 
         for anim in animations:
@@ -313,16 +323,8 @@ class CaptureRenderer:
         if pre_commands:
             current.commands.extend(pre_commands)
 
-        current.commands.append(
-            {
-                "cmd": "animate",
-                "duration": run_time,
-                "animations": animate_descriptors,
-            }
-        )
-
-        if post_commands:
-            current.commands.extend(post_commands)
+        # NOTE: AnimateCommand is appended after camera handling below
+        # to avoid mutation-by-reference issues with typed objects.
 
         self._suppress_stage_adds = True
         try:
@@ -390,81 +392,92 @@ class CaptureRenderer:
             final_cam_pts, final_cam_focal = _serialize_camera(scene.camera, fw, fh)
             if final_cam_pts != initial_cam_pts:
                 final_cam_ref = self._state_registry.insert_raw(
-                    {
-                        "kind": "Camera",
-                        "points": final_cam_pts,
-                        "focal_distance": final_cam_focal,
-                    }
+                    CameraState(points=final_cam_pts, focal_distance=final_cam_focal)
                 )
                 animate_descriptors.append(
-                    {
-                        "kind": "MoveToTarget",
-                        "id": "#camera",
-                        "state_ref": final_cam_ref,
-                    }
+                    AnimationDescriptor(
+                        kind="MoveToTarget", id="#camera", state_ref=final_cam_ref
+                    )
                 )
 
-    def _flatten_animation_group(self, group: AnimationGroup) -> list[dict]:
+        current.commands.append(
+            AnimateCommand(duration=run_time, animations=animate_descriptors)
+        )
+
+        if post_commands:
+            current.commands.extend(post_commands)
+
+    def _flatten_animation_group(
+        self, group: AnimationGroup
+    ) -> list[AnimationDescriptor]:
         """Expand an AnimationGroup into timestamped descriptors for the JS player.
 
         Timestamps are scaled so the last sub-animation ends at group.run_time,
         preserving lag_ratio spacing proportionally.
 
         post: len(__return__) == len(group.anims_with_timings)
-        post: all("start" in d and "end" in d for d in __return__)
+        post: all(d.start is not None and d.end is not None for d in __return__)
         post: implies(len(__return__) > 0 and group.max_end_time > 0,
-                      abs(__return__[-1]["end"] - group.run_time) < 1e-5)
+                      abs(__return__[-1].end - group.run_time) < 1e-5)
         """
         scale = group.run_time / group.max_end_time if group.max_end_time > 0 else 1.0
         result = []
         for row in group.anims_with_timings:
             desc = self._descriptor_from_animation(row["anim"])
-            desc["start"] = round(float(row["start"]) * scale, 6)
-            desc["end"] = round(float(row["end"]) * scale, 6)
-            result.append(desc)
+            result.append(
+                desc.model_copy(
+                    update={
+                        "start": round(float(row["start"]) * scale, 6),
+                        "end": round(float(row["end"]) * scale, 6),
+                    }
+                )
+            )
         return result
 
-    def _descriptor_from_animation(self, anim: Animation) -> dict[str, Any]:
-        """Translate a single manim Animation into a wire-format descriptor dict.
+    def _descriptor_from_animation(self, anim: Animation) -> AnimationDescriptor:
+        """Translate a single manim Animation into a typed descriptor.
 
-        post: "kind" in __return__
-        post: implies("state_ref" in __return__, isinstance(__return__["state_ref"], int))
-        post: implies(isinstance(anim, GrowArrow), __return__["kind"] == "Transform")
-        post: implies(isinstance(anim, GrowArrow), "state_ref" in __return__)
-        post: implies(isinstance(anim, (Swap, CyclicReplace)), "ids" in __return__)
-        post: implies(isinstance(anim, (Swap, CyclicReplace)), "id" not in __return__)
+        post: __return__.kind is not None
+        post: implies(__return__.state_ref is not None, isinstance(__return__.state_ref, int))
+        post: implies(isinstance(anim, GrowArrow), __return__.kind == "Transform")
+        post: implies(isinstance(anim, GrowArrow), __return__.state_ref is not None)
+        post: implies(isinstance(anim, (Swap, CyclicReplace)), __return__.ids is not None)
+        post: implies(isinstance(anim, (Swap, CyclicReplace)), __return__.id is None)
         """
         anim_name = type(anim).__name__
         params: dict[str, Any] = {}
-        descriptor: dict[str, Any] = {}
 
+        mob_id: str | None = None
         if hasattr(anim, "mobject") and anim_name != "Wait":
-            descriptor["id"] = self.short_id(anim.mobject)
+            mob_id = self.short_id(anim.mobject)
 
         target_mobject = getattr(anim, "target_mobject", None)
-
-        descriptor["rate_func"] = _rate_func_name(anim)
+        rate_func = _rate_func_name(anim)
 
         methods = getattr(anim, "methods", None)
         if methods:
             if target_mobject is None:
                 msg = "Method animation missing target_mobject"
                 raise RuntimeError(msg)
-            descriptor["kind"] = "MoveToTarget"
-            descriptor["state_ref"] = self.state_ref_for(target_mobject)
-            return descriptor
+            return AnimationDescriptor(
+                kind="MoveToTarget",
+                id=mob_id,
+                state_ref=self.state_ref_for(target_mobject),
+                rate_func=rate_func,
+            )
 
         if isinstance(anim, GrowArrow):
-            descriptor["kind"] = "Transform"
-            descriptor["state_ref"] = self.state_ref_for(anim.mobject)
-            return descriptor
+            return AnimationDescriptor(
+                kind="Transform",
+                id=mob_id,
+                state_ref=self.state_ref_for(anim.mobject),
+                rate_func=rate_func,
+            )
 
         if anim_name in ("Transform", "ReplacementTransform"):
             if target_mobject is None:
                 msg = "Transform animation missing target_mobject"
                 raise RuntimeError(msg)
-            descriptor["kind"] = "Transform"
-            descriptor["state_ref"] = self.state_ref_for(target_mobject)
             transform_params: dict[str, Any] = {}
             path_arc = getattr(anim, "path_arc", None)
             if path_arc is not None:
@@ -472,9 +485,13 @@ class CaptureRenderer:
             path_arc_axis = getattr(anim, "path_arc_axis", None)
             if path_arc_axis is not None:
                 transform_params["path_arc_axis"] = list(path_arc_axis)
-            if transform_params:
-                descriptor["params"] = transform_params
-            return descriptor
+            return AnimationDescriptor(
+                kind="Transform",
+                id=mob_id,
+                state_ref=self.state_ref_for(target_mobject),
+                rate_func=rate_func,
+                params=transform_params or None,
+            )
 
         if isinstance(anim, Swap | CyclicReplace):
             kind = "Swap" if isinstance(anim, Swap) else "CyclicReplace"
@@ -490,12 +507,13 @@ class CaptureRenderer:
                 self.short_id(m)
                 for m in (submobjects[:2] if kind == "Swap" else submobjects)
             ]
-            descriptor = {"kind": kind, "ids": ids}
             path_arc = getattr(anim, "path_arc", None)
-            if path_arc is not None:
-                descriptor["params"] = {"path_arc": float(path_arc)}
-            descriptor["rate_func"] = _rate_func_name(anim)
-            return descriptor
+            return AnimationDescriptor(
+                kind=kind,
+                ids=ids,
+                rate_func=rate_func,
+                params={"path_arc": float(path_arc)} if path_arc is not None else None,
+            )
 
         if isinstance(anim, Rotate):
             params["angle"] = float(getattr(anim, "angle", 0.0))
@@ -514,10 +532,13 @@ class CaptureRenderer:
             about_point = getattr(anim, "about_point", None)
             if about_point is not None:
                 params["about_point"] = list(about_point)
-        descriptor["kind"] = anim_name
-        if params:
-            descriptor["params"] = params
-        return descriptor
+
+        return AnimationDescriptor(
+            kind=anim_name,
+            id=mob_id,
+            rate_func=rate_func,
+            params=params or None,
+        )
 
     def _play_data_path(
         self, scene: Scene, animations: list[Animation], run_time: float
@@ -557,7 +578,7 @@ class CaptureRenderer:
             anim.begin()
 
         registered_ids = {
-            cmd["id"] for cmd in current.commands if cmd.get("cmd") == "register"
+            cmd.id for cmd in current.commands if isinstance(cmd, RegisterCommand)
         }
         for mob in tracked:
             mob_id = self.short_id(mob)
@@ -566,18 +587,14 @@ class CaptureRenderer:
                 registered_ids.add(mob_id)
 
         n_frames = math.ceil(run_time * self.fps)
-        frames: list[dict[str, Any]] = []
+        frames: list[dict[str, UpdaterFrame]] = []
 
         fw = float(getattr(scene.camera, "frame_width", 14.222))
         fh = float(getattr(scene.camera, "frame_height", 8.0))
         initial_cam_pts, initial_cam_focal = _serialize_camera(scene.camera, fw, fh)
         last_cam_pts = initial_cam_pts
         last_cam_ref = self._state_registry.insert_raw(
-            {
-                "kind": "Camera",
-                "points": initial_cam_pts,
-                "focal_distance": initial_cam_focal,
-            }
+            CameraState(points=initial_cam_pts, focal_distance=initial_cam_focal)
         )
         _cam_frame = getattr(getattr(scene, "camera", None), "frame", None)
         _frame_dt = 1.0 / self.fps
@@ -589,18 +606,18 @@ class CaptureRenderer:
             scene.update_to_time(t)
             if _cam_frame is not None:
                 _cam_frame.update(_frame_dt)
-            frame: dict[str, Any] = {}
+            frame: dict[str, UpdaterFrame] = {}
             for mob in tracked:
                 mob_id = self.short_id(mob)
-                frame[mob_id] = {"state_ref": self.state_ref_for(mob)}
+                frame[mob_id] = UpdaterFrame(state_ref=self.state_ref_for(mob))
 
             cam_pts, cam_focal = _serialize_camera(scene.camera, fw, fh)
             if cam_pts != last_cam_pts:
                 last_cam_ref = self._state_registry.insert_raw(
-                    {"kind": "Camera", "points": cam_pts, "focal_distance": cam_focal}
+                    CameraState(points=cam_pts, focal_distance=cam_focal)
                 )
                 last_cam_pts = cam_pts
-            frame["#camera"] = {"state_ref": last_cam_ref}
+            frame["#camera"] = UpdaterFrame(state_ref=last_cam_ref)
 
             frames.append(frame)
 
@@ -610,10 +627,4 @@ class CaptureRenderer:
             anim.clean_up_from_scene(scene)
         scene.update_mobjects(0)
 
-        current.commands.append(
-            {
-                "cmd": "updater",
-                "duration": run_time,
-                "frames": frames,
-            }
-        )
+        current.commands.append(UpdaterCommand(duration=run_time, frames=frames))

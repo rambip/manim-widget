@@ -15,9 +15,11 @@ from manim.mobject.types.vectorized_mobject import VMobject
 
 from ._state_keys import _ImgKey, _MathTexKey, _PMobjectKey, _VMobKey, _GroupKey, _VTKey
 from ._subpaths import _SubpathChild, _classify_subpaths, _subpath_to_3n1
+from .models import RegisterCommand, RemoveCommand
 from .registry import StateRegistry
 from .snapshot import IdCounter
 from .states import (
+    DerivedState,
     ImageMobjectState,
     MathTexState,
     MobjectState,
@@ -51,13 +53,13 @@ class MobSerializer:
 
     def __init__(self, id_counter: IdCounter) -> None:
         self._id_counter = id_counter
-        self._state_registry: StateRegistry[Mobject, PixelContent, tuple, dict] = (
-            StateRegistry(
-                extract_content=self._extract_content,
-                extract_state=self._extract_state,
-                make_from_content=self._make_from_content,
-                make_from_state=self._make_from_state,
-            )
+        self._state_registry: StateRegistry[
+            Mobject, PixelContent, tuple, MobjectState
+        ] = StateRegistry(
+            extract_content=self._extract_content,
+            extract_state=self._extract_state,
+            make_from_content=self._make_from_content,
+            make_from_state=self._make_from_state,
         )
         self.state_refs: dict[int, list[int]] = {}
 
@@ -151,27 +153,25 @@ class MobSerializer:
             opacities = tuple(float(a) for *_, a in rgbas)
         return _PMobjectKey(points, colors, opacities)
 
-    def _make_from_content(self, content: PixelContent) -> dict:
-        return {
-            "kind": "ImageMobject",
-            "source": self._image_source_from_pixel_array(content.to_array()),
-        }
+    def _make_from_content(self, content: PixelContent) -> ImageMobjectState:
+        return ImageMobjectState(
+            source=self._image_source_from_pixel_array(content.to_array())
+        )
 
-    def _make_from_state(self, state: tuple) -> dict:
+    def _make_from_state(self, state: tuple) -> MobjectState:
         if isinstance(state, _VTKey):
-            return ValueTrackerState(value=state.value).model_dump(exclude_none=True)
+            return ValueTrackerState(value=state.value)
         if isinstance(state, _MathTexKey):
             return MathTexState(
                 latex=state.latex,
                 points=[[float(p[0]), float(p[1]), float(p[2])] for p in state.pts],
                 color=state.color,
-            ).model_dump(exclude_none=True)
+            )
         if isinstance(state, _ImgKey):
-            return {
-                "kind": "Derived",
-                "from": state.content_ref,
-                "points": [list(p) for p in state.corners],
-            }
+            return DerivedState(
+                from_=state.content_ref,
+                points=[list(p) for p in state.corners],
+            )
         if isinstance(state, _PMobjectKey):
             return PMobjectState(
                 points=[list(p) for p in state.points],
@@ -179,11 +179,9 @@ class MobSerializer:
                 opacities=(
                     list(state.opacities) if state.opacities is not None else None
                 ),
-            ).model_dump(exclude_none=True)
-        if isinstance(state, _GroupKey):
-            return GroupState(children=list(state.child_refs)).model_dump(
-                exclude_none=True
             )
+        if isinstance(state, _GroupKey):
+            return GroupState(children=list(state.child_refs))
         if isinstance(state, _VMobKey):
             return VMobjectState(
                 contours=[[list(p) for p in c] for c in state.contours],
@@ -194,7 +192,7 @@ class MobSerializer:
                 stroke_width=state.stroke_width,
                 stroke_opacity=state.stroke_opacity,
                 z_index=state.z_index,
-            ).model_dump(exclude_none=True)
+            )
         msg = f"Unknown state type: {type(state)!r}"
         raise ValueError(msg)
 
@@ -256,15 +254,11 @@ class MobSerializer:
         style = self._vmob_style(child.parent)
         points_3n1 = _subpath_to_3n1(child.subpath)
         if not points_3n1:
-            return self._state_registry.insert_raw(
-                {"kind": "VMobject", "contours": [], "holes": []}
-            )
+            return self._state_registry.insert_raw(VMobjectState(contours=[], holes=[]))
         if _signed_area_2d(points_3n1) > 0:
             points_3n1 = points_3n1[::-1]
         subpath_state = VMobjectState(contours=[points_3n1], **style)
-        return self._state_registry.insert_raw(
-            subpath_state.model_dump(exclude_none=True)
-        )
+        return self._state_registry.insert_raw(subpath_state)
 
     def state_ref_for(self, mob: Mobject) -> int:
         """Return the global state-bank index for mob's current state.
@@ -310,15 +304,13 @@ class MobSerializer:
                         else:
                             child_refs.append(self.state_ref_for(jsc))
                     vgroup_state = GroupState(children=child_refs)
-                    ref = self._state_registry.insert_raw(
-                        vgroup_state.model_dump(exclude_none=True)
-                    )
+                    ref = self._state_registry.insert_raw(vgroup_state)
                     self.state_refs.setdefault(id(mob), []).append(ref)
                     return ref
             if not mob.submobjects:
                 style = self._vmob_style(mob)
                 ref = self._state_registry.insert_raw(
-                    {"kind": "VMobject", "contours": [], "holes": [], **style}
+                    VMobjectState(contours=[], holes=[], **style)
                 )
                 self.state_refs.setdefault(id(mob), []).append(ref)
                 return ref
@@ -337,9 +329,7 @@ class MobSerializer:
                     child_refs.append(refs[-1])
             if child_refs:
                 vgroup_state = GroupState(children=child_refs)
-                ref = self._state_registry.insert_raw(
-                    vgroup_state.model_dump(exclude_none=True)
-                )
+                ref = self._state_registry.insert_raw(vgroup_state)
                 self.state_refs.setdefault(id(mob), []).append(ref)
                 return ref
 
@@ -376,7 +366,7 @@ class MobSerializer:
 
     def _intern_state(self, state: MobjectState) -> int:
         """Insert a typed state into the global state bank and return its ref."""
-        return self._state_registry.insert_raw(state.model_dump(exclude_none=True))
+        return self._state_registry.insert_raw(state)
 
     def serialize_mobject(self, mob: Mobject, *, for_snapshot: bool) -> MobjectState:
         """Serialize a single mobject to a typed state object.
@@ -402,7 +392,7 @@ class MobSerializer:
             if self._state_registry.get(mob) is None:
                 self._state_registry.insert(mob)
             content_ref = self._state_registry.get(mob)
-            source = self._state_registry.get_by_id(content_ref)["source"]
+            source = self._state_registry.get_by_id(content_ref).source
             return ImageMobjectState(
                 source=source,
                 points=raw if len(raw) == 4 else None,
@@ -451,65 +441,61 @@ class MobSerializer:
     # Register / remove command builders
     # ------------------------------------------------------------------
 
-    def _mob_register_commands(self, mob: Mobject) -> list[dict]:
+    def _mob_register_commands(self, mob: Mobject) -> list[RegisterCommand]:
         """Return register command(s) for mob and all its JS children.
 
         post: len(__return__) >= 1
-        post: all(d["cmd"] == "register" for d in __return__)
-        post: __return__[-1]["id"] == self.short_id(mob)
+        post: all(d.cmd == "register" for d in __return__)
+        post: __return__[-1].id == self.short_id(mob)
         """
         js_children = self._js_children(mob)
         if not js_children:
             return [
-                {
-                    "cmd": "register",
-                    "id": self.short_id(mob),
-                    "state_ref": self.state_ref_for(mob),
-                }
+                RegisterCommand(
+                    id=self.short_id(mob),
+                    state_ref=self.state_ref_for(mob),
+                )
             ]
 
-        cmds: list[dict] = []
+        cmds: list[RegisterCommand] = []
         child_ids: list[str] = []
         for child in js_children:
             if isinstance(child, _SubpathChild):
                 state_ref = self._subpath_child_state_ref(child)
-                cmds.append(
-                    {"cmd": "register", "id": child.mob_id, "state_ref": state_ref}
-                )
+                cmds.append(RegisterCommand(id=child.mob_id, state_ref=state_ref))
                 child_ids.append(child.mob_id)
             else:
                 cmds.extend(self._mob_register_commands(child))
                 child_ids.append(self.short_id(child))
         cmds.append(
-            {
-                "cmd": "register",
-                "id": self.short_id(mob),
-                "state_ref": self.state_ref_for(mob),
-                "child_ids": child_ids,
-            }
+            RegisterCommand(
+                id=self.short_id(mob),
+                state_ref=self.state_ref_for(mob),
+                child_ids=child_ids,
+            )
         )
         return cmds
 
-    def _mob_remove_commands(self, mob: Mobject) -> list[dict]:
+    def _mob_remove_commands(self, mob: Mobject) -> list[RemoveCommand]:
         """Return remove command(s) for mob and all its JS children (deepest first).
 
         post: len(__return__) >= 1
-        post: all(d["cmd"] == "remove" for d in __return__)
-        post: __return__[-1]["id"] == self.short_id(mob)
+        post: all(d.cmd == "remove" for d in __return__)
+        post: __return__[-1].id == self.short_id(mob)
         """
         js_children = self._js_children(mob)
-        cmds: list[dict] = []
+        cmds: list[RemoveCommand] = []
         for child in js_children:
             if isinstance(child, _SubpathChild):
-                cmds.append({"cmd": "remove", "id": child.mob_id})
+                cmds.append(RemoveCommand(id=child.mob_id))
             else:
                 cmds.extend(self._mob_remove_commands(child))
-        cmds.append({"cmd": "remove", "id": self.short_id(mob)})
+        cmds.append(RemoveCommand(id=self.short_id(mob)))
         return cmds
 
     def _grow_arrow_register_commands(
         self, mob: Mobject, anim: GrowArrow
-    ) -> list[dict]:
+    ) -> list[RegisterCommand]:
         """Register commands for GrowArrow: children get collapsed starting states,
         parent gets a virtual collapsed GroupState. The paired Transform descriptor
         then animates from this collapsed state to the final state."""
@@ -517,7 +503,7 @@ class MobSerializer:
         actual_children = self._js_children(mob)
         starting_children = self._js_children(starting)
 
-        child_cmds: list[dict] = []
+        child_cmds: list[RegisterCommand] = []
         child_ids: list[str] = []
         collapsed_child_refs: list[int] = []
 
@@ -530,30 +516,27 @@ class MobSerializer:
                     subpath=start.subpath,
                 )
                 ref = self._subpath_child_state_ref(collapsed_sc)
-                child_cmds.append(
-                    {"cmd": "register", "id": actual.mob_id, "state_ref": ref}
-                )
+                child_cmds.append(RegisterCommand(id=actual.mob_id, state_ref=ref))
                 child_ids.append(actual.mob_id)
             else:
                 idx = mob.submobjects.index(actual)
                 start_submob = starting.submobjects[idx]
                 ref = self.state_ref_for(start_submob)
                 mob_id = self.short_id(actual)
-                child_cmds.append({"cmd": "register", "id": mob_id, "state_ref": ref})
+                child_cmds.append(RegisterCommand(id=mob_id, state_ref=ref))
                 child_ids.append(mob_id)
             collapsed_child_refs.append(ref)
 
         collapsed_vgroup_ref = self._state_registry.insert_raw(
-            GroupState(children=collapsed_child_refs).model_dump(exclude_none=True)
+            GroupState(children=collapsed_child_refs)
         )
         return [
             *child_cmds,
-            {
-                "cmd": "register",
-                "id": self.short_id(mob),
-                "state_ref": collapsed_vgroup_ref,
-                "child_ids": child_ids,
-            },
+            RegisterCommand(
+                id=self.short_id(mob),
+                state_ref=collapsed_vgroup_ref,
+                child_ids=child_ids,
+            ),
         ]
 
     # ------------------------------------------------------------------
