@@ -20,6 +20,8 @@ with app.setup:
     )
     from manim.camera.moving_camera import MovingCamera
     from manim_widget import ManimWidget, SharedCamera
+    from manim_widget.models import UpdaterCommand
+    from manim_widget.states import CameraState
 
 
 @app.class_definition
@@ -92,8 +94,8 @@ def test_plays_without_error(runner):
 @app.function(hide_code=True)
 def test_many_camera_states_in_state_bank(runner):
     """Updater animation must produce per-frame camera states, not just start/end."""
-    data = FollowingGraphCamera(fps=15).scene_data
-    cam_states = [s for s in data["states"] if s.get("kind") == "Camera"]
+    data = FollowingGraphCamera(fps=15).data
+    cam_states = [s for s in data.states if isinstance(s, CameraState)]
     assert len(cam_states) > 10, (
         f"Expected >10 Camera states (one per unique frame position), got {len(cam_states)}"
     )
@@ -102,21 +104,21 @@ def test_many_camera_states_in_state_bank(runner):
 @app.function(hide_code=True)
 def test_updater_frames_all_have_camera(runner):
     """Every frame in the updater command must carry a '#camera' state_ref."""
-    data = FollowingGraphCamera(fps=15).scene_data
-    section = data["sections"][0]
-    updater_cmds = [c for c in section["construct"] if c["cmd"] == "updater"]
+    data = FollowingGraphCamera(fps=15).data
+    section = data.sections[0]
+    updater_cmds = [c for c in section.commands if isinstance(c, UpdaterCommand)]
     assert len(updater_cmds) == 1, "Expected exactly one updater command"
-    for i, frame in enumerate(updater_cmds[0]["frames"]):
+    for i, frame in enumerate(updater_cmds[0].frames):
         assert "#camera" in frame, f"Frame {i} is missing '#camera' key"
 
 
 @app.function(hide_code=True)
 def test_camera_refs_vary_across_frames(runner):
     """Camera state_refs must vary across updater frames — camera was tracking the path."""
-    data = FollowingGraphCamera(fps=15).scene_data
-    section = data["sections"][0]
-    updater = next(c for c in section["construct"] if c["cmd"] == "updater")
-    refs = [frame["#camera"]["state_ref"] for frame in updater["frames"]]
+    data = FollowingGraphCamera(fps=15).data
+    section = data.sections[0]
+    updater = next(c for c in section.commands if isinstance(c, UpdaterCommand))
+    refs = [frame["#camera"].state_ref for frame in updater.frames]
     unique = len(set(refs))
     assert unique > 5, (
         f"Expected >5 distinct camera state_refs across frames (camera zigzags), got {unique}"
