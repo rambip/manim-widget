@@ -35,7 +35,6 @@ from manim import (
     VMobject,
     FadeIn,
 )
-from manim_widget.models import AnimateCommand
 from manim_widget.widget import ManimWidget
 
 
@@ -639,9 +638,7 @@ def test_js_create_without_explicit_add_has_no_injected_add(runner):
     scene = CreateOnlyScene()
     data = scene.data
     section = data.sections[0]
-    animate_cmd = next(
-        cmd for cmd in section.commands if isinstance(cmd, AnimateCommand)
-    )
+    animate_cmd = section.animate_commands()[0]
 
     assert not any(a.kind == "Add" for a in animate_cmd.animations)
     assert any(a.kind == "Create" for a in animate_cmd.animations)

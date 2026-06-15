@@ -162,6 +162,15 @@ class SectionData(BaseModel):
     snapshot: dict[str, int] = Field(default_factory=dict)
     commands: list[Command] = Field(alias="construct", default_factory=list)
 
+    def animate_commands(self) -> list[AnimateCommand]:
+        return [c for c in self.commands if isinstance(c, AnimateCommand)]
+
+    def register_commands(self) -> list[RegisterCommand]:
+        return [c for c in self.commands if isinstance(c, RegisterCommand)]
+
+    def updater_commands(self) -> list[UpdaterCommand]:
+        return [c for c in self.commands if isinstance(c, UpdaterCommand)]
+
 
 class SceneData(BaseModel):
     version: int
@@ -170,6 +179,9 @@ class SceneData(BaseModel):
     frame_height: float = 8.0
     states: list[MobjectState] = Field(default_factory=list)
     sections: list[SectionData]
+
+    def camera_states(self) -> list[CameraState]:
+        return [s for s in self.states if isinstance(s, CameraState)]
 
     @model_validator(mode="after")
     def check_state_refs_in_bounds(self) -> SceneData:

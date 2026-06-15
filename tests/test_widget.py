@@ -654,7 +654,7 @@ def test_add_not_reinjected_after_first_animation_batch():
 
     scene = TwoPlaysScene()
     section = scene.data.sections[0]
-    animate_cmds = [cmd for cmd in section.commands if isinstance(cmd, AnimateCommand)]
+    animate_cmds = section.animate_commands()
 
     assert len(animate_cmds) == 2
     assert any(a.kind == "Add" for a in animate_cmds[0].animations)
@@ -669,7 +669,7 @@ def test_create_without_explicit_add_does_not_emit_add_animation():
 
     scene = CreateScene()
     section = scene.data.sections[0]
-    anim_cmd = next(cmd for cmd in section.commands if isinstance(cmd, AnimateCommand))
+    anim_cmd = section.animate_commands()[0]
 
     assert not any(a.kind == "Add" for a in anim_cmd.animations)
     assert any(a.kind == "Create" and a.id == "0" for a in anim_cmd.animations)
@@ -692,9 +692,7 @@ def test_mathtex_add_only_emits_add_animation():
 
         scene = MathTexAddOnlyScene(fps=10)
         section = scene.data.sections[0]
-        anim_cmd = next(
-            cmd for cmd in section.commands if isinstance(cmd, AnimateCommand)
-        )
+        anim_cmd = section.animate_commands()[0]
 
         assert any(a.kind == "Add" and a.id == "0" for a in anim_cmd.animations)
     finally:
@@ -884,9 +882,7 @@ def test_swap_animation_emits_group_animation():
     data = scene.data
     section = data.sections[0]
 
-    animate_cmd = next(
-        cmd for cmd in section.commands if isinstance(cmd, AnimateCommand)
-    )
+    animate_cmd = section.animate_commands()[0]
     anim = next(a for a in animate_cmd.animations if a.kind != "Add")
     assert anim.kind == "Swap"
     assert anim.ids == ["0", "1"]
@@ -907,9 +903,7 @@ def test_cyclic_replace_animation_emits_group_animation():
     data = scene.data
     section = data.sections[0]
 
-    animate_cmd = next(
-        cmd for cmd in section.commands if isinstance(cmd, AnimateCommand)
-    )
+    animate_cmd = section.animate_commands()[0]
     anim = next(a for a in animate_cmd.animations if a.kind != "Add")
     assert anim.kind == "CyclicReplace"
     assert len(anim.ids) == 3
@@ -925,7 +919,7 @@ def test_camera_state_is_in_state_bank():
 
     data = SimpleScene(fps=10).data
     assert_valid_scene(data)
-    cam_states = [s for s in data.states if isinstance(s, CameraState)]
+    cam_states = data.camera_states()
     # Static scene always has exactly 1 Camera state (the initial snapshot position)
     assert len(cam_states) == 1
 
@@ -955,9 +949,7 @@ def test_same_square_scaled_and_readded_serializes_only_scaled_state():
     data = scene.data
     section = data.sections[0]
 
-    register_cmds = [
-        cmd for cmd in section.commands if isinstance(cmd, RegisterCommand)
-    ]
+    register_cmds = section.register_commands()
     assert len(register_cmds) == 1
 
     state_ref = register_cmds[0].state_ref
@@ -981,9 +973,7 @@ def test_register_play_mutate_register_back_emits_two_registers_with_two_states(
     scene = AddPlayMutateAddBack(fps=10)
     section = scene.data.sections[0]
 
-    register_cmds = [
-        cmd for cmd in section.commands if isinstance(cmd, RegisterCommand)
-    ]
+    register_cmds = section.register_commands()
     assert len(register_cmds) == 2
 
     states = scene.data.states
@@ -1009,8 +999,8 @@ def test_register_new_section_register_back_emits_two_registers_with_two_states(
     s0 = data.sections[0]
     s1 = data.sections[1]
 
-    reg0 = [cmd for cmd in s0.commands if isinstance(cmd, RegisterCommand)]
-    reg1 = [cmd for cmd in s1.commands if isinstance(cmd, RegisterCommand)]
+    reg0 = s0.register_commands()
+    reg1 = s1.register_commands()
     assert len(reg0) == 1
     assert len(reg1) == 1
 
