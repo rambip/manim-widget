@@ -131,6 +131,30 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
             frame_height=float(self.camera.frame_height),
         )
 
+        if not is_3d:
+            self._warn_if_camera_animated()
+
+    def _warn_if_camera_animated(self) -> None:
+        import warnings
+
+        for section in self.data.sections:
+            for cmd in section.animate_commands():
+                if any(a.id == "#camera" for a in cmd.animations):
+                    warnings.warn(
+                        "Camera was animated in a 2D scene. "
+                        "Pass is_3d=True when creating the widget to enable 3D camera support.",
+                        stacklevel=4,
+                    )
+                    return
+            for cmd in section.updater_commands():
+                if any("#camera" in frame for frame in cmd.frames):
+                    warnings.warn(
+                        "Camera was animated in a 2D scene. "
+                        "Pass is_3d=True when creating the widget to enable 3D camera support.",
+                        stacklevel=4,
+                    )
+                    return
+
     def _patch_initial_camera_snapshot(self) -> None:
         """Re-serialize the camera into the first section's snapshot after construct() has run.
 
