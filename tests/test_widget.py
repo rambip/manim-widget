@@ -937,6 +937,39 @@ def test_camera_state_has_four_points_and_focal_distance():
     assert fd > 0
 
 
+def test_camera_animation_on_2d_scene_warns():
+    import warnings
+    from manim import PI
+
+    class CamScene(ManimWidget):
+        def construct(self):
+            self.move_camera(phi=PI / 4)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        CamScene()
+
+    msgs = [str(w.message) for w in caught if "is_3d" in str(w.message)]
+    assert len(msgs) == 1
+    assert "is_3d=True" in msgs[0]
+
+
+def test_camera_animation_on_3d_scene_does_not_warn():
+    import warnings
+    from manim import PI
+
+    class CamScene3D(ManimWidget):
+        def construct(self):
+            self.move_camera(phi=PI / 4)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        CamScene3D(is_3d=True)
+
+    msgs = [str(w.message) for w in caught if "is_3d" in str(w.message)]
+    assert len(msgs) == 0
+
+
 def test_same_square_scaled_and_readded_serializes_only_scaled_state():
     class ScaledSquareScene(ManimWidget):
         def construct(self):
