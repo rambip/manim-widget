@@ -35,12 +35,11 @@ def sample_blobs(centers, n_per, std, rng):
 
 
 @app.function
-def make_cloud(coords, point_colors):
-    """Build a point-cloud PMobject; each point keeps its color (and identity by
-    index) so a Transform between two clouds morphs point-to-point."""
-    cloud = PMobject()
-    for point, color in zip(coords, point_colors):
-        cloud.add_points([point], color=color)
+def make_cloud(coords, color, stroke_width, opacity=0.5):
+    """Build a single-color PMobject with uniform opacity and point size."""
+    cloud = PMobject(stroke_width=stroke_width)
+    for point in coords:
+        cloud.add_points([point], color=color, alpha=opacity)
     return cloud
 
 
@@ -111,24 +110,35 @@ class PointCloud(ManimWidget):
         )
 
         rng = np.random.default_rng(42)
-        coords0 = sample_blobs(self.CENTERS0, self.N_PER, self.STD, rng)
-        coords1 = sample_blobs(self.CENTERS1, self.N_PER, self.STD, rng)
-        point_colors = [color for color in self.COLORS for _ in range(self.N_PER)]
+        # One blob group per color, each with a slightly different point size.
+        stroke_widths = [6, 8, 10]
+        clouds, cloud_ends = [], []
+        all_coords0, all_coords1 = [], []
+        for center0, center1, color, sw in zip(
+            self.CENTERS0, self.CENTERS1, self.COLORS, stroke_widths
+        ):
+            coords0 = sample_blobs([center0], self.N_PER, self.STD, rng)
+            coords1 = sample_blobs([center1], self.N_PER, self.STD, rng)
+            clouds.append(make_cloud(coords0, color, sw))
+            cloud_ends.append(make_cloud(coords1, color, sw))
+            all_coords0.append(coords0)
+            all_coords1.append(coords1)
 
-        cloud = make_cloud(coords0, point_colors)
-        cloud_end = make_cloud(coords1, point_colors)
+        coords0_flat = np.concatenate(all_coords0)
+        coords1_flat = np.concatenate(all_coords1)
         start_edges, born_edges, edge_anims, breaking = proximity_edge_animations(
-            coords0, coords1, self.EPSILON
+            coords0_flat, coords1_flat, self.EPSILON
         )
 
-        # Reveal the start state, then play the cloud morph and every edge
-        # animation together so the graph visibly reorganizes. Born edges start
-        # invisible at their endpoints' start positions, so add them up front.
-        self.play(FadeIn(cloud), FadeIn(start_edges), run_time=1.5)
+        self.add(*clouds)
+        self.play(FadeIn(start_edges), run_time=1.5)
         self.wait(0.5)
         self.add(born_edges)
-        self.play(Transform(cloud, cloud_end), *edge_anims, run_time=2.5)
-        # Broken edges have followed their endpoints to opacity 0; drop them.
+        self.play(
+            *[Transform(c, ce) for c, ce in zip(clouds, cloud_ends)],
+            *edge_anims,
+            run_time=2.5,
+        )
         self.remove(*breaking)
         self.wait()
 

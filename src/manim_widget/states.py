@@ -167,6 +167,7 @@ class PMobjectState(BaseModel):
     points: list[list[float]]  # one [x, y, z] per particle
     colors: list[str] | None = None  # per-point, parallel to points
     opacities: list[float] | None = None  # per-point, parallel to points
+    stroke_width: float | None = None  # point render size in pixels
 
 
 class CameraState(BaseModel):

@@ -53,7 +53,7 @@ class _ImgKey(tuple):
 
 
 class _PMobjectKey(tuple):
-    """State key for a point-cloud PMobject: (points, colors, opacities).
+    """State key for a point-cloud PMobject: (points, colors, opacities, stroke_width).
 
     All three are hashable tuples parallel by index; a single Point is just a
     one-element cloud.
@@ -62,9 +62,13 @@ class _PMobjectKey(tuple):
     __slots__ = ()
 
     def __new__(
-        cls, points: tuple, colors: tuple | None, opacities: tuple | None
+        cls,
+        points: tuple,
+        colors: tuple | None,
+        opacities: tuple | None,
+        stroke_width: float | None,
     ) -> "_PMobjectKey":
-        return super().__new__(cls, (points, colors, opacities))
+        return super().__new__(cls, (points, colors, opacities, stroke_width))
 
     @property
     def points(self) -> tuple:
@@ -77,6 +81,10 @@ class _PMobjectKey(tuple):
     @property
     def opacities(self) -> tuple | None:
         return self[2]
+
+    @property
+    def stroke_width(self) -> float | None:
+        return self[3]
 
 
 class _GroupKey(tuple):
