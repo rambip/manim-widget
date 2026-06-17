@@ -21,6 +21,15 @@ from .states import CameraState
 
 
 _ESM = Path(__file__).parent / "static" / "index.js"
+
+
+def _camera_bg_hex(camera: Any) -> str:
+    bg = camera.background_color
+    if hasattr(bg, "to_hex"):
+        return bg.to_hex()
+    return str(bg)
+
+
 _JS_BUNDLE = _ESM.read_text()
 
 
@@ -38,6 +47,7 @@ def serialize_scene(
     states: list[object],
     frame_width: float = 14.222222222222221,
     frame_height: float = 8.0,
+    background_color: str = "#000000",
 ) -> SceneData:
     section_data = [
         SectionData(
@@ -53,6 +63,7 @@ def serialize_scene(
         fps=fps,
         frame_width=frame_width,
         frame_height=frame_height,
+        background_color=background_color,
         states=states,
         sections=section_data,
     )
@@ -95,6 +106,9 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
         self,
         fps: int = 10,
         is_3d: bool = False,
+        frame_width: float = 14.222222222222221,
+        frame_height: float = 8.0,
+        background_color: str | None = None,
         shared_camera: Any = None,
         **kwargs: Any,
     ) -> None:
@@ -107,15 +121,29 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
 
         anywidget.AnyWidget.__init__(self)
         ThreeDScene.__init__(
-            self, renderer=self._renderer, camera_class=_camera_class, **kwargs
+            self,
+            renderer=self._renderer,
+            camera_class=_camera_class,
+            **kwargs,
         )
         self.is_3d = is_3d
         if shared_camera is not None:
             self.shared_camera_id = shared_camera.camera_id
 
+        self.camera.frame_width = frame_width
+        self.camera.frame_height = frame_height
+        if background_color is not None:
+            from manim.utils.color import ManimColor
+
+            self.camera.background_color = ManimColor(background_color)
+
         self._renderer.init_scene(self)
         self._renderer.open_section("initial")
         self._flush_setup_to_section()
+
+        _pre_fw = float(self.camera.frame_width)
+        _pre_fh = float(self.camera.frame_height)
+        _pre_bg: str = _camera_bg_hex(self.camera)
 
         self.construct()
 
@@ -129,10 +157,12 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
             states=self._renderer._state_registry.as_list(),
             frame_width=float(self.camera.frame_width),
             frame_height=float(self.camera.frame_height),
+            background_color=_camera_bg_hex(self.camera),
         )
 
         if not is_3d:
             self._warn_if_camera_animated()
+        self._warn_if_display_props_changed(_pre_fw, _pre_fh, _pre_bg)
 
     def _warn_if_camera_animated(self) -> None:
         import warnings
@@ -154,6 +184,25 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
                         stacklevel=4,
                     )
                     return
+
+    def _warn_if_display_props_changed(
+        self, pre_fw: float, pre_fh: float, pre_bg: str
+    ) -> None:
+        import warnings
+
+        cam = self.camera
+        if float(cam.frame_width) != pre_fw or float(cam.frame_height) != pre_fh:
+            warnings.warn(
+                "frame_width or frame_height was changed during construct(). "
+                "Only the initial value is serialized; changes during the scene are ignored.",
+                stacklevel=4,
+            )
+        if _camera_bg_hex(cam) != pre_bg:
+            warnings.warn(
+                "background_color was changed during construct(). "
+                "Only the initial value is serialized; changes during the scene are ignored.",
+                stacklevel=4,
+            )
 
     def _patch_initial_camera_snapshot(self) -> None:
         """Re-serialize the camera into the first section's snapshot after construct() has run.
@@ -224,6 +273,7 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
             states=list(reg.as_list()),
             frame_width=float(self.camera.frame_width),
             frame_height=float(self.camera.frame_height),
+            background_color=_camera_bg_hex(self.camera),
         )
 
     def next_section(

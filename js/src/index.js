@@ -222,10 +222,11 @@ async function render({ model, el }) {
       ? data.frame_width / data.frame_height
       : 16 / 9;
     const pxHeight = Math.round(pxWidth / aspectRatio);
+    const backgroundColor = data.background_color ?? '#000000';
     ui.container.style.height = `${pxHeight}px`;
     scene = is3D
-      ? new ThreeDScene(ui.container, { width: pxWidth, height: pxHeight, enableOrbitControls: true, orbitControlsUp: 'z' })
-      : new Scene(ui.container, { width: pxWidth, height: pxHeight });
+      ? new ThreeDScene(ui.container, { width: pxWidth, height: pxHeight, enableOrbitControls: true, orbitControlsUp: 'z', backgroundColor })
+      : new Scene(ui.container, { width: pxWidth, height: pxHeight, backgroundColor });
     registry = new MobjectRegistry();
     player = createPlayer(scene, registry);
     // Allow patchPlayer to re-wire orbit controls on the new scene instance.
@@ -311,9 +312,11 @@ async function render({ model, el }) {
       console.log(`[manim-widget] state updated (states: ${diff.states.length})`);
       sceneData = data;
       player.updateStates(diff.states);
+      if (diff.bgColor) scene.renderer.backgroundColor = diff.bgColor;
       scene.render();
     } else if (diff.kind === "camera") {
       sceneData = data;
+      if (diff.bgColor) scene.renderer.backgroundColor = diff.bgColor;
       player.applyCamera(diff.section, diff.camera);
     } else {
       await loadScene(data);
