@@ -265,7 +265,9 @@ export function createMobjectFromState(state) {
       if (typeof opacities[i] === "number") point.opacity = opacities[i];
       return point;
     });
-    return new PMobject({ points });
+    const opts = { points };
+    if (typeof state.stroke_width === "number") opts.pointSize = state.stroke_width;
+    return new PMobject(opts);
   }
 
   if (state.kind === "Group") {

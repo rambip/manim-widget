@@ -151,7 +151,10 @@ class MobSerializer:
                 for r, g, b, _ in rgbas
             )
             opacities = tuple(float(a) for *_, a in rgbas)
-        return _PMobjectKey(points, colors, opacities)
+        stroke_width = mob.get_stroke_width()
+        return _PMobjectKey(
+            points, colors, opacities, float(stroke_width) if stroke_width else None
+        )
 
     def _make_from_content(self, content: PixelContent) -> ImageMobjectState:
         return ImageMobjectState(
@@ -179,6 +182,7 @@ class MobSerializer:
                 opacities=(
                     list(state.opacities) if state.opacities is not None else None
                 ),
+                stroke_width=state.stroke_width,
             )
         if isinstance(state, _GroupKey):
             return GroupState(children=list(state.child_refs))

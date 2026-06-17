@@ -397,6 +397,11 @@
             "maximum": 1
           },
           "description": "Per-point opacities, parallel to 'points'."
+        },
+        "stroke_width": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Point render size in pixels (maps to manim-web pointSize)."
         }
       }
     },
