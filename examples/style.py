@@ -140,12 +140,22 @@ def _(PALETTES, palette_dropdown, widget):
 
 @app.function(hide_code=True)
 def test_palette_scene(runner):
-    runner.check(
-        PaletteScene,
-        init_kwargs={
-            "colors": ["#4269d0", "#efb118", "#ff725c", "#6cc5b0", "#3ca951", "#ff8ab7"]
-        },
-    ).assert_ok()
+    class _TestScene(PaletteScene):
+        def __init__(self, **kwargs):
+            super().__init__(
+                colors=[
+                    "#4269d0",
+                    "#efb118",
+                    "#ff725c",
+                    "#6cc5b0",
+                    "#3ca951",
+                    "#ff8ab7",
+                ],
+                background_color="#ffffff",
+                **kwargs,
+            )
+
+    runner.check(_TestScene).assert_ok()
 
 
 if __name__ == "__main__":
