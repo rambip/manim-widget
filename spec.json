@@ -26,6 +26,11 @@
       "type": "number",
       "description": "Scene frame height in Manim units (default 8.0)."
     },
+    "background_color": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{6}$",
+      "description": "Scene background color as a hex string (e.g. '#000000'). Default black."
+    },
     "sections": {
       "type": "array",
       "items": {

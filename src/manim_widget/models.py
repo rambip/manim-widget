@@ -177,6 +177,7 @@ class SceneData(BaseModel):
     fps: int
     frame_width: float = 14.222222222222221
     frame_height: float = 8.0
+    background_color: str = "#000000"
     states: list[MobjectState] = Field(default_factory=list)
     sections: list[SectionData]
 

@@ -3,10 +3,12 @@
  *
  * Returns one of:
  *   { kind: "full" }                          — structure changed, full reload needed
- *   { kind: "states", states: [...] }         — only state objects mutated, patch in place
- *   { kind: "camera", section, camera }       — only camera changed on one section
- *   { kind: "states+camera", states, section, camera } — both
+ *   { kind: "states", states, bgColor? }      — only state objects (and optionally bg) mutated
+ *   { kind: "camera", section, camera, bgColor? }
+ *   { kind: "states+camera", states, section, camera, bgColor? }
  *   { kind: "none" }                          — identical
+ *
+ * bgColor is set when background_color changed but no full reload is needed.
  */
 export function diffSceneData(prev, next) {
   if (!prev || !next) return { kind: "full" };
@@ -14,6 +16,10 @@ export function diffSceneData(prev, next) {
   if (prev.fps !== next.fps) return { kind: "full" };
   if (prev.frame_width !== next.frame_width) return { kind: "full" };
   if (prev.frame_height !== next.frame_height) return { kind: "full" };
+
+  const prevBg = prev.background_color ?? '#000000';
+  const nextBg = next.background_color ?? '#000000';
+  const bgColor = prevBg !== nextBg ? nextBg : null;
 
   const ps = prev.sections;
   const ns = next.sections;
@@ -48,15 +54,15 @@ export function diffSceneData(prev, next) {
     }
   }
 
-  if (!statesChanged && cameraSection === null) return { kind: "none" };
+  if (!statesChanged && cameraSection === null && !bgColor) return { kind: "none" };
 
   const states = nextStates;
 
   if (statesChanged && cameraSection !== null) {
-    return { kind: "states+camera", states, section: cameraSection, camera: cameraValue };
+    return { kind: "states+camera", states, section: cameraSection, camera: cameraValue, bgColor };
   }
   if (statesChanged) {
-    return { kind: "states", states };
+    return { kind: "states", states, bgColor };
   }
-  return { kind: "camera", section: cameraSection, camera: cameraValue };
+  return { kind: "camera", section: cameraSection, camera: cameraValue, bgColor };
 }
