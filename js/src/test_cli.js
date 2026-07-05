@@ -9,11 +9,12 @@ GlobalRegistrator.register();
 import * as fs from "fs";
 import * as path from "path";
 
-import { Scene, Create, FadeIn, FadeOut, Write, Rotate, ScaleInPlace, Transform, ReplacementTransform, Circle, Square, VMobject, VGroup } from "manim-web";
+import { Scene, ThreeDScene, Create, FadeIn, FadeOut, Write, Rotate, ScaleInPlace, Transform, ReplacementTransform, Circle, Square, VMobject, VGroup } from "manim-web";
 import { Player } from "./player.js";
 import { MobjectRegistry } from "./registry.js";
 
 const args = process.argv.slice(2);
+const is3D = args.includes("--3d");
 const filePathArg = args.find(arg => !arg.startsWith("-"));
 
 const VMOBJECT_KINDS = new Set([
@@ -173,6 +174,19 @@ function serializeRuntimeState(registry) {
   return { snapshot, states, camera_center: cameraCenter };
 }
 
+function serializeCameraRuntime(scene) {
+  if (scene?.camera3D && typeof scene.camera3D.getOrbitAngles === "function") {
+    const angles = scene.camera3D.getOrbitAngles();
+    return {
+      kind: "3d",
+      phi: angles.phi,
+      theta: angles.theta,
+      distance: angles.distance,
+    };
+  }
+  return { kind: "2d" };
+}
+
 async function readInput() {
   if (!filePathArg) {
     return new Promise((resolve, reject) => {
@@ -281,7 +295,9 @@ function validateSceneGraph(scene, context) {
   }
 }
 
-const scene = Scene.createHeadless();
+const scene = is3D
+  ? ThreeDScene.createHeadless({ enableOrbitControls: true })
+  : Scene.createHeadless();
 const registry = new MobjectRegistry();
 const player = new Player(scene, registry);
 
@@ -340,6 +356,7 @@ for (let i = 0; i < spec.sections.length; i++) {
     sectionEndStates.push({
       name: section.name,
       end_state: serializeRuntimeState(registry),
+      camera: serializeCameraRuntime(scene),
     });
   } catch (e) {
     errors.push({
@@ -359,6 +376,7 @@ const result = {
   errors,
   sectionIds,
   sectionEndStates,
+  sceneKind: is3D ? "3d" : "2d",
 };
 
 console.log(JSON.stringify(result));

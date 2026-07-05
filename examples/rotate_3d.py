@@ -27,13 +27,13 @@ class Rotate3D(ManimWidget):
 
 @app.cell
 def _():
-    Rotate3D()
+    Rotate3D(is_3d=True)
     return
 
 
 @app.function(hide_code=True)
 def test(runner):
-    runner.check(Rotate3D).assert_ok()
+    runner.check(Rotate3D, is_3d=True).assert_ok()
 
 
 if __name__ == "__main__":

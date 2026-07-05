@@ -15,12 +15,15 @@ CLI usage::
     # from a scene class
     python tests/js_runner.py examples/arrow.py ArrowDance
 
+    # from a 3D scene class
+    python tests/js_runner.py --3d examples/fixed_mobjects.py FixedMobjectsDemo
+
     # from a marimo notebook class
     python tests/js_runner.py examples/polygon_on_axes.py PolygonOnAxes
 
     # from pre-serialized JSON
     python tests/js_runner.py --json < scene.json
-    uv run python -c "..." | python tests/js_runner.py --json
+    uv run python -c "..." | python tests/js_runner.py --json --3d
 """
 
 from __future__ import annotations
@@ -71,6 +74,7 @@ class JSResult:
     warnings: list[dict[str, Any]] = field(default_factory=list)
     section_ids: list[dict[str, Any]] = field(default_factory=list)
     section_end_states: list[dict[str, Any]] = field(default_factory=list)
+    scene_kind: str = "2d"
 
     @classmethod
     def _from_json(cls, data: dict[str, Any]) -> JSResult:
@@ -81,6 +85,7 @@ class JSResult:
             warnings=data.get("warnings", []),
             section_ids=data.get("sectionIds", []),
             section_end_states=data.get("sectionEndStates", []),
+            scene_kind=data.get("sceneKind", "2d"),
         )
 
     @property
@@ -148,9 +153,9 @@ class JSRunner:
             stderr=subprocess.PIPE,
         )
 
-    def _bun_args(self, input_path: str) -> list[str]:
+    def _bun_args(self, input_path: str, *, is_3d: bool = False) -> list[str]:
         if self._debug:
-            return [
+            args = [
                 "bun",
                 "run",
                 "--preload",
@@ -158,9 +163,16 @@ class JSRunner:
                 "--conditions",
                 "source",
                 str(_CLI),
-                input_path,
             ]
-        return ["bun", "run", str(_BUNDLE), input_path]
+            if is_3d:
+                args.append("--3d")
+            args.append(input_path)
+            return args
+        args = ["bun", "run", str(_BUNDLE)]
+        if is_3d:
+            args.append("--3d")
+        args.append(input_path)
+        return args
 
     @staticmethod
     def _strip_timing(data: dict[str, Any]) -> dict[str, Any]:
@@ -194,7 +206,11 @@ class JSRunner:
         return {**data, "sections": sections}
 
     def check_data(
-        self, scene_data: str | dict[str, Any], *, js: bool = True
+        self,
+        scene_data: str | dict[str, Any],
+        *,
+        js: bool = True,
+        is_3d: bool = False,
     ) -> JSResult:
         """Validate pre-serialized scene data against spec.json, then run through the JS headless runner.
 
@@ -215,7 +231,11 @@ class JSRunner:
         if self._schema is not None:
             validate(data, self._schema)
         if not js:
-            return JSResult(ok=True, section_count=len(data.get("sections", [])))
+            return JSResult(
+                ok=True,
+                section_count=len(data.get("sections", [])),
+                scene_kind="3d" if is_3d else "2d",
+            )
         scene_json = json.dumps(self._strip_timing(data))
 
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
@@ -226,7 +246,7 @@ class JSRunner:
         try:
             with open(out_path, "w") as outf:
                 proc = subprocess.run(
-                    self._bun_args(input_path),
+                    self._bun_args(input_path, is_3d=is_3d),
                     stdout=outf,
                     stderr=subprocess.PIPE,
                     text=True,
@@ -247,15 +267,19 @@ class JSRunner:
             ) from exc
         return JSResult._from_json(data)
 
-    def check(self, scene_cls: type, fps: int = 10, *, js: bool = True) -> JSResult:
+    def check(
+        self, scene_cls: type, fps: int = 10, *, js: bool = True, is_3d: bool = False
+    ) -> JSResult:
         """Instantiate scene_cls and validate it through the JS headless runner.
 
         Pass ``js=False`` to skip JS playback (serialization + schema validation
         still run); see :meth:`check_data`.
         """
-        scene = scene_cls(fps=fps)
+        scene = scene_cls(fps=fps, is_3d=True) if is_3d else scene_cls(fps=fps)
         return self.check_data(
-            scene.data.model_dump(by_alias=True, exclude_none=True), js=js
+            scene.data.model_dump(by_alias=True, exclude_none=True),
+            js=js,
+            is_3d=is_3d,
         )
 
 
@@ -290,12 +314,15 @@ if __name__ == "__main__":
     parser.add_argument(
         "class_name", nargs="?", help="Scene class name (required with example)"
     )
+    parser.add_argument(
+        "--3d", action="store_true", dest="is_3d", help="Run JS playback in 3D mode"
+    )
 
     args = parser.parse_args()
     runner = JSRunner(debug=True)
 
     if args.json:
-        result = runner.check_data(sys.stdin.read())
+        result = runner.check_data(sys.stdin.read(), is_3d=args.is_3d)
     else:
         if not args.class_name:
             parser.error("class_name is required when providing an example file")
@@ -303,7 +330,7 @@ if __name__ == "__main__":
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         scene_cls = getattr(mod, args.class_name)
-        result = runner.check(scene_cls)
+        result = runner.check(scene_cls, is_3d=args.is_3d)
 
     _pretty_print(result)
     sys.exit(0 if result.ok else 1)
