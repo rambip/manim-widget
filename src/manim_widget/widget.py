@@ -30,7 +30,7 @@ def _camera_bg_hex(camera: Any) -> str:
     return str(bg)
 
 
-_JS_BUNDLE = _ESM.read_text()
+_JS_BUNDLE = _ESM.read_text(encoding="utf-8")
 
 
 def _scene_data_to_json(scene_data: SceneData, widget: anywidget.AnyWidget) -> dict:
