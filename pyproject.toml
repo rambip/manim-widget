@@ -10,7 +10,6 @@ requires-python = ">=3.11"
 dependencies = [
     "anywidget>=0.9.21",
     "manim>=0.20.1",
-    "marimo>=0.23.0",
     "pydantic>=2.13.4",
 ]
 

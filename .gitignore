@@ -19,6 +19,9 @@ js/node_modules
 # local notebooks
 notebooks/
 
+# personal scratch notes, not part of the project
+.dev/
+
 TODO.md
 
 # Editor swap/temp files
