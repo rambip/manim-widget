@@ -97,6 +97,12 @@ class CaptureRenderer:
     def state_ref_for(self, mob: Mobject) -> int:
         return self._serializer.state_ref_for(mob)
 
+    def state_ref_for_register(self, mob: Mobject) -> int:
+        return self._serializer.state_ref_for_register(mob)
+
+    def set_fixed(self, mob: Mobject, mode: str | None) -> None:
+        self._serializer.set_fixed(mob, mode)
+
     def serialize_mobject(self, mob: Mobject, *, for_snapshot: bool) -> MobjectState:
         return self._serializer.serialize_mobject(mob, for_snapshot=for_snapshot)
 

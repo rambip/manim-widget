@@ -163,6 +163,28 @@ export class Player {
     }
   }
 
+  /**
+   * Pin/unpin a mobject on the camera-relative HUD per its state's `fixed`
+   * flag. Idempotent — safe to call on every register/snapshot-restore
+   * regardless of whether fixed status actually changed, and regardless of
+   * whether the mobject is already in the scene: manim-web's
+   * addFixedInFrameMobjects() only records intent for a not-yet-added
+   * mobject and resolves the actual HUD placement once its introducing
+   * animation adds it (#505). No-ops on scenes (plain 2D `Scene`) that
+   * don't expose these methods.
+   */
+  _syncFixed(mob, state) {
+    const scene = this._scene;
+    if (state?.fixed === "frame") {
+      scene.addFixedInFrameMobjects?.(mob);
+    } else if (state?.fixed === "orientation") {
+      scene.addFixedOrientationMobjects?.(mob);
+    } else {
+      scene.removeFixedInFrameMobjects?.(mob);
+      scene.removeFixedOrientationMobjects?.(mob);
+    }
+  }
+
   async _restoreSnapshot(snapshot, section) {
     for (const [id, value] of Object.entries(snapshot)) {
       if (id === "#camera") {
@@ -176,6 +198,7 @@ export class Player {
       this._registry.set(id, mob);
       await this._finalizeMobject(mob, state);
       this._scene.add(mob);
+      this._syncFixed(mob, state);
     }
   }
 
@@ -204,6 +227,22 @@ export class Player {
           return;
         }
         const state = this._stateFromRef(section, cmd.state_ref);
+
+        // `register` is create-or-update: an id already in the registry means
+        // this is a live mobject whose state pointer moved (e.g. a
+        // add_fixed_in_frame_mobjects toggle) — update it in place rather
+        // than recreating, so we don't lose its position in the scene graph.
+        const existing = this._registry.get(cmd.id);
+        if (existing) {
+          applyState(existing, state);
+          if (!this._stateRefToMobs.has(cmd.state_ref)) {
+            this._stateRefToMobs.set(cmd.state_ref, []);
+          }
+          this._stateRefToMobs.get(cmd.state_ref).push(existing);
+          this._syncFixed(existing, state);
+          return;
+        }
+
         let mob;
         if (Array.isArray(cmd.child_ids) && cmd.child_ids.length > 0) {
           // Children are already registered; create mob without adding state.children,
@@ -223,8 +262,12 @@ export class Player {
         this._stateRefToMobs.get(cmd.state_ref).push(mob);
         // Do NOT add to scene here — introducing animations (Add, FadeIn,
         // Create, …) handle that themselves. Adding here causes a visible
-        // flash before the animation resets opacity to 0.
+        // flash before the animation resets opacity to 0. Fixed-status
+        // syncing is safe before the mob lands in the scene: manim-web's
+        // Scene.add() no longer reparents already-pinned mobjects out of
+        // the HUD scene (fixed upstream, #505).
         await this._finalizeMobject(mob, state);
+        this._syncFixed(mob, state);
         return;
       }
       case "remove": {

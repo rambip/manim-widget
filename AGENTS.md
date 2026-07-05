@@ -85,7 +85,7 @@ Built from `js/src/*` via Bun with the typia transform applied. This is what pac
 
 | cmd | purpose |
 |---|---|
-| `register` | bind `id → state_ref` in scene graph and show in scene |
+| `register` | bind `id → state_ref` in scene graph and show in scene; idempotent — if `id` is already registered, updates its state (incl. `fixed` status) in place instead of recreating it |
 | `remove` | free `id` from registry (emitted after `FadeOut`, `ReplacementTransform`) |
 | `rebind` | remap `source_id → target_id` (emitted after `ReplacementTransform`) |
 | `animate` | one `scene.play()` with no active mobject updaters; contains animation descriptors |
@@ -110,6 +110,8 @@ Families: `SimpleAnimation`, `TransformAnimation` (`Transform`, `MoveToTarget`),
 | `ValueTracker` | scalar `value` only; not rendered |
 | `Camera` | `{points: [UL,UR,DR,DL], focal_distance}` — camera frame corners; `focal_distance==0` means 2D |
 | `Derived` | `{from: state_ref, points?}` — positional overlay referencing a content state (used for ImageMobject placement) |
+
+All non-`Camera` states carry an optional `fixed: "frame" | "orientation" | null` field, set by `add_fixed_in_frame_mobjects`/`add_fixed_orientation_mobjects` (cleared by the matching `remove_*`). Root-level only — no dedicated command; toggling status on an already-live mobject just re-emits `register` for its id, which the idempotent semantics above update in place. In the JS player, `_syncFixed` reads this field to pin/unpin the mobject on `manim-web`'s HUD (`addFixedInFrameMobjects`/`addFixedOrientationMobjects`). Beware: `manim-web`'s `Scene.add()` unconditionally reparents any not-yet-tracked mobject's three object into the main scene root (its `_isInSceneGraph` check only special-cases objects already nested under the main scene, not ones parked in the separate HUD scene) — so a brand-new mobject must not be pinned until *after* its introducing animation has added it to the scene, or the pin is silently undone. `_syncFixedOrDefer`/`_flushPendingFixed` implement this ordering.
 
 ---
 

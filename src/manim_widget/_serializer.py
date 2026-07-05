@@ -62,9 +62,35 @@ class MobSerializer:
             make_from_state=self._make_from_state,
         )
         self.state_refs: dict[int, list[int]] = {}
+        # Persistent add_fixed_in_frame_mobjects/add_fixed_orientation_mobjects
+        # status, keyed by id(mob). Survives across sections so a direct section
+        # jump can restore it from the snapshot's state_ref alone.
+        self._fixed_status: dict[int, str] = {}
 
     def short_id(self, mob: object) -> str:
         return self._id_counter.short_id(mob)
+
+    def set_fixed(self, mob: Mobject, mode: str | None) -> None:
+        if mode is None:
+            self._fixed_status.pop(id(mob), None)
+        else:
+            self._fixed_status[id(mob)] = mode
+
+    def state_ref_for_register(self, mob: Mobject) -> int:
+        """Like ``state_ref_for``, but wraps the result with the mob's current
+        fixed status if any.
+
+        The wrap is a synthetic, non-deduped copy (via ``insert_raw``) so that
+        two identical-looking mobjects that differ only in fixed status never
+        collide in the dedup bank, and so the flag never needs to participate
+        in the content-hash keys used by ``extract_state``.
+        """
+        ref = self.state_ref_for(mob)
+        mode = self._fixed_status.get(id(mob))
+        if mode is None:
+            return ref
+        state = self._state_registry.get_by_id(ref).model_copy(update={"fixed": mode})
+        return self._state_registry.insert_raw(state)
 
     # ------------------------------------------------------------------
     # Registry extract / make callbacks
@@ -457,7 +483,7 @@ class MobSerializer:
             return [
                 RegisterCommand(
                     id=self.short_id(mob),
-                    state_ref=self.state_ref_for(mob),
+                    state_ref=self.state_ref_for_register(mob),
                 )
             ]
 
@@ -474,7 +500,7 @@ class MobSerializer:
         cmds.append(
             RegisterCommand(
                 id=self.short_id(mob),
-                state_ref=self.state_ref_for(mob),
+                state_ref=self.state_ref_for_register(mob),
                 child_ids=child_ids,
             )
         )
