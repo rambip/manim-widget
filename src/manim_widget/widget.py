@@ -114,6 +114,9 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
 
     playback_error = traitlets.Unicode("").tag(sync=True)
     is_3d = traitlets.Bool(False).tag(sync=True)
+    orbit_controls_up = traitlets.Enum(["x", "y", "z"], default_value="z").tag(
+        sync=True
+    )
     shared_camera_id = traitlets.Unicode("").tag(sync=True)
 
     def __init__(
@@ -123,6 +126,7 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
         frame_width: float = 14.222222222222221,
         frame_height: float = 8.0,
         background_color: str | None = None,
+        orbit_controls_up: str = "z",
         shared_camera: Any = None,
         **kwargs: Any,
     ) -> None:
@@ -141,6 +145,7 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
             **kwargs,
         )
         self.is_3d = is_3d
+        self.orbit_controls_up = orbit_controls_up
         if shared_camera is not None:
             self.shared_camera_id = shared_camera.camera_id
 

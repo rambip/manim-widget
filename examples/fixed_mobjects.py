@@ -33,7 +33,7 @@ class FixedMobjectsDemo(ManimWidget):
     """
 
     def construct(self):
-        self.set_camera_orientation(phi=1.0, theta=0.8)
+        self.set_camera_orientation(phi=1.0, theta=1.1, zoom=2)
 
         axes = ThreeDAxes(axis_config={"color": GRAY})
         title = Text("Vertices of a cube", color=WHITE).to_edge(UP)
@@ -73,7 +73,7 @@ def test_fixed_mobjects_demo(runner):
     camera = result.section_end_states[0]["camera"]
     assert camera["kind"] == "3d"
     assert abs(camera["phi"] - 1.0) < 1e-6
-    assert abs(camera["theta"] - 0.8) < 1e-6
+    assert abs(camera["theta"] - 1.1) < 1e-6
 
 
 if __name__ == "__main__":
