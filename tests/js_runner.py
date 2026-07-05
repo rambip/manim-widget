@@ -75,6 +75,8 @@ class JSResult:
     section_ids: list[dict[str, Any]] = field(default_factory=list)
     section_end_states: list[dict[str, Any]] = field(default_factory=list)
     scene_kind: str = "2d"
+    stdout: str = ""
+    stderr: str = ""
 
     @classmethod
     def _from_json(cls, data: dict[str, Any]) -> JSResult:
@@ -103,6 +105,11 @@ class JSResult:
         if section >= len(self.section_ids):
             return []
         return self.section_ids[section].get("scene_ids", [])
+
+    @property
+    def logs(self) -> str:
+        """Captured JS process logs. The CLI JSON stdout is omitted."""
+        return self.stderr
 
 
 class JSRunner:
@@ -211,6 +218,7 @@ class JSRunner:
         *,
         js: bool = True,
         is_3d: bool = False,
+        show_logs: bool = False,
     ) -> JSResult:
         """Validate pre-serialized scene data against spec.json, then run through the JS headless runner.
 
@@ -265,10 +273,21 @@ class JSRunner:
             raise RuntimeError(
                 f"CLI produced non-JSON output (exit {proc.returncode}):\n{raw[:500]}\n{proc.stderr}"
             ) from exc
-        return JSResult._from_json(data)
+        result = JSResult._from_json(data)
+        result.stdout = raw
+        result.stderr = proc.stderr or ""
+        if show_logs and result.logs:
+            print(result.logs, end="" if result.logs.endswith("\n") else "\n")
+        return result
 
     def check(
-        self, scene_cls: type, fps: int = 10, *, js: bool = True, is_3d: bool = False
+        self,
+        scene_cls: type,
+        fps: int = 10,
+        *,
+        js: bool = True,
+        is_3d: bool = False,
+        show_logs: bool = False,
     ) -> JSResult:
         """Instantiate scene_cls and validate it through the JS headless runner.
 
@@ -280,10 +299,11 @@ class JSRunner:
             scene.data.model_dump(by_alias=True, exclude_none=True),
             js=js,
             is_3d=is_3d,
+            show_logs=show_logs,
         )
 
 
-def _pretty_print(result: JSResult) -> None:
+def _pretty_print(result: JSResult, *, show_logs: bool = False) -> None:
     status = "OK" if result.ok else "FAILED"
     print(f"[{status}] {result.section_count} section(s)")
     for w in result.warnings:
@@ -297,6 +317,8 @@ def _pretty_print(result: JSResult) -> None:
         if e.get("stack"):
             for line in e["stack"].splitlines()[1:]:
                 print(f"           {line}")
+    if show_logs and result.logs:
+        print(result.logs, end="" if result.logs.endswith("\n") else "\n")
 
 
 if __name__ == "__main__":
@@ -317,6 +339,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--3d", action="store_true", dest="is_3d", help="Run JS playback in 3D mode"
     )
+    parser.add_argument(
+        "--show-logs",
+        action="store_true",
+        help="Print captured JS stderr logs after the structured result",
+    )
 
     args = parser.parse_args()
     runner = JSRunner(debug=True)
@@ -332,5 +359,5 @@ if __name__ == "__main__":
         scene_cls = getattr(mod, args.class_name)
         result = runner.check(scene_cls, is_3d=args.is_3d)
 
-    _pretty_print(result)
+    _pretty_print(result, show_logs=args.show_logs)
     sys.exit(0 if result.ok else 1)

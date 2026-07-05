@@ -217,6 +217,7 @@ async function render({ model, el }) {
     console.log("[manim-widget] scene cleared");
 
     const is3D = model.get("is_3d");
+    const orbitControlsUp = model.get("orbit_controls_up") || "z";
     const pxWidth = 600;
     const aspectRatio = (data.frame_width && data.frame_height)
       ? data.frame_width / data.frame_height
@@ -225,7 +226,7 @@ async function render({ model, el }) {
     const backgroundColor = data.background_color ?? '#000000';
     ui.container.style.height = `${pxHeight}px`;
     scene = is3D
-      ? new ThreeDScene(ui.container, { width: pxWidth, height: pxHeight, enableOrbitControls: true, orbitControlsUp: 'z', backgroundColor })
+      ? new ThreeDScene(ui.container, { width: pxWidth, height: pxHeight, enableOrbitControls: true, orbitControlsUp, backgroundColor })
       : new Scene(ui.container, { width: pxWidth, height: pxHeight, backgroundColor });
     registry = new MobjectRegistry();
     player = createPlayer(scene, registry);

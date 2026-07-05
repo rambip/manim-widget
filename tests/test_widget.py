@@ -1061,6 +1061,16 @@ def test_camera_animation_on_3d_scene_does_not_warn():
     assert len(msgs) == 0
 
 
+def test_orbit_controls_up_is_synced_widget_keyword():
+    class EmptyScene(ManimWidget):
+        def construct(self):
+            pass
+
+    widget = EmptyScene(is_3d=True, orbit_controls_up="y")
+
+    assert widget.orbit_controls_up == "y"
+
+
 def test_same_square_scaled_and_readded_serializes_only_scaled_state():
     class ScaledSquareScene(ManimWidget):
         def construct(self):
