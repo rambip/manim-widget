@@ -140,8 +140,8 @@ def test_camera_restored_to_initial_position(runner):
 
 @app.function(hide_code=True)
 def test_shared_camera_scenes_play(runner):
-    runner.check(SquareScene).assert_ok()
-    runner.check(CircleScene).assert_ok()
+    runner.check(SquareScene, is_3d=True).assert_ok()
+    runner.check(CircleScene, is_3d=True).assert_ok()
 
 
 if __name__ == "__main__":

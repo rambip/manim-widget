@@ -153,7 +153,7 @@ def _():
 def test(runner):
     # js=False: the MathTex labels need a local LaTeX install the headless JS
     # bundle can't provide; this still serializes + schema-validates the scene.
-    runner.check(PointCloud, js=False).assert_ok()
+    runner.check(PointCloud, js=False, is_3d=True).assert_ok()
 
 
 if __name__ == "__main__":

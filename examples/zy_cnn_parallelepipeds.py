@@ -131,7 +131,7 @@ def _():
 
 @app.function(hide_code=True)
 def test(runner):
-    runner.check(ZYImageCNN).assert_ok()
+    runner.check(ZYImageCNN, is_3d=True).assert_ok()
 
 
 if __name__ == "__main__":

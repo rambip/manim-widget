@@ -68,7 +68,12 @@ def _():
 
 @app.function(hide_code=True)
 def test_fixed_mobjects_demo(runner):
-    runner.check(FixedMobjectsDemo).assert_ok()
+    result = runner.check(FixedMobjectsDemo, is_3d=True)
+    result.assert_ok()
+    camera = result.section_end_states[0]["camera"]
+    assert camera["kind"] == "3d"
+    assert abs(camera["phi"] - 1.0) < 1e-6
+    assert abs(camera["theta"] - 0.8) < 1e-6
 
 
 if __name__ == "__main__":
