@@ -56,6 +56,8 @@ Built from `js/src/*` via Bun with the typia transform applied. This is what pac
 
 `spec.json` is the single source of truth. When changing payload shape: update `spec.json` first, then code, then tests.
 
+The spec is deliberately minimal — favor the smallest set of primitives that can express a behavior over adding a dedicated shape for it. Before adding a new field/kind, check whether an existing primitive already composes into it.
+
 ### Top-level shape
 
 ```json
@@ -67,6 +69,7 @@ Built from `js/src/*` via Bun with the typia transform applied. This is what pac
 ```
 
 - `states`: global deduplicated bank shared across all sections. All commands, frames, and snapshots reference entries by integer index.
+- Think of the state bank as a DAG, not a flat list: `state_ref`s are dependency edges (e.g. `GroupState.children`, `Derived.from`, `MathTexSource` transform corners). This is what gives dedup its power — a state is defined in terms of the states it depends on, much like bindings in a functional language.
 
 ### Section
 
@@ -134,6 +137,8 @@ All non-`Camera` states carry an optional `fixed: "frame" | "orientation" | null
   from manim import MathTex, ...
   ```
   (In a marimo notebook this means calling `patch_tex()` inside `with app.setup:` ahead of the `from manim import (...)` line.)
+
+`manim-web` is genuinely buggy — we contribute upstream fixes heavily, but new bugs surface often. If playback is wrong and the Python/player-side logic looks correct, don't stay stuck trying to work around it there; suspect `manim-web` itself and isolate it (see below).
 
 ### Debugging a suspected JS-side bug
 
