@@ -29,7 +29,7 @@ body:
         Any information that can be useful to debug.
         1. The json output `your_widget.data`
         2. the version you're running
-        
+
         Paste the full output of `your_widget.scene_data` below.
         The entire visual state is encoded in this JSON — do you notice something fishy?
         A missing element, wrong coordinates, an animation that vanishes?
