@@ -1,3 +1,47 @@
+import {
+  easeInBack,
+  easeInBounce,
+  easeInCirc,
+  easeInCubic,
+  easeInElastic,
+  easeInExpo,
+  easeInOutBack,
+  easeInOutBounce,
+  easeInOutCirc,
+  easeInOutCubic,
+  easeInOutElastic,
+  easeInOutExpo,
+  easeInOutQuad,
+  easeInOutQuart,
+  easeInOutQuint,
+  easeInOutSine,
+  easeInQuad,
+  easeInQuart,
+  easeInQuint,
+  easeInSine,
+  easeOutBack,
+  easeOutBounce,
+  easeOutCirc,
+  easeOutCubic,
+  easeOutElastic,
+  easeOutExpo,
+  easeOutQuad,
+  easeOutQuart,
+  easeOutQuint,
+  easeOutSine,
+  exponentialDecay,
+  lingering,
+  linear,
+  rushFrom,
+  rushInto,
+  runningStart,
+  slowInto,
+  smooth,
+  thereAndBack,
+  thereAndBackWithPause,
+  wiggleRate,
+} from "manim-web";
+
 export function _vec3norm(v) {
   const len = Math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2);
   return len > 0 ? [v[0] / len, v[1] / len, v[2] / len] : v;
@@ -74,17 +118,64 @@ export function applyCameraState(scene, state) {
   }
 }
 
-export function getRateFunc(name) {
+export function getRateFunc(name, params = {}) {
   switch (name) {
-    case "linear": return (t) => t;
-    case "rush_into": return (t) => 2 * t * t;
-    case "rush_from": return (t) => 1 - 2 * (1 - t) * (1 - t);
-    default: return (t) => t * t * (3 - 2 * t); // smooth
+    case "linear": return linear;
+    case "smooth": return smooth;
+    case "rush_into": return rushInto;
+    case "rush_from": return rushFrom;
+    case "slow_into": return slowInto;
+    case "there_and_back": return thereAndBack;
+    case "there_and_back_with_pause": return thereAndBackWithPause(params.pause_ratio);
+    case "running_start": return runningStart(params.pull_factor);
+    case "wiggle": return wiggleRate(params.wiggles);
+    case "lingering": return lingering;
+    case "exponential_decay": return exponentialDecay(params.half_life);
+    case "ease_in_sine": return easeInSine;
+    case "ease_out_sine": return easeOutSine;
+    case "ease_in_out_sine": return easeInOutSine;
+    case "ease_in_quad": return easeInQuad;
+    case "ease_out_quad": return easeOutQuad;
+    case "ease_in_out_quad": return easeInOutQuad;
+    case "ease_in_cubic": return easeInCubic;
+    case "ease_out_cubic": return easeOutCubic;
+    case "ease_in_out_cubic": return easeInOutCubic;
+    case "ease_in_quart": return easeInQuart;
+    case "ease_out_quart": return easeOutQuart;
+    case "ease_in_out_quart": return easeInOutQuart;
+    case "ease_in_quint": return easeInQuint;
+    case "ease_out_quint": return easeOutQuint;
+    case "ease_in_out_quint": return easeInOutQuint;
+    case "ease_in_expo": return easeInExpo;
+    case "ease_out_expo": return easeOutExpo;
+    case "ease_in_out_expo": return easeInOutExpo;
+    case "ease_in_circ": return easeInCirc;
+    case "ease_out_circ": return easeOutCirc;
+    case "ease_in_out_circ": return easeInOutCirc;
+    case "ease_in_back": return easeInBack;
+    case "ease_out_back": return easeOutBack;
+    case "ease_in_out_back": return easeInOutBack;
+    case "ease_in_elastic": return easeInElastic;
+    case "ease_out_elastic": return easeOutElastic;
+    case "ease_in_out_elastic": return easeInOutElastic;
+    case "ease_in_bounce": return easeInBounce;
+    case "ease_out_bounce": return easeOutBounce;
+    case "ease_in_out_bounce": return easeInOutBounce;
+    default: return smooth;
   }
 }
 
-export async function runCameraAnimation(scene, registry, fps, startState, endState, duration, rateFuncName = "smooth") {
-  const rateFunc = getRateFunc(rateFuncName);
+export async function runCameraAnimation(
+  scene,
+  registry,
+  fps,
+  startState,
+  endState,
+  duration,
+  rateFuncName = "smooth",
+  rateFuncParams = {},
+) {
+  const rateFunc = getRateFunc(rateFuncName, rateFuncParams);
   const numFrames = Math.max(1, Math.ceil(duration * fps));
   const dt = (duration * 1000) / numFrames;
   for (let i = 1; i <= numFrames; i++) {

@@ -50,6 +50,15 @@ def _rate_func_name(anim: object) -> str:
     return "smooth" if "smooth" in name.lower() else name
 
 
+def _rate_func_params(anim: object) -> dict[str, float] | None:
+    params = getattr(
+        getattr(anim, "rate_func", None), "_manim_widget_rate_func_params", None
+    )
+    if not isinstance(params, dict):
+        return None
+    return {str(k): float(v) for k, v in params.items()}
+
+
 @dataclass
 class SectionRecord:
     name: str
@@ -459,6 +468,7 @@ class CaptureRenderer:
 
         target_mobject = getattr(anim, "target_mobject", None)
         rate_func = _rate_func_name(anim)
+        rate_func_params = _rate_func_params(anim)
 
         methods = getattr(anim, "methods", None)
         if methods:
@@ -470,6 +480,7 @@ class CaptureRenderer:
                 id=mob_id,
                 state_ref=self.state_ref_for(target_mobject),
                 rate_func=rate_func,
+                rate_func_params=rate_func_params,
             )
 
         if isinstance(anim, GrowArrow):
@@ -478,6 +489,7 @@ class CaptureRenderer:
                 id=mob_id,
                 state_ref=self.state_ref_for(anim.mobject),
                 rate_func=rate_func,
+                rate_func_params=rate_func_params,
             )
 
         if anim_name in ("Transform", "ReplacementTransform"):
@@ -496,6 +508,7 @@ class CaptureRenderer:
                 id=mob_id,
                 state_ref=self.state_ref_for(target_mobject),
                 rate_func=rate_func,
+                rate_func_params=rate_func_params,
                 params=transform_params or None,
             )
 
@@ -518,6 +531,7 @@ class CaptureRenderer:
                 kind=kind,
                 ids=ids,
                 rate_func=rate_func,
+                rate_func_params=rate_func_params,
                 params={"path_arc": float(path_arc)} if path_arc is not None else None,
             )
 
@@ -543,6 +557,7 @@ class CaptureRenderer:
             kind=anim_name,
             id=mob_id,
             rate_func=rate_func,
+            rate_func_params=rate_func_params,
             params=params or None,
         )
 

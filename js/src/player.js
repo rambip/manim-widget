@@ -1,5 +1,5 @@
 import { Transform, Swap, CyclicReplace, VMobject } from "manim-web";
-import { applyCameraState, runCameraAnimation } from "./camera.js";
+import { applyCameraState, getRateFunc, runCameraAnimation } from "./camera.js";
 import { applyContours, applyState, applyTexTransform, applyImageCorners, createMobjectFromState } from "./mob.js";
 import { buildSimpleAnimation } from "./anim.js";
 
@@ -323,7 +323,9 @@ export class Player {
       const targetState = this._stateFromRef(section, desc.state_ref);
       const target = this._instantiateFromRef(section, desc.state_ref);
       await this._finalizeMobject(target, targetState);
-      return new Transform(mob, target);
+      const animation = new Transform(mob, target);
+      this._applyDescriptorRateFunc(animation, desc);
+      return animation;
     }
 
     if ("ids" in desc) {
@@ -339,10 +341,14 @@ export class Player {
           console.warn(`Swap requires exactly 2 mobjects, found ${mobjects.length}`);
           return null;
         }
-        return new Swap(mobjects[0], mobjects[1], options);
+        const animation = new Swap(mobjects[0], mobjects[1], options);
+        this._applyDescriptorRateFunc(animation, desc);
+        return animation;
       }
       if (desc.kind === "CyclicReplace") {
-        return new CyclicReplace(mobjects, options);
+        const animation = new CyclicReplace(mobjects, options);
+        this._applyDescriptorRateFunc(animation, desc);
+        return animation;
       }
       console.warn(`Unsupported group animation: ${desc.kind}`);
       return null;
@@ -350,7 +356,18 @@ export class Player {
 
     const mob = this._registry.get(desc.id);
     if (!mob) throw new Error(`Mobject not found: ${desc.id}`);
-    return buildSimpleAnimation(mob, desc, this._registry);
+    const animation = buildSimpleAnimation(mob, desc, this._registry);
+    this._applyDescriptorRateFunc(animation, desc);
+    return animation;
+  }
+
+  _applyDescriptorRateFunc(animation, desc) {
+    if (!animation || !desc?.rate_func) return;
+    Object.defineProperty(animation, "rateFunc", {
+      value: getRateFunc(desc.rate_func, desc.rate_func_params || {}),
+      writable: true,
+      configurable: true,
+    });
   }
 
   async _playAnimate(cmd, section) {
@@ -418,6 +435,7 @@ export class Player {
             endState,
             cmdDuration,
             desc.rate_func,
+            desc.rate_func_params || {},
           );
         }
       }

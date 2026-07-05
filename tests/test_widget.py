@@ -593,6 +593,30 @@ def test_flatten_animation_group_timestamps_scaled_by_lag_ratio():
     assert descs[-1].end == pytest.approx(group.run_time, abs=1e-5)
 
 
+def test_rate_function_names_and_params_are_schema_valid():
+    from manim import Dot, running_start
+
+    def running_start_minus_02(t):
+        return running_start(t, -0.2)
+
+    running_start_minus_02.__name__ = "running_start"
+    running_start_minus_02._manim_widget_rate_func_params = {"pull_factor": -0.2}
+
+    class RateFuncScene(ManimWidget):
+        def construct(self):
+            dot = Dot()
+            self.add(dot)
+            self.play(dot.animate(rate_func=running_start_minus_02).shift(RIGHT))
+
+    scene = RateFuncScene()
+    assert_valid_scene(scene.data)
+
+    anim_cmd = scene.data.sections[0].animate_commands()[0]
+    anim = next(a for a in anim_cmd.animations if a.kind == "MoveToTarget")
+    assert anim.rate_func == "running_start"
+    assert anim.rate_func_params == {"pull_factor": -0.2}
+
+
 def test_wait_with_vmobject():
     class SceneWithWait(ManimWidget):
         def construct(self):

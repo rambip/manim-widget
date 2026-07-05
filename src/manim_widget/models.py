@@ -71,6 +71,7 @@ class AnimationDescriptor(BaseModel):
     ids: list[str] | None = None
     state_ref: int | None = None
     rate_func: str | None = None
+    rate_func_params: dict[str, float] | None = None
     params: dict[str, Any] | None = None
     start: float | None = None
     end: float | None = None

@@ -636,6 +636,9 @@
         "rate_func": {
           "$ref": "#/definitions/RateFunc"
         },
+        "rate_func_params": {
+          "$ref": "#/definitions/RateFuncParams"
+        },
         "start": {
           "type": "number",
           "minimum": 0,
@@ -701,6 +704,9 @@
         "rate_func": {
           "$ref": "#/definitions/RateFunc"
         },
+        "rate_func_params": {
+          "$ref": "#/definitions/RateFuncParams"
+        },
         "params": {
           "$ref": "#/definitions/SimpleAnimationParams"
         },
@@ -741,6 +747,9 @@
         },
         "rate_func": {
           "$ref": "#/definitions/RateFunc"
+        },
+        "rate_func_params": {
+          "$ref": "#/definitions/RateFuncParams"
         },
         "params": {
           "type": "object",
@@ -791,6 +800,9 @@
         },
         "rate_func": {
           "$ref": "#/definitions/RateFunc"
+        },
+        "rate_func_params": {
+          "$ref": "#/definitions/RateFuncParams"
         },
         "params": {
           "$ref": "#/definitions/TransformAnimationParams"
@@ -858,7 +870,11 @@
         "rush_from",
         "slow_into",
         "there_and_back",
+        "there_and_back_with_pause",
+        "running_start",
         "wiggle",
+        "lingering",
+        "exponential_decay",
         "ease_in_sine",
         "ease_out_sine",
         "ease_in_out_sine",
@@ -890,6 +906,28 @@
         "ease_out_bounce",
         "ease_in_out_bounce"
       ]
+    },
+    "RateFuncParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pull_factor": {
+          "type": "number",
+          "description": "running_start pull factor."
+        },
+        "pause_ratio": {
+          "type": "number",
+          "description": "there_and_back_with_pause pause ratio."
+        },
+        "half_life": {
+          "type": "number",
+          "description": "exponential_decay half-life."
+        },
+        "wiggles": {
+          "type": "number",
+          "description": "wiggle oscillation count."
+        }
+      }
     },
     "Vec3": {
       "type": "array",
