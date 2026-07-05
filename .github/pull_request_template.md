@@ -12,6 +12,8 @@
 
 <!-- If it changed, explain why and make sure code and spec are in sync -->
 
-## Notes
+## Issue
+
+Closes: <!-- What issue does this solve ? -->
 
 <!-- Anything to add ? We love screenshots ! -->
