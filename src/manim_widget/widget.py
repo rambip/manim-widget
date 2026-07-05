@@ -322,7 +322,7 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
             if mob_id in child_ids:
                 continue
             mob_sid = renderer.short_id(mob)
-            state_ref = renderer.state_ref_for(mob)
+            state_ref = renderer.state_ref_for_register(mob)
             current.setup.append(RegisterCommand(id=mob_sid, state_ref=state_ref))
 
         cam = self.camera
@@ -357,3 +357,26 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
                         RemoveCommand(id=self._renderer.short_id(mob))
                     )
         ThreeDScene.remove(self, *mobjects)
+
+    def add_fixed_in_frame_mobjects(self, *mobjects: Mobject) -> None:  # type: ignore[override]
+        for mob in mobjects:
+            self._renderer.set_fixed(mob, "frame")
+        self.add(*mobjects)
+
+    def add_fixed_orientation_mobjects(self, *mobjects: Mobject, **kwargs: Any) -> None:  # type: ignore[override]
+        for mob in mobjects:
+            self._renderer.set_fixed(mob, "orientation")
+        self.add(*mobjects)
+
+    def remove_fixed_in_frame_mobjects(self, *mobjects: Mobject) -> None:  # type: ignore[override]
+        for mob in mobjects:
+            self._renderer.set_fixed(mob, None)
+        # Re-stage: `add()` always restages regardless of prior registration,
+        # and `register` is idempotent on the JS side, so this just flushes
+        # an updated (unfixed) state for an id that's already live.
+        self.add(*mobjects)
+
+    def remove_fixed_orientation_mobjects(self, *mobjects: Mobject) -> None:  # type: ignore[override]
+        for mob in mobjects:
+            self._renderer.set_fixed(mob, None)
+        self.add(*mobjects)

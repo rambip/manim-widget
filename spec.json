@@ -155,6 +155,11 @@
             "maxItems": 3
           },
           "description": "Corner positions in scene coordinates [UL, UR, DL, DR]. Used for ImageMobject placement overrides."
+        },
+        "fixed": {
+          "type": "string",
+          "enum": ["frame", "orientation"],
+          "description": "Set by add_fixed_in_frame_mobjects/add_fixed_orientation_mobjects. Pins the mobject relative to the camera instead of the 3D scene. Root-level only."
         }
       }
     },
@@ -227,6 +232,11 @@
         "font_size": {
           "type": "number",
           "description": "Font size for Text/MarkupText mobjects."
+        },
+        "fixed": {
+          "type": "string",
+          "enum": ["frame", "orientation"],
+          "description": "Set by add_fixed_in_frame_mobjects/add_fixed_orientation_mobjects. Pins the mobject relative to the camera instead of the 3D scene. Root-level only."
         }
       }
     },
@@ -256,6 +266,11 @@
         },
         "z_index": {
           "type": "number"
+        },
+        "fixed": {
+          "type": "string",
+          "enum": ["frame", "orientation"],
+          "description": "Set by add_fixed_in_frame_mobjects/add_fixed_orientation_mobjects. Pins the mobject relative to the camera instead of the 3D scene. Root-level only."
         }
       }
     },
@@ -301,6 +316,11 @@
         },
         "z_index": {
           "type": "number"
+        },
+        "fixed": {
+          "type": "string",
+          "enum": ["frame", "orientation"],
+          "description": "Set by add_fixed_in_frame_mobjects/add_fixed_orientation_mobjects. Pins the mobject relative to the camera instead of the 3D scene. Root-level only."
         }
       }
     },
@@ -341,6 +361,11 @@
         },
         "z_index": {
           "type": "number"
+        },
+        "fixed": {
+          "type": "string",
+          "enum": ["frame", "orientation"],
+          "description": "Set by add_fixed_in_frame_mobjects/add_fixed_orientation_mobjects. Pins the mobject relative to the camera instead of the 3D scene. Root-level only."
         }
       }
     },
@@ -359,6 +384,11 @@
         "value": {
           "type": "number",
           "description": "Current tracked value. Not rendered; used by updater-driven animations."
+        },
+        "fixed": {
+          "type": "string",
+          "enum": ["frame", "orientation"],
+          "description": "Set by add_fixed_in_frame_mobjects/add_fixed_orientation_mobjects. Pins the mobject relative to the camera instead of the 3D scene. Root-level only."
         }
       }
     },
@@ -402,6 +432,11 @@
           "type": "number",
           "minimum": 0,
           "description": "Point render size in pixels (maps to manim-web pointSize)."
+        },
+        "fixed": {
+          "type": "string",
+          "enum": ["frame", "orientation"],
+          "description": "Set by add_fixed_in_frame_mobjects/add_fixed_orientation_mobjects. Pins the mobject relative to the camera instead of the 3D scene. Root-level only."
         }
       }
     },
@@ -429,7 +464,7 @@
     },
     "RegisterCommand": {
       "type": "object",
-      "description": "Bind or update a mobject in the JS scene graph by mapping id to a section-local state_ref, and add it to the visible scene.",
+      "description": "Bind or update a mobject in the JS scene graph by mapping id to a section-local state_ref, and add it to the visible scene. Idempotent: if id is already registered, updates its state (including fixed status) in place instead of recreating it — e.g. add_fixed_in_frame_mobjects toggling a live mobject mid-section.",
       "required": [
         "cmd",
         "id",

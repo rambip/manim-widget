@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field, field_validator
 
 Contour = list[list[float]]
 
+FixedMode = Literal["frame", "orientation"]
+
 
 def _signed_area_2d(pts: Contour) -> float:
     """Shoelace signed area using anchor points (every 3rd point in 3n+1 format).
@@ -93,6 +95,7 @@ class VMobjectState(BaseModel):
     z_index: float | None = None
     text: str | None = None
     font_size: float | None = None
+    fixed: FixedMode | None = None
 
     @field_validator("contours")
     @classmethod
@@ -128,6 +131,7 @@ class GroupState(BaseModel):
 
     kind: Literal["Group"] = "Group"
     children: list[int]
+    fixed: FixedMode | None = None
 
 
 class ImageMobjectState(BaseModel):
@@ -137,6 +141,7 @@ class ImageMobjectState(BaseModel):
     source: str  # data URL
     points: list[list[float]] | None = None
     z_index: float | None = None
+    fixed: FixedMode | None = None
 
 
 class MathTexState(BaseModel):
@@ -146,6 +151,7 @@ class MathTexState(BaseModel):
     latex: str
     points: list[list[float]]  # 4 corner points
     color: str | None = None
+    fixed: FixedMode | None = None
 
 
 class ValueTrackerState(BaseModel):
@@ -153,6 +159,7 @@ class ValueTrackerState(BaseModel):
 
     kind: Literal["ValueTracker"] = "ValueTracker"
     value: float
+    fixed: FixedMode | None = None
 
 
 class PMobjectState(BaseModel):
@@ -168,6 +175,7 @@ class PMobjectState(BaseModel):
     colors: list[str] | None = None  # per-point, parallel to points
     opacities: list[float] | None = None  # per-point, parallel to points
     stroke_width: float | None = None  # point render size in pixels
+    fixed: FixedMode | None = None
 
 
 class CameraState(BaseModel):
@@ -184,6 +192,7 @@ class DerivedState(BaseModel):
     kind: Literal["Derived"] = "Derived"
     from_: int = Field(alias="from")
     points: list[list[float]] | None = None
+    fixed: FixedMode | None = None
 
 
 MobjectState = Annotated[
