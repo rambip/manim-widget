@@ -9,7 +9,7 @@ body:
   - type: textarea
     id: current
     attributes:
-      label: What's the current situation, and what would be better?
+      label: What's wrong with the code?
       description: Point to specific files or functions if you can.
     validations:
       required: true
@@ -22,8 +22,3 @@ body:
         - "Yes"
         - "Maybe"
         - "No"
-
-  - type: textarea
-    id: extra
-    attributes:
-      label: Anything else?
