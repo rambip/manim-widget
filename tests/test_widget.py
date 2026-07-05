@@ -688,6 +688,37 @@ def test_multiple_sections_with_move_to_target():
         assert anim.kind == "MoveToTarget"
 
 
+def test_first_call_next_section_omits_empty_initial_section():
+    class StartsWithSection(ManimWidget):
+        def construct(self):
+            self.next_section("intro")
+            c = Circle()
+            self.play(Create(c))
+
+    scene = StartsWithSection()
+    data = scene.data
+    assert_valid_scene(data)
+
+    assert [s.name for s in data.sections] == ["intro"]
+    assert data.sections[0].snapshot.keys() == {"#camera"}
+    first_animate = data.sections[0].animate_commands()[0]
+    assert any(a.kind == "Create" for a in first_animate.animations)
+
+
+def test_non_empty_initial_section_is_preserved_before_next_section():
+    class InitialThenSection(ManimWidget):
+        def construct(self):
+            c = Circle()
+            self.play(Create(c))
+            self.next_section("after")
+
+    scene = InitialThenSection()
+    data = scene.data
+    assert_valid_scene(data)
+
+    assert [s.name for s in data.sections] == ["initial", "after"]
+
+
 def test_add_injected_for_explicit_add_before_non_introducer_animation():
     class ShiftScene(ManimWidget):
         def construct(self):
