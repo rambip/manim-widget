@@ -49,6 +49,7 @@ def serialize_scene(
     frame_height: float = 8.0,
     background_color: str = "#000000",
 ) -> SceneData:
+    sections = _without_implicit_empty_initial_section(sections)
     section_data = [
         SectionData(
             name=s.name,
@@ -78,6 +79,19 @@ def serialize_scene(
 
     check_scene_data(scene)
     return scene
+
+
+def _without_implicit_empty_initial_section(
+    sections: list[SectionRecord],
+) -> list[SectionRecord]:
+    if len(sections) < 2:
+        return sections
+    first = sections[0]
+    if first.name != "initial" or first.commands:
+        return sections
+    if any(entry.id != "#camera" for entry in first.setup):
+        return sections
+    return sections[1:]
 
 
 class ManimWidget(anywidget.AnyWidget, ThreeDScene):
