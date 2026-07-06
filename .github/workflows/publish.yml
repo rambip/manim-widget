@@ -29,6 +29,21 @@ jobs:
     permissions:
       id-token: write # IMPORTANT: this permission is mandatory for trusted publishing
     steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      # Tags can be pushed from any branch; only publish ones that are
+      # actually reachable from main, so a tag pushed from a feature branch
+      # can't slip a pre-merge build onto PyPI.
+      - name: Verify tag is on main
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "${{ github.sha }}" origin/main; then
+            echo "::error::Tag ${{ github.ref_name }} is not reachable from main; refusing to publish." >&2
+            exit 1
+          fi
+
       - uses: actions/download-artifact@v6
         with:
           name: package-wheel
