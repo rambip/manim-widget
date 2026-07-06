@@ -21,6 +21,7 @@ from .states import CameraState
 
 
 _ESM = Path(__file__).parent / "static" / "index.js"
+_CSS = Path(__file__).parent / "static" / "style.css"
 
 
 def _camera_bg_hex(camera: Any) -> str:
@@ -31,6 +32,7 @@ def _camera_bg_hex(camera: Any) -> str:
 
 
 _JS_BUNDLE = _ESM.read_text(encoding="utf-8")
+_CSS_BUNDLE = _CSS.read_text(encoding="utf-8")
 
 
 def _scene_data_to_json(scene_data: SceneData, widget: anywidget.AnyWidget) -> dict:
@@ -95,7 +97,23 @@ def _without_implicit_empty_initial_section(
 
 
 class ManimWidget(anywidget.AnyWidget, ThreeDScene):
+    """Interactive Manim scene viewer widget.
+
+    The control bar background reads the CSS custom property
+    ``--mw-controls-bg``, falling back to a Radix Colors slate-8 gray
+    (``#b9bbc6``) if unset. Set ``--mw-controls-bg`` on any ancestor element
+    in the host page to restyle it.
+
+    ``canvas_width``/``canvas_height`` set the on-screen canvas pixel size
+    (independent of ``frame_width``/``frame_height``, which are Manim
+    world-unit camera framing). Only one may be set at a time — the pixel
+    aspect ratio always matches ``frame_width``/``frame_height``, so the
+    other dimension is derived automatically; passing both raises
+    ``ValueError``.
+    """
+
     _esm = _JS_BUNDLE
+    _css = _CSS_BUNDLE
     data = traitlets.Instance(SceneData).tag(
         sync=True,
         to_json=_scene_data_to_json,
@@ -118,6 +136,10 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
         sync=True
     )
     shared_camera_id = traitlets.Unicode("").tag(sync=True)
+    autoplay = traitlets.Bool(True).tag(sync=True)
+    show_controls = traitlets.Bool(True).tag(sync=True)
+    canvas_width = traitlets.Int(allow_none=True, default_value=None).tag(sync=True)
+    canvas_height = traitlets.Int(allow_none=True, default_value=None).tag(sync=True)
 
     def __init__(
         self,
@@ -128,8 +150,20 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
         background_color: str | None = None,
         orbit_controls_up: str = "z",
         shared_camera: Any = None,
+        autoplay: bool = True,
+        show_controls: bool = True,
+        canvas_width: int | None = None,
+        canvas_height: int | None = None,
         **kwargs: Any,
     ) -> None:
+        if canvas_width is not None and canvas_height is not None:
+            raise ValueError(
+                "canvas_width and canvas_height cannot both be set — the canvas "
+                "pixel aspect ratio always matches frame_width/frame_height. Set "
+                "only one (the other is derived), or adjust frame_width/"
+                "frame_height instead."
+            )
+
         self._fps = fps
         self._renderer = CaptureRenderer(fps=fps)
 
@@ -146,6 +180,10 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
         )
         self.is_3d = is_3d
         self.orbit_controls_up = orbit_controls_up
+        self.autoplay = autoplay
+        self.show_controls = show_controls
+        self.canvas_width = canvas_width
+        self.canvas_height = canvas_height
         if shared_camera is not None:
             self.shared_camera_id = shared_camera.camera_id
 

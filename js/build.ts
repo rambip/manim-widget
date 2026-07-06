@@ -16,3 +16,5 @@ if (!result.success) {
   }
   process.exit(1);
 }
+
+await Bun.write("../src/manim_widget/static/style.css", Bun.file("src/style.css"));

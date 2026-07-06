@@ -77,8 +77,8 @@ def _():
     cam = SharedCamera()
     mo.hstack(
         [
-            SquareScene(is_3d=True, shared_camera=cam),
-            CircleScene(is_3d=True, shared_camera=cam),
+            SquareScene(is_3d=True, shared_camera=cam, canvas_width=300),
+            CircleScene(is_3d=True, shared_camera=cam, canvas_width=300),
         ]
     )
     return

@@ -80,6 +80,12 @@ export class Player {
     this._currentSectionIndex = 0;
   }
 
+  /** Wipe all mobjects from the canvas without restoring or playing a section. */
+  clearScene() {
+    this._scene.clear();
+    this._registry.clear();
+  }
+
   async seekToSection(index) {
     this._currentSectionIndex = index;
     if (index >= 0 && index < this._sections.length) {

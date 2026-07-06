@@ -1071,6 +1071,21 @@ def test_orbit_controls_up_is_synced_widget_keyword():
     assert widget.orbit_controls_up == "y"
 
 
+def test_autoplay_and_show_controls_are_synced_widget_keywords():
+    class EmptyScene(ManimWidget):
+        def construct(self):
+            pass
+
+    widget = EmptyScene(autoplay=False, show_controls=False)
+
+    assert widget.autoplay is False
+    assert widget.show_controls is False
+
+    default_widget = EmptyScene()
+    assert default_widget.autoplay is True
+    assert default_widget.show_controls is True
+
+
 def test_same_square_scaled_and_readded_serializes_only_scaled_state():
     class ScaledSquareScene(ManimWidget):
         def construct(self):
