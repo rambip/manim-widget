@@ -8,33 +8,41 @@ import { diffSceneData } from "./diff.js";
 // Camera state is a CameraState object {kind:"Camera", points, focal_distance}.
 const _sharedCameras = (globalThis.__MW_SHARED_CAMERAS ??= new Map());
 
+// CSS lives in style.css (loaded via anywidget's _css, the same way index.js
+// is loaded via _esm) rather than being inlined here.
 function buildUi(el) {
   el.innerHTML = `
-    <div id="mw-wrapper" style="display:inline-flex;flex-direction:column;max-width:100%;">
-      <div id="mw-video-area" style="position:relative;">
-        <div id="mw-container" style="width:600px;height:400px;max-width:100%;"></div>
+    <div id="mw-wrapper">
+      <div id="mw-video-area">
+        <div id="mw-container"></div>
+        <button id="mw-overlay-play" title="Play"><span class="mw-play-icon">▶</span></button>
       </div>
-      <div id="mw-warning" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(200,0,0,0.9);color:white;padding:14px;border-radius:8px;font-weight:bold;z-index:10;pointer-events:none;">
-        Unsupported section
-      </div>
-      <div id="mw-controls" style="width:100%;box-sizing:border-box;display:flex;gap:0;align-items:stretch;margin-top:4px;background:rgba(200,200,200,1);">
-        <div id="mw-play-area" style="padding:4px;">
-          <button id="mw-play" style="font-size:2em;background:transparent;border:none;cursor:pointer;margin:0 8px;">↻</button>
+      <div id="mw-warning">Unsupported section</div>
+      <div id="mw-controls">
+        <div id="mw-play-area">
+          <button id="mw-play" title="Play">↻</button>
         </div>
-        <div id="mw-sections" style="flex:1;display:flex;flex-direction:column;padding:0;background:transparent;">
-          <div style="padding:2px 8px;font-size:1em;color:black;text-align:center;font-style:italic;font-weight:bold;">Section:</div>
-          <div id="mw-section-buttons" style="display:flex;gap:2px;padding:0 8px 0 8px;justify-content:center;align-items:stretch;"></div>
+        <div id="mw-sections">
+          <div id="mw-sections-header">
+            <span class="mw-label">Section:</span>
+            <button id="mw-deselect" title="Unselect section">×</button>
+          </div>
+          <div id="mw-section-buttons"></div>
         </div>
-        <div id="mw-3d-toggle" style="padding:4px 8px;display:flex;align-items:center;gap:4px;">
-          <label style="cursor:pointer;display:flex;align-items:center;gap:4px;font-size:0.9em;color:rgba(0,0,0,0.7);"><input type="checkbox" id="mw-3d-checkbox">3D</label>
+        <div id="mw-3d-toggle">
+          <label><input type="checkbox" id="mw-3d-checkbox">3D</label>
         </div>
       </div>
     </div>
   `;
 
   return {
+    wrapper: el.querySelector("#mw-wrapper"),
     container: el.querySelector("#mw-container"),
+    controlsDiv: el.querySelector("#mw-controls"),
     playBtn: el.querySelector("#mw-play"),
+    overlayPlayBtn: el.querySelector("#mw-overlay-play"),
+    deselectBtn: el.querySelector("#mw-deselect"),
     sectionsDiv: el.querySelector("#mw-section-buttons"),
     warning: el.querySelector("#mw-warning"),
     d3Checkbox: el.querySelector("#mw-3d-checkbox"),
@@ -145,6 +153,8 @@ async function render({ model, el }) {
   let sceneData = null;
   let scene = null;
   let registry = null;
+  // Index of the currently radio-selected section, or -1 when none selected.
+  let selectedIndex = -1;
 
   const sharedCamWire = wireSharedCamera(model, () => player, () => scene);
 
@@ -152,31 +162,31 @@ async function render({ model, el }) {
     const labels = ui.sectionsDiv.querySelectorAll('.mw-section-label');
     labels.forEach((label, i) => {
       const radio = label.querySelector('input[type="radio"]');
-      const span = label.querySelector('span');
-
       const isSelected = radio.checked;
       const isPlaying = i === currentlyPlayingIndex;
 
-      if (isSelected) {
-        // Selected: background color
-        label.style.background = 'rgba(120,120,120,1)';
-        label.style.border = '1px solid transparent';
-        span.style.color = 'rgba(255,255,255,1)';
-        span.style.fontWeight = 'bold';
-      } else if (isPlaying) {
-        // Currently playing: font change
-        label.style.background = 'transparent';
-        label.style.border = '1px solid rgba(0,0,0,0.3)';
-        span.style.color = 'rgba(0,0,0,1)';
-        span.style.fontWeight = 'bold';
-      } else {
-        // Default: border only
-        label.style.background = 'transparent';
-        label.style.border = '1px solid rgba(0,0,0,0.3)';
-        span.style.color = 'rgba(0,0,0,0.5)';
-        span.style.fontWeight = 'normal';
-      }
+      label.classList.toggle('selected', isSelected);
+      label.classList.toggle('playing', !isSelected && isPlaying);
     });
+    const hasSelection = Array.from(labels).some(l => l.querySelector('input').checked);
+    ui.deselectBtn.style.display = hasSelection ? 'inline' : 'none';
+
+    // Scroll the currently playing section into view at the left edge, in
+    // one smooth motion — but only when it's at least partly clipped by the
+    // scrollable area, so playback within the visible range doesn't jitter
+    // the scroll position.
+    const playingLabel = labels[currentlyPlayingIndex];
+    if (playingLabel) {
+      const container = ui.sectionsDiv;
+      const labelLeft = playingLabel.offsetLeft;
+      const labelRight = labelLeft + playingLabel.offsetWidth;
+      const viewLeft = container.scrollLeft;
+      const viewRight = viewLeft + container.clientWidth;
+      const fullyVisible = labelLeft >= viewLeft && labelRight <= viewRight;
+      if (!fullyVisible) {
+        container.scrollTo({ left: labelLeft, behavior: 'smooth' });
+      }
+    }
   }
 
   async function renderSection(index, updatePlaying = true) {
@@ -205,6 +215,17 @@ async function render({ model, el }) {
     await player.seekToSection(index);
   }
 
+  async function playFromSection(startIndex) {
+    ui.overlayPlayBtn.style.display = "none";
+    await player.play();
+    for (let i = startIndex; i < sceneData.sections.length; i += 1) {
+      if (!player.isPlaying) {
+        break;
+      }
+      await renderSection(i);
+    }
+  }
+
   async function loadScene(data) {
     if (!data || data.version !== 2 || !Array.isArray(data.sections)) {
       console.warn("[manim-widget] invalid scene payload");
@@ -218,12 +239,26 @@ async function render({ model, el }) {
 
     const is3D = model.get("is_3d");
     const orbitControlsUp = model.get("orbit_controls_up") || "z";
-    const pxWidth = 600;
     const aspectRatio = (data.frame_width && data.frame_height)
       ? data.frame_width / data.frame_height
       : 16 / 9;
-    const pxHeight = Math.round(pxWidth / aspectRatio);
+    // canvas_width/canvas_height are mutually exclusive (enforced Python-side):
+    // only one pixel dimension can be set explicitly, the other is always
+    // derived from the frame's aspect ratio so pixels and world units stay
+    // in sync.
+    const canvasHeightOpt = model.get("canvas_height");
+    let pxWidth;
+    let pxHeight;
+    if (canvasHeightOpt) {
+      pxHeight = canvasHeightOpt;
+      pxWidth = Math.round(pxHeight * aspectRatio);
+    } else {
+      pxWidth = model.get("canvas_width") || 600;
+      pxHeight = Math.round(pxWidth / aspectRatio);
+    }
     const backgroundColor = data.background_color ?? '#000000';
+    ui.wrapper.style.width = `${pxWidth}px`;
+    ui.container.style.width = `${pxWidth}px`;
     ui.container.style.height = `${pxHeight}px`;
     scene = is3D
       ? new ThreeDScene(ui.container, { width: pxWidth, height: pxHeight, enableOrbitControls: true, orbitControlsUp, backgroundColor })
@@ -239,22 +274,36 @@ async function render({ model, el }) {
     ui.sectionsDiv.innerHTML = data.sections
       .map((s, i) => {
         const name = s.name || `${i + 1}`;
-        return `<label class="mw-section-label" style="cursor:pointer;padding:2px 8px;border-radius:4px;border:1px solid rgba(0,0,0,0.3);background:transparent;min-width:10em;text-align:center;display:flex;align-items:center;justify-content:center;"><input type="radio" name="mw-section" value="${i}" style="display:none;"><span style="color:rgba(0,0,0,0.5);">${name}</span></label>`;
+        return `<label class="mw-section-label"><input type="radio" name="mw-section" value="${i}" style="display:none;"><span>${name}</span></label>`;
       })
       .join("");
 
+    ui.controlsDiv.style.display = model.get("show_controls") === false ? "none" : "";
+
     updateSectionStyles();
+    selectedIndex = -1;
 
     sharedCamWire?.patchPlayer();
 
-    // Auto-play all sections on load
-    await player.play();
-    for (let i = 0; i < sceneData.sections.length; i += 1) {
-      if (!player.isPlaying) {
-        break;
-      }
-      await renderSection(i);
+    if (model.get("autoplay") !== false) {
+      await playFromSection(0);
+    } else {
+      ui.overlayPlayBtn.style.display = "flex";
     }
+  }
+
+  ui.overlayPlayBtn.addEventListener("click", async () => {
+    if (!player || !sceneData) {
+      return;
+    }
+    await playFromSection(0);
+  });
+
+  function clearSectionSelection() {
+    const radios = ui.sectionsDiv.querySelectorAll('input[type="radio"]');
+    radios.forEach(r => { r.checked = false; });
+    updateSectionStyles(-1);
+    selectedIndex = -1;
   }
 
   ui.playBtn.addEventListener("click", async () => {
@@ -262,23 +311,15 @@ async function render({ model, el }) {
       return;
     }
 
-    const checkedRadio = ui.sectionsDiv.querySelector('input[name="mw-section"]:checked');
-    if (checkedRadio) {
-      // Replay just the selected section
-      const currentIndex = Number.parseInt(checkedRadio.value, 10);
-      await renderSection(currentIndex);
+    // Reset: jump back to the start. If autoplay is on, replay immediately;
+    // otherwise clear the canvas and show the overlay Play button again.
+    await player.stop();
+    clearSectionSelection();
+    if (model.get("autoplay") !== false) {
+      await playFromSection(0);
     } else {
-      // No section selected - replay all sections from start
-      await player.stop();
-      await player.play();
-      for (let i = 0; i < sceneData.sections.length; i += 1) {
-        if (!player.isPlaying) {
-          break;
-        }
-        await renderSection(i);
-      }
-      // Reset to default style after playing all
-      updateSectionStyles(-1);
+      player.clearScene();
+      ui.overlayPlayBtn.style.display = "flex";
     }
   });
 
@@ -287,18 +328,29 @@ async function render({ model, el }) {
       return;
     }
     updateSectionStyles();
+    ui.overlayPlayBtn.style.display = "none";
     const index = Number.parseInt(e.target.value, 10);
+    selectedIndex = index;
     await renderSection(index, false);
   });
+
+  async function unselectSection() {
+    if (!player || !sceneData) {
+      return;
+    }
+    const resumeFrom = selectedIndex >= 0 ? selectedIndex : 0;
+    clearSectionSelection();
+    await playFromSection(resumeFrom);
+  }
+
+  ui.deselectBtn.addEventListener("click", unselectSection);
 
   ui.sectionsDiv.addEventListener("click", (e) => {
     if (e.target.closest('.mw-section-label')) {
       return;
     }
-    // Click on background - unset all radios
-    const radios = ui.sectionsDiv.querySelectorAll('input[type="radio"]');
-    radios.forEach(r => { r.checked = false; });
-    updateSectionStyles(-1);
+    // Click on background - unselect, same as the deselect button
+    unselectSection();
   });
 
   const onSceneDataChange = async () => {

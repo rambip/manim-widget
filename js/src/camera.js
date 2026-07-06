@@ -86,11 +86,18 @@ export function apply3DCameraState(scene, points, fd) {
   if (typeof scene.setLookAt === "function") {
     scene.setLookAt(center);
   }
-  const rectWidth = Math.sqrt(
-    (UR[0] - UL[0]) ** 2 + (UR[1] - UL[1]) ** 2 + (UR[2] - UL[2]) ** 2,
+  // fov is THREE.PerspectiveCamera's *vertical* field of view, so it must be
+  // derived from rectHeight (not rectWidth) — the horizontal extent then
+  // follows from camera.aspect, which the scene keeps in sync with the
+  // canvas pixel size (itself derived from frame_width/frame_height, so
+  // the aspect ratios always match). Using rectWidth here made the
+  // effective frustum wrong whenever the canvas aspect ratio wasn't ~1:1
+  // (e.g. portrait frames), clipping content that should have been visible.
+  const rectHeight = Math.sqrt(
+    (UL[0] - DL[0]) ** 2 + (UL[1] - DL[1]) ** 2 + (UL[2] - DL[2]) ** 2,
   );
-  if (rectWidth > 0 && scene.camera3D) {
-    const fovDeg = (2 * Math.atan(rectWidth / (2 * fd)) * 180) / Math.PI;
+  if (rectHeight > 0 && scene.camera3D) {
+    const fovDeg = (2 * Math.atan(rectHeight / (2 * fd)) * 180) / Math.PI;
     scene.camera3D.setFov(fovDeg);
   }
 }

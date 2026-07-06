@@ -1,0 +1,6 @@
+/* Restyles the ManimWidget control bar via the --mw-controls-bg custom
+   property (see the ManimWidget class docstring). Loaded through marimo's
+   `css_file` app config below. */
+:root {
+  --mw-controls-bg: #7a6060;
+}

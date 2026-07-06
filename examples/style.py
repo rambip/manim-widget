@@ -1,7 +1,7 @@
 import marimo
 
 __generated_with = "0.23.0"
-app = marimo.App(width="columns")
+app = marimo.App(width="columns", css_file="style.css")
 
 with app.setup:
     import marimo as mo
@@ -39,6 +39,17 @@ class PaletteScene(ManimWidget):
             circle.set_fill(color, opacity=1.0)
         self.camera.background_color = ManimColor(background_color)
         self.sync(*self.circles)
+
+
+@app.cell
+def _():
+    mo.callout(
+        mo.md(
+            "**Custom control bar style**: you can set `--mw-controls-bg` in your custom css file to change the color of the widget control bar"
+        ),
+        "info",
+    )
+    return
 
 
 @app.cell
@@ -126,7 +137,6 @@ def _(PALETTES):
     widget = PaletteScene(
         colors=_p0["colors"], background_color=_p0["background"], fps=15
     )
-    widget
     return (widget,)
 
 

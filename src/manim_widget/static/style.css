@@ -1,0 +1,68 @@
+/* Control bar background reads the `--mw-controls-bg` custom property so a
+   host page can restyle it by setting `--mw-controls-bg` on any ancestor
+   element; falls back to a Radix Colors slate-8 gray (#b9bbc6) if unset. */
+#mw-wrapper { display:inline-flex; flex-direction:column; max-width:100%; }
+#mw-video-area { position:relative; }
+#mw-container { width:600px; height:400px; max-width:100%; }
+#mw-warning {
+  display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  background:rgba(200,0,0,0.9); color:white; padding:14px; border-radius:8px;
+  font-weight:bold; z-index:10; pointer-events:none;
+}
+#mw-controls {
+  width:100%; box-sizing:border-box; display:flex; gap:0; align-items:stretch;
+  margin-top:4px; background:var(--mw-controls-bg, #b9bbc6);
+}
+#mw-play-area { padding:4px; }
+#mw-play { font-size:2em; background:transparent; border:none; cursor:pointer; margin:0 8px; }
+#mw-overlay-play {
+  display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:3em; height:3em; border-radius:50%;
+  background:transparent; border:none;
+  color:white; cursor:pointer;
+  align-items:center; justify-content:center; z-index:5;
+  box-sizing:border-box; padding:0;
+}
+#mw-overlay-play .mw-play-icon {
+  font-size:1.8em; line-height:1; transform:translate(0.08em, 0);
+}
+/* flex:1 + min-width:0 lets this shrink below its content's natural size
+   instead of forcing #mw-controls (and the fixed-width #mw-wrapper) wider
+   than the canvas when there are many sections. */
+#mw-sections {
+  flex:1; min-width:0; display:flex; flex-direction:column; padding:0;
+  background:transparent;
+}
+#mw-sections-header {
+  padding:2px 8px; display:flex; align-items:center; justify-content:center; gap:6px;
+}
+#mw-sections-header .mw-label {
+  font-size:1em; color:black; font-style:italic; font-weight:bold;
+}
+#mw-deselect {
+  display:none; font-size:1.6em; line-height:1; background:transparent; border:none;
+  cursor:pointer; color:rgba(0,0,0,0.6); padding:0 4px;
+}
+#mw-deselect:hover { color:rgba(0,0,0,1); }
+/* min-width:0 (see #mw-sections above) + overflow-x:auto: few sections
+   fill the row evenly (each label is flex:1 1 0); many sections shrink
+   down to each label's min-width and then scroll instead of overflowing
+   the fixed-width control bar. */
+#mw-section-buttons {
+  display:flex; gap:2px; padding:0 8px; align-items:stretch;
+  min-width:0; overflow-x:auto; overflow-y:hidden;
+}
+.mw-section-label {
+  cursor:pointer; padding:2px 8px; border-radius:4px; border:1px solid rgba(0,0,0,0.3);
+  background:transparent; flex:1 1 0; min-width:6em; overflow:hidden;
+  text-align:center; display:flex; align-items:center; justify-content:center;
+}
+.mw-section-label span {
+  color:rgba(0,0,0,0.5); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.mw-section-label.selected { background:rgba(120,120,120,1); border:1px solid transparent; }
+.mw-section-label.selected span { color:rgba(255,255,255,1); font-weight:bold; }
+.mw-section-label.playing { background:transparent; border:1px solid rgba(0,0,0,0.3); }
+.mw-section-label.playing span { color:rgba(0,0,0,1); font-weight:bold; }
+#mw-3d-toggle { padding:4px 8px; display:flex; align-items:center; gap:4px; }
+#mw-3d-toggle label { cursor:pointer; display:flex; align-items:center; gap:4px; font-size:0.9em; color:rgba(0,0,0,0.7); }
