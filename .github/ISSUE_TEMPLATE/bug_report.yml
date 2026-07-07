@@ -11,7 +11,7 @@ body:
     attributes:
       label: What happened?
       description: What did you expect, and what did you get instead? Try to share reproducible code.
-    placeholder: |
+      placeholder: |
       I tried to do X but Y happened.
       Here is how you can reproduce it:
 
