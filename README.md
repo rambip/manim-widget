@@ -3,7 +3,7 @@
 <img width="645" height="544" alt="image" src="https://github.com/user-attachments/assets/e8094a2c-864b-45f1-9d0d-cd724f859e18" />
 
 
-Interactive Manim for Jupyter/marimo notebooks. The power of [Manim](https://www.manim.community/), without the hassle.
+Interactive Manim for Jupyter/marimo notebooks. The power of [Manim](https://www.manim.community/), but more interactive, and without the hassle.
 
 ## Installation
 
@@ -30,25 +30,19 @@ Code in this repository mainly does the serialization form python to js, using a
 If you want to dig deeper, I strongly recommend to use the deepwiki documentation [here](https://deepwiki.com/rambip/manim-widget)
 
 
-
-## Headless testing
-
-`tests/js_runner.py` lets you validate a scene through the JS renderer without a browser — useful for quick sanity-checks and CI.
-
-```bash
-# run a scene class from an example file
-uv run python tests/js_runner.py examples/arrow.py ArrowDance
-
-# pipe in pre-serialized JSON
-uv run python -c "from mymodule import MyScene; import json; print(json.dumps(MyScene().scene_data))" \
-  | uv run python tests/js_runner.py --json
-```
-
 Exit code is 0 on success, 1 on any JS playback error. Errors and warnings are printed to stdout.
 
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md)
+
+## FAQ
+
+### I want to use manim without being sudo, what do I do ?
+
+On linux, you can build cairo and pango without root, you just need a C compiler.
+
+Follow [this guide](https://gist.github.com/rambip/47a412b3f3fec8d4ab7a55f70ad2c47b)
 
 ## AI
 
