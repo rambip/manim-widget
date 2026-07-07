@@ -2,7 +2,10 @@
 
 
 
-https://github.com/user-attachments/assets/f7ade9c9-f02e-4bb5-9cdb-0779c39e15b0
+
+
+https://github.com/user-attachments/assets/8ab857cb-dce9-4394-ace2-b8e59c26b5b6
+
 
 
 Interactive Manim for Jupyter/marimo notebooks. The power of [Manim](https://www.manim.community/), but interactive, and without the hassle.
