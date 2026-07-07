@@ -1,9 +1,11 @@
 # Manim Widget
 
-<img width="645" height="544" alt="image" src="https://github.com/user-attachments/assets/e8094a2c-864b-45f1-9d0d-cd724f859e18" />
 
 
-Interactive Manim for Jupyter/marimo notebooks. The power of [Manim](https://www.manim.community/), but more interactive, and without the hassle.
+https://github.com/user-attachments/assets/f7ade9c9-f02e-4bb5-9cdb-0779c39e15b0
+
+
+Interactive Manim for Jupyter/marimo notebooks. The power of [Manim](https://www.manim.community/), but interactive, and without the hassle.
 
 ## Installation
 
