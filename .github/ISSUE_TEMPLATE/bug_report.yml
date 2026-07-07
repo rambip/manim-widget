@@ -12,11 +12,11 @@ body:
       label: What happened?
       description: What did you expect, and what did you get instead? Try to share reproducible code.
       placeholder: |
-      I tried to do X but Y happened.
-      Here is how you can reproduce it:
+        I tried to do X but Y happened.
+        Here is how you can reproduce it:
 
-      ```python
-      ```
+        ```python
+        ```
     validations:
       required: true
 
