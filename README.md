@@ -38,8 +38,6 @@ Code in this repository mainly does the serialization form python to js, using a
 If you want to dig deeper, I strongly recommend to use the deepwiki documentation [here](https://deepwiki.com/rambip/manim-widget)
 
 
-Exit code is 0 on success, 1 on any JS playback error. Errors and warnings are printed to stdout.
-
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md)
