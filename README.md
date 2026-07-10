@@ -15,20 +15,20 @@ Interactive Manim for Jupyter/marimo notebooks. The power of [Manim](https://www
 
 ## Quickstart
 
+<details>
+  <summary>🤖 AI AGENT SKILL</summary>
+  There's a work in progress prompt/skill you can just paste to start vibing.
+  It's [here](https://raw.githubusercontent.com/rambip/manim-widget/refs/heads/main/SKILL.md)
+
+  Have fun, but please remember: LLMs are awful at scientific writing and story telling. For now, there's no shortcut to writing good explanations !
+</details>
+
 ```bash
 # in your project
 uv add manim-widget
 ```
 
 And you're good to go ! You do not even need to install LaTeX.
-
-<details>
-  <summary>**Use with your AI Agent**</summary>
-  There's a work in progress prompt/skill you can just paste to start vibing.
-  It's [here](https://raw.githubusercontent.com/rambip/manim-widget/refs/heads/main/SKILL.md)
-
-  Have fun, but please remember: LLMs are awful at scientific writing and story telling. For now, there's no shortcut to writing good explanations !
-</details>
 
 > If you get errors during installation, go read the [manim install guide](https://docs.manim.community/en/stable/installation/uv.html)
 
