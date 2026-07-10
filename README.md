@@ -17,10 +17,11 @@ Interactive Manim for Jupyter/marimo notebooks. The power of [Manim](https://www
 
 <details>
   <summary>🤖 AI AGENT SKILL</summary>
-  There's a work in progress prompt/skill you can just paste to start vibing.
-  It's [here](https://raw.githubusercontent.com/rambip/manim-widget/refs/heads/main/SKILL.md)
 
-  Have fun, but please remember: LLMs are awful at scientific writing and story telling. For now, there's no shortcut to writing good explanations !
+There's a work in progress prompt/skill you can just paste to start vibing.
+It's [here](https://raw.githubusercontent.com/rambip/manim-widget/refs/heads/main/SKILL.md)
+
+Have fun, but please remember: LLMs are awful at scientific writing and story telling. For now, there's no shortcut to writing good explanations !
 </details>
 
 ```bash
