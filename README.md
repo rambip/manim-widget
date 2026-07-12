@@ -11,7 +11,7 @@ https://github.com/user-attachments/assets/507e4685-de60-40d6-a0bc-1a473028da80
 
 
 
-Interactive Manim for Jupyter/marimo notebooks. The power of [Manim](https://www.manim.community/), but interactive, and without the hassle.
+Manim for Jupyter/marimo notebooks. The power of [Manim](https://www.manim.community/), but interactive, and without the hassle.
 
 ## Quickstart
 
