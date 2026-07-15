@@ -36,6 +36,13 @@ jobs:
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
 
+      # manim-web manages its own deps with npm (its own package-lock.json) —
+      # it's a plain file: dependency of js/package.json, not a bun workspace
+      # member, so bun install won't populate its node_modules.
+      - name: Install manim-web deps
+        working-directory: manim-web
+        run: npm ci
+
       - name: Install JS deps
         working-directory: js
         run: bun install
@@ -72,6 +79,13 @@ jobs:
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
 
+      # manim-web manages its own deps with npm (its own package-lock.json) —
+      # it's a plain file: dependency of js/package.json, not a bun workspace
+      # member, so bun install won't populate its node_modules.
+      - name: Install manim-web deps
+        working-directory: manim-web
+        run: npm ci
+
       - name: Install JS deps
         working-directory: js
         run: bun install
@@ -103,6 +117,13 @@ jobs:
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
+
+      # manim-web manages its own deps with npm (its own package-lock.json) —
+      # it's a plain file: dependency of js/package.json, not a bun workspace
+      # member, so bun install won't populate its node_modules.
+      - name: Install manim-web deps
+        working-directory: manim-web
+        run: npm ci
 
       - name: Install JS deps
         working-directory: js
