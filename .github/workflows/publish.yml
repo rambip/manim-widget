@@ -32,6 +32,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          submodules: true
 
       # Tags can be pushed from any branch; only publish ones that are
       # actually reachable from main, so a tag pushed from a feature branch
@@ -43,6 +44,12 @@ jobs:
             echo "::error::Tag ${{ github.ref_name }} is not reachable from main; refusing to publish." >&2
             exit 1
           fi
+
+      # js/build-remote.ts bakes the manim-web submodule's version into the
+      # CDN URL for this release's js="remote" mode. If that version was
+      # never published to npm, the remote bundle 404s in the browser.
+      - name: Verify manim-web CDN version is published
+        run: python3 scripts/check_manim_web_published.py
 
       - uses: actions/download-artifact@v6
         with:

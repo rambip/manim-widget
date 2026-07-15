@@ -197,6 +197,8 @@ uv run pytest -q examples/*.py
 
 Both build scripts use `conditions: ["source"]`, which resolves `manim-web` directly from `manim-web/src/` (the `"source"` export condition in its `package.json`). No separate manim-web build step is needed.
 
+`manim-web` manages its own dependencies with npm (its own `package-lock.json`, its own CI using `npm ci`) — it is a plain `file:` dependency of `js/package.json`, not a bun workspace member. After checking out or updating the submodule, run `cd manim-web && npm ci` once to (re)install its `node_modules`, in addition to `cd js && bun install`. Bun's own install won't populate/repair `manim-web/node_modules`.
+
 **Production bundle** — rebuilds `src/manim_widget/static/index.js`:
 ```sh
 cd js && bun run build.ts
@@ -207,6 +209,11 @@ cd js && bun run build.ts
 cd js && bun run build-test.ts
 ```
 `JSRunner.__init__` calls this automatically, so running the Python test suite rebuilds it as needed. Set `MANIM_WIDGET_JS_DEBUG=1` to skip bundling and run against TypeScript source directly for readable stack traces.
+
+**Remote bundle** — rebuilds `src/manim_widget/static/index.remote.js` (the `ManimWidget(js="remote")` shim). Unlike the other two build scripts, it treats `manim-web` as external instead of resolving it via `conditions: ["source"]`: it bundles only our own glue code (`registry.js`/`player.js`/`diff.js`/`camera.js`/`anim.js`/`mob.js`) and rewrites every `from "manim-web"` import to a jsDelivr URL pinned to the `manim-web` submodule's own `package.json` version, pointing at its self-contained `/browser` build (three.js and friends already inlined there). Run it whenever the submodule pointer is bumped to a new released `manim-web` version, so the pinned CDN URL stays current:
+```sh
+cd js && bun run build-remote.ts
+```
 
 To validate a scene from the command line:
 
