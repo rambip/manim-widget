@@ -190,4 +190,3 @@ If you see a bug, help give feedback.
 ---
 
 Have fun with manim-widget !
-
