@@ -4,8 +4,8 @@ import {
   MathTexImage,
   ImageMobject,
   PMobject,
+  THREE,
 } from "manim-web";
-import * as THREE from "three";
 
 // Apply contours + holes from a VMobject state onto a mob.
 // Contours (CCW) and holes (CW) are concatenated into one flat points array;

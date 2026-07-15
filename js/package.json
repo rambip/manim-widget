@@ -1,18 +1,15 @@
 {
   "name": "manim-widget-js",
-  "version": "0.1.0",
-  "workspaces": ["../manim-web"],
+  "version": "0.2.0",
+  "private": true,
   "type": "module",
   "scripts": {
     "build": "bun run build.ts",
+    "build-remote": "bun run build-remote.ts",
     "cli": "bun run src/test_cli.js"
   },
   "dependencies": {
-    "katex": "^0.16.22",
-    "manim-web": "file:../manim-web",
-    "mathjax-full": "^3.2.2",
-    "opentype.js": "^2.0.0",
-    "three": "^0.184.0"
+    "manim-web": "file:../manim-web"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "^20.8.9",

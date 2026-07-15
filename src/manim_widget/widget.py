@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import warnings
+import weakref
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +23,7 @@ from .states import CameraState
 
 
 _ESM = Path(__file__).parent / "static" / "index.js"
+_ESM_REMOTE = Path(__file__).parent / "static" / "index.remote.js"
 _CSS = Path(__file__).parent / "static" / "style.css"
 
 
@@ -32,7 +35,31 @@ def _camera_bg_hex(camera: Any) -> str:
 
 
 _JS_BUNDLE = _ESM.read_text(encoding="utf-8")
+_JS_BUNDLE_REMOTE = _ESM_REMOTE.read_text(encoding="utf-8")
 _CSS_BUNDLE = _CSS.read_text(encoding="utf-8")
+
+# Tracks currently-live js="inline" widgets (weakly, so re-executed notebook
+# cells whose old instances get garbage-collected don't keep inflating the
+# count). Once 2+ are alive at once, hint that js="remote" avoids re-embedding
+# the ~2.9MB bundle per instance. A WeakSet (not a running total) means the
+# hint reflects what's actually live, and never fires for js="remote" widgets
+# since only inline instances are added.
+_live_inline_widgets: "weakref.WeakSet[ManimWidget]" = weakref.WeakSet()
+_inline_hint_shown = False
+
+
+def _check_inline_hint(widget: "ManimWidget") -> None:
+    global _inline_hint_shown
+    _live_inline_widgets.add(widget)
+    if not _inline_hint_shown and len(_live_inline_widgets) >= 2:
+        _inline_hint_shown = True
+        warnings.warn(
+            "Multiple ManimWidget instances are embedding the full JS bundle "
+            f"(~{len(_JS_BUNDLE) / 1e6:.1f}MB each) inline. Pass "
+            'js="remote" to fetch it once from a CDN instead, shrinking '
+            "exported notebooks significantly.",
+            stacklevel=3,
+        )
 
 
 def _scene_data_to_json(scene_data: SceneData, widget: anywidget.AnyWidget) -> dict:
@@ -110,6 +137,18 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
     aspect ratio always matches ``frame_width``/``frame_height``, so the
     other dimension is derived automatically; passing both raises
     ``ValueError``.
+
+    ``js`` selects how the JS runtime is delivered to the browser:
+
+    - ``"inline"`` (default) embeds the full bundle (~2.9MB) in every widget's
+      ``_esm``, so it works with no network access but each widget instance
+      duplicates the payload — this adds up fast in exported notebooks with
+      several widgets.
+    - ``"remote"`` embeds a small (~25KB) shim bundling our own glue code,
+      but fetches manim-web itself once from a CDN (jsDelivr, via
+      manim-web's own published npm package and its self-contained
+      ``/browser`` build) and shares it across every widget instance in the
+      page. Requires the browser to reach the CDN.
     """
 
     _esm = _JS_BUNDLE
@@ -154,6 +193,7 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
         show_controls: bool = True,
         canvas_width: int | None = None,
         canvas_height: int | None = None,
+        js: str = "inline",
         **kwargs: Any,
     ) -> None:
         if canvas_width is not None and canvas_height is not None:
@@ -163,6 +203,8 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
                 "only one (the other is derived), or adjust frame_width/"
                 "frame_height instead."
             )
+        if js not in ("inline", "remote"):
+            raise ValueError(f'js must be "inline" or "remote", got {js!r}')
 
         self._fps = fps
         self._renderer = CaptureRenderer(fps=fps)
@@ -170,6 +212,11 @@ class ManimWidget(anywidget.AnyWidget, ThreeDScene):
         from manim.camera.three_d_camera import ThreeDCamera as _ThreeDCamera
 
         _camera_class = getattr(type(self), "camera_class", _ThreeDCamera)
+
+        if js == "remote":
+            self._esm = _JS_BUNDLE_REMOTE
+        else:
+            _check_inline_hint(self)
 
         anywidget.AnyWidget.__init__(self)
         ThreeDScene.__init__(
