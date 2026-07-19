@@ -215,7 +215,9 @@ class MobSerializer:
         if isinstance(state, _GroupKey):
             return GroupState(
                 children=list(state.child_refs),
-                child_ids=list(state.child_ids) if state.child_ids is not None else None,
+                child_ids=list(state.child_ids)
+                if state.child_ids is not None
+                else None,
             )
         if isinstance(state, _VMobKey):
             return VMobjectState(
