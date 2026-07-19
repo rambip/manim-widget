@@ -131,6 +131,7 @@ class GroupState(BaseModel):
 
     kind: Literal["Group"] = "Group"
     children: list[int]
+    child_ids: list[str] | None = None
     fixed: FixedMode | None = None
 
 

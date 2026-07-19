@@ -88,16 +88,20 @@ class _PMobjectKey(tuple):
 
 
 class _GroupKey(tuple):
-    """State key for a group: (child_refs,)."""
+    """State key for a group: (child_refs, child_ids)."""
 
     __slots__ = ()
 
-    def __new__(cls, child_refs: tuple) -> "_GroupKey":
-        return super().__new__(cls, (child_refs,))
+    def __new__(cls, child_refs: tuple, child_ids: tuple | None = None) -> "_GroupKey":
+        return super().__new__(cls, (child_refs, child_ids))
 
     @property
     def child_refs(self) -> tuple:
         return self[0]
+
+    @property
+    def child_ids(self) -> tuple | None:
+        return self[1]
 
 
 class _VMobKey(tuple):

@@ -264,6 +264,13 @@
           },
           "description": "Ordered list of child state_refs. Resolved through the global states bank to create child mobjects. Group children are NOT in the snapshot - only the Group root is."
         },
+        "child_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional list of child string IDs mapping to child state_refs."
+        },
         "z_index": {
           "type": "number"
         },
