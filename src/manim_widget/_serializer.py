@@ -133,12 +133,14 @@ class MobSerializer:
             if isinstance(mob, VMobject) and mob.get_subpaths():
                 return None
             child_refs = []
+            child_ids = []
             for child in mob.submobjects:
                 ref = self._state_registry.get(child)
                 if ref is None:
                     return None  # children not yet registered
                 child_refs.append(ref)
-            return _GroupKey(tuple(child_refs))
+                child_ids.append(self.short_id(child))
+            return _GroupKey(tuple(child_refs), tuple(child_ids))
 
         if isinstance(mob, VMobject) and not mob.submobjects:
             subpaths = mob.get_subpaths()
@@ -211,7 +213,12 @@ class MobSerializer:
                 stroke_width=state.stroke_width,
             )
         if isinstance(state, _GroupKey):
-            return GroupState(children=list(state.child_refs))
+            return GroupState(
+                children=list(state.child_refs),
+                child_ids=list(state.child_ids)
+                if state.child_ids is not None
+                else None,
+            )
         if isinstance(state, _VMobKey):
             return VMobjectState(
                 contours=[[list(p) for p in c] for c in state.contours],
@@ -328,12 +335,15 @@ class MobSerializer:
                 js_ch = self._js_children(mob)
                 if js_ch:
                     child_refs: list[int] = []
+                    child_ids: list[str] = []
                     for jsc in js_ch:
                         if isinstance(jsc, _SubpathChild):
                             child_refs.append(self._subpath_child_state_ref(jsc))
+                            child_ids.append(jsc.mob_id)
                         else:
                             child_refs.append(self.state_ref_for(jsc))
-                    vgroup_state = GroupState(children=child_refs)
+                            child_ids.append(self.short_id(jsc))
+                    vgroup_state = GroupState(children=child_refs, child_ids=child_ids)
                     ref = self._state_registry.insert_raw(vgroup_state)
                     self.state_refs.setdefault(id(mob), []).append(ref)
                     return ref
@@ -350,6 +360,7 @@ class MobSerializer:
         # _state_registry.get().  Build GroupState from identity-keyed state_refs.
         if hasattr(mob, "submobjects") and mob.submobjects:
             child_refs = []
+            child_ids = []
             for child in mob.submobjects:
                 refs = self.state_refs.get(id(child))
                 if refs is None:
@@ -357,8 +368,9 @@ class MobSerializer:
                     refs = self.state_refs.get(id(child))
                 if refs:
                     child_refs.append(refs[-1])
+                    child_ids.append(self.short_id(child))
             if child_refs:
-                vgroup_state = GroupState(children=child_refs)
+                vgroup_state = GroupState(children=child_refs, child_ids=child_ids)
                 ref = self._state_registry.insert_raw(vgroup_state)
                 self.state_refs.setdefault(id(mob), []).append(ref)
                 return ref

@@ -572,6 +572,8 @@ class CaptureRenderer:
         seen: set[int] = set()
         for m in scene.get_mobject_family_members():
             for member in m.get_family():
+                if not _is_mob_supported(member):
+                    continue
                 member_id = id(member)
                 if member_id in seen:
                     continue
@@ -580,6 +582,8 @@ class CaptureRenderer:
         for anim in animations:
             if hasattr(anim, "mobject"):
                 member = anim.mobject
+                if not _is_mob_supported(member):
+                    continue
                 member_id = id(member)
                 if member_id not in seen:
                     seen.add(member_id)
